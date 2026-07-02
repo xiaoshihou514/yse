@@ -3,15 +3,9 @@
 // These are typed stubs; actual Rust commands to be implemented in desktop/mobile.
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if ((window as unknown as Record<string, unknown>).__TAURI__) {
-    const { invoke } = await import("@tauri-apps/api/core");
-    return invoke<T>(cmd, args);
-  }
-  // Fallback for dev mode without Tauri
-  console.warn(`invoke ${cmd} called outside Tauri runtime`);
-  throw new Error("Not in Tauri runtime");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<T>(cmd, args);
 }
 
 // --- Types shared with Rust core -----------------------------------------
@@ -101,6 +95,6 @@ export async function getLogs(limit = 100): Promise<LogEntry[]> {
   return invoke("get_logs", { limit });
 }
 
-export async function testEmail(): Promise<string> {
-  return invoke("test_email");
+export async function testEmail(server: string, port: number, username: string, password: string): Promise<string> {
+  return invoke("test_email", { server, port, username, password });
 }

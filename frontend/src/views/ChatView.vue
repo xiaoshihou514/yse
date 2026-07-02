@@ -1,101 +1,161 @@
 <template>
-  <div class="chat-layout">
-    <!-- Header -->
-    <div class="chat-header">
-      <t-space>
-        <t-select
-          v-model="selectedContact"
-          placeholder="选择联系人"
-          style="width: 200px"
-          :options="contacts"
-          clearable
-        />
+  <div class="chat-shell">
+    <!-- Contact list -->
+    <div class="contact-panel">
+      <div class="panel-header">
+        <span class="panel-title">消息</span>
         <t-button
-          :icon="polling ? 'poweroff' : 'play-circle'"
+          size="small"
+          variant="text"
           :theme="polling ? 'danger' : 'primary'"
           @click="togglePolling"
+          :title="polling ? '停止轮询' : '开始轮询'"
         >
-          {{ polling ? '停止' : '开始轮询' }}
+          <template #icon><poweroff-icon v-if="polling" /><play-icon v-else /></template>
         </t-button>
-        <t-tag v-if="connected" theme="success">已连接</t-tag>
-        <t-tag v-else theme="default">未连接</t-tag>
-      </t-space>
+      </div>
+      <t-input
+        v-model="searchText"
+        placeholder="搜索联系人"
+        size="small"
+        clearable
+        style="margin: 0 8px 8px"
+      />
+      <div class="contact-list">
+        <div
+          v-for="c in filteredContacts"
+          :key="c.address"
+          :class="['contact-item', { active: selectedContact === c.address }]"
+          @click="selectContact(c.address)"
+        >
+          <t-avatar size="40px">{{ initials(c.address) }}</t-avatar>
+          <div class="contact-info">
+            <div class="contact-name">{{ c.address }}</div>
+            <div class="contact-preview">{{ c.lastText }}</div>
+          </div>
+        </div>
+        <t-empty v-if="filteredContacts.length === 0" description="暂无联系人" />
+      </div>
+      <div class="connection-bar">
+        <t-tag :theme="connected ? 'success' : 'default'" size="small">
+          {{ connected ? '已连接' : '未连接' }}
+        </t-tag>
+      </div>
     </div>
 
-    <!-- Messages -->
-    <div class="chat-messages" ref="messagesContainer">
-      <t-empty v-if="displayMessages.length === 0" description="暂无消息" />
-      <div
-        v-for="msg in displayMessages"
-        :key="msg.id"
-        :class="['msg-bubble', msg.from === ownAddress ? 'msg-self' : 'msg-other']"
-      >
-        <div class="msg-meta">
-          <span class="msg-from">{{ msg.from }}</span>
-          <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
+    <!-- Chat area -->
+    <div class="chat-panel" v-if="selectedContact">
+      <div class="chat-topbar">
+        <span class="topbar-name">{{ selectedContact }}</span>
+      </div>
+      <div class="message-area" ref="messagesContainer">
+        <div
+          v-for="msg in conversation"
+          :key="msg.id"
+          :class="['msg-row', msg.from === ownAddress ? 'row-self' : 'row-other']"
+        >
+          <div class="msg-bubble">
+            <div class="msg-text" v-if="msg.text">{{ msg.text }}</div>
+            <div class="msg-files" v-if="msg.files?.length">
+              <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary" size="small">
+                {{ f.name }} ({{ formatSize(f.size) }})
+              </t-link>
+            </div>
+            <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
+          </div>
         </div>
-        <div class="msg-text" v-if="msg.text">{{ msg.text }}</div>
-        <div class="msg-files" v-if="msg.files?.length">
-          <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary">
-            {{ f.name }} ({{ formatSize(f.size) }})
-          </t-link>
+      </div>
+      <div class="input-area">
+        <t-textarea
+          v-model="inputText"
+          placeholder="输入消息..."
+          :autosize="{ minRows: 1, maxRows: 4 }"
+          @keydown.enter.prevent="handleSend"
+        />
+        <div class="input-actions">
+          <span class="input-hint">Enter 发送</span>
+          <t-button
+            :disabled="!inputText.trim()"
+            size="small"
+            @click="handleSend"
+          >发送</t-button>
         </div>
       </div>
     </div>
 
-    <!-- Input -->
-    <div class="chat-input">
-      <t-textarea
-        v-model="inputText"
-        placeholder="输入消息..."
-        :autosize="{ minRows: 2, maxRows: 6 }"
-        @keydown.ctrl.enter="handleSend"
-      />
-      <t-button
-        style="margin-top: 8px"
-        :disabled="!inputText.trim() || !selectedContact"
-        @click="handleSend"
-      >
-        发送 (Ctrl+Enter)
-      </t-button>
+    <!-- No conversation selected -->
+    <div class="chat-panel chat-empty" v-else>
+      <t-empty description="选择一个联系人开始聊天" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from "vue";
+import { ref, computed, onMounted, nextTick, watch, markRaw } from "vue";
 import { useYseStore } from "@/stores/yse";
+import { PoweroffIcon, PlayIcon } from "tdesign-icons-vue-next";
 
 const store = useYseStore();
 const inputText = ref("");
 const selectedContact = ref("");
+const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
-
-const contacts = computed(() => {
-  const set = new Set<string>();
-  store.messages.forEach((m) => {
-    set.add(m.from);
-    set.add(m.to);
-  });
-  return Array.from(set)
-    .filter((a) => a !== store.config?.own_address)
-    .map((a) => ({ label: a, value: a }));
-});
 
 const ownAddress = computed(() => store.config?.own_address ?? "me@yse.org");
 const polling = computed(() => store.polling);
 const connected = computed(() => store.connected);
 
-const displayMessages = computed(() => {
+// Build contact list from messages
+interface Contact {
+  address: string;
+  lastText: string;
+  lastTime: number;
+}
+const contacts = computed<Contact[]>(() => {
+  const map = new Map<string, Contact>();
+  for (const m of store.sortedMessages) {
+    const addr = m.from === ownAddress.value ? m.to : m.from;
+    if (addr === ownAddress.value) continue;
+    if (!map.has(addr) || m.timestamp > map.get(addr)!.lastTime) {
+      map.set(addr, {
+        address: addr,
+        lastText: m.text ?? "(文件)",
+        lastTime: m.timestamp,
+      });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => b.lastTime - a.lastTime);
+});
+
+const filteredContacts = computed(() => {
+  if (!searchText.value) return contacts.value;
+  const q = searchText.value.toLowerCase();
+  return contacts.value.filter((c) => c.address.toLowerCase().includes(q));
+});
+
+const conversation = computed(() => {
   const addr = selectedContact.value;
-  if (!addr) return store.sortedMessages;
+  if (!addr) return [];
   return store.sortedMessages.filter(
-    (m) => m.from === addr || m.to === addr,
+    (m) => (m.from === addr && m.to === ownAddress.value) ||
+           (m.from === ownAddress.value && m.to === addr),
   );
 });
 
+function initials(addr: string) {
+  return addr.charAt(0).toUpperCase();
+}
+
+function selectContact(addr: string) {
+  selectedContact.value = addr;
+}
+
 function formatTime(ts: number) {
-  return new Date(ts).toLocaleString("zh-CN");
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }
 
 function formatSize(bytes: number) {
@@ -126,67 +186,160 @@ async function scrollToBottom() {
   }
 }
 
+watch(selectedContact, scrollToBottom);
+
 onMounted(async () => {
   await store.loadMessages();
-  await scrollToBottom();
 });
 </script>
 
 <style scoped>
-.chat-layout {
+.chat-shell {
   display: flex;
-  flex-direction: column;
   height: 100%;
 }
-.chat-header {
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--td-component-stroke);
-  margin-bottom: 16px;
-}
-.chat-messages {
-  flex: 1;
-  overflow-y: auto;
+
+/* ---- Contact panel ---- */
+.contact-panel {
+  width: 280px;
+  min-width: 280px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 8px 0;
+  border-right: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-container);
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 4px;
+}
+.panel-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+.contact-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.contact-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.contact-item:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.contact-item.active {
+  background: var(--td-brand-color-light);
+}
+.contact-info {
+  flex: 1;
+  min-width: 0;
+}
+.contact-name {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.contact-preview {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.connection-bar {
+  padding: 8px 12px;
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid var(--td-component-stroke);
+}
+
+/* ---- Chat panel ---- */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat-empty {
+  align-items: center;
+  justify-content: center;
+}
+.chat-topbar {
+  padding: 12px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-container);
+}
+.message-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.msg-row {
+  display: flex;
+}
+.row-self {
+  justify-content: flex-end;
+}
+.row-other {
+  justify-content: flex-start;
 }
 .msg-bubble {
   max-width: 70%;
-  padding: 10px 14px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
   word-break: break-word;
+  position: relative;
 }
-.msg-self {
-  align-self: flex-end;
-  background: var(--td-brand-color-light);
+.row-self .msg-bubble {
+  background: var(--td-brand-color);
+  color: #fff;
+  border-bottom-right-radius: 4px;
 }
-.msg-other {
-  align-self: flex-start;
+.row-other .msg-bubble {
   background: var(--td-bg-color-secondarycontainer);
-}
-.msg-meta {
-  font-size: 12px;
-  margin-bottom: 4px;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-.msg-from {
-  font-weight: 600;
-  color: var(--td-text-color-primary);
-}
-.msg-time {
-  color: var(--td-text-color-placeholder);
+  border-bottom-left-radius: 4px;
 }
 .msg-text {
   font-size: 14px;
+  line-height: 1.45;
 }
 .msg-files {
+  margin-top: 4px;
+}
+.msg-time {
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.65;
+  text-align: right;
+}
+.input-area {
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-container);
+}
+.input-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 6px;
 }
-.chat-input {
-  border-top: 1px solid var(--td-component-stroke);
-  padding-top: 12px;
+.input-hint {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
 }
 </style>

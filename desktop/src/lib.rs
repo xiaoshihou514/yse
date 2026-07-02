@@ -1,6 +1,7 @@
 mod commands;
 
 use commands::YseState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,6 +27,13 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
+        .setup(|app| {
+            let state = app.state::<YseState>();
+            if let Ok(rt) = tokio::runtime::Runtime::new() {
+                rt.block_on(state.load_config());
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::send_message,
             commands::get_messages,

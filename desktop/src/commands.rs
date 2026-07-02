@@ -41,6 +41,7 @@ pub struct YseState {
     pub sender: RwLock<Option<SmtpSender>>,
     pub poller_running: Arc<std::sync::atomic::AtomicBool>,
     pub plugin_manager: Arc<PluginManager>,
+    #[allow(dead_code)]
     pub router: Arc<Router>,
     pub log_buffer: Arc<RwLock<Vec<LogEntry>>>,
     pub event_tx: EventSender,
@@ -53,11 +54,10 @@ impl YseState {
         let (event_tx, _) = yse_core::event::event_channel();
         let plugin_manager = Arc::new(PluginManager::new());
         let router = Arc::new(Router::new(plugin_manager.clone()));
-        let config = Self::load_config_initial(&*store);
 
         Ok(Self {
             store,
-            config: RwLock::new(config),
+            config: RwLock::new(YseConfig::default()),
             crypto_key: RwLock::new(None),
             sender: RwLock::new(None),
             poller_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -68,17 +68,13 @@ impl YseState {
         })
     }
 
-    fn load_config_initial(store: &dyn Storage) -> YseConfig {
-        // Try synchronous path since we're in a constructor
-        let handle = tokio::runtime::Handle::try_current();
-        match handle {
-            Ok(h) => h
-                .block_on(async { store.get_config_value("config").await })
-                .ok()
-                .flatten()
-                .and_then(|j| serde_json::from_str(&j).ok())
-                .unwrap_or_default(),
-            Err(_) => YseConfig::default(),
+    /// Load persisted config from DB, called from Tauri setup (tokio runtime available).
+    pub async fn load_config(&self) {
+        if let Ok(Some(json)) = self.store.get_config_value("config").await {
+            if let Ok(cfg) = serde_json::from_str::<YseConfig>(&json) {
+                let mut w = self.config.write().await;
+                *w = cfg;
+            }
         }
     }
 
@@ -358,13 +354,18 @@ pub async fn get_logs(
 }
 
 #[tauri::command]
-pub async fn test_email(state: State<'_, YseState>) -> Result<String, String> {
-    let cfg = state.config.read().await;
+pub async fn test_email(
+    state: State<'_, YseState>,
+    server: String,
+    port: u16,
+    username: String,
+    password: String,
+) -> Result<String, String> {
     let p = ImapPoller::new(ImapConfig {
-        server: cfg.email_imap_server.clone(),
-        port: cfg.email_imap_port,
-        username: cfg.email_username.clone(),
-        password: cfg.email_password.clone(),
+        server,
+        port,
+        username,
+        password,
     });
     let _session = p.connect_sync().map_err(|e| format!("IMAP 连接失败: {}", e))?;
     Ok("邮箱连接正常".into())

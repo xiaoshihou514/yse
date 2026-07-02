@@ -3,5 +3,13 @@ name = "yse-mobile"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
 [dependencies]
 yse-core = { path = "../core" }
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true

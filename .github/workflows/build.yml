@@ -1,0 +1,132 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Linux x86_64 desktop (AppImage) ──────────────────────────────────
+  desktop:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev patchelf
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Tauri desktop
+        working-directory: desktop
+        run: cargo tauri build --bundles appimage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yse-desktop-x86_64
+          path: desktop/target/release/bundle/appimage/*.AppImage
+
+  # ── Android APK ─────────────────────────────────────────────────────
+  android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev patchelf
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Init Android project
+        working-directory: mobile
+        continue-on-error: true
+        run: cargo tauri android init
+
+      - name: Build Android APK
+        working-directory: mobile
+        run: cargo tauri android build --apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yse-android-apk
+          path: mobile/gen/android/app/build/outputs/apk/**/*.apk
+
+  # ── Smoke: core tests ────────────────────────────────────────────────
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: cargo check -p yse-core
+      - run: cargo test -p yse-core
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run build

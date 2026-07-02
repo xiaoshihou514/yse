@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 fn main() {
-    println!("YSE Mobile - not yet implemented");
+    yse_mobile::run();
 }

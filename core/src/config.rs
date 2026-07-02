@@ -29,7 +29,8 @@ pub struct YseConfig {
     /// Mapping from virtual address → plugin id
     pub plugin_mappings: Vec<PluginMapping>,
 
-    /// Data directory for SQLite DB
+    /// Data directory for SQLite DB (runtime-only, not persisted)
+    #[serde(skip)]
     pub data_dir: PathBuf,
 }
 
