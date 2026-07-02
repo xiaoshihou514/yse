@@ -114,7 +114,12 @@ async function handleSave() {
 
 async function handleTest() {
   try {
-    const result = await api.testEmail();
+    const result = await api.testEmail(
+      form.email_imap_server,
+      form.email_imap_port,
+      form.email_username,
+      form.email_password,
+    );
     await MessagePlugin.success(result);
   } catch (e) {
     await MessagePlugin.error(`连接失败: ${e}`);
