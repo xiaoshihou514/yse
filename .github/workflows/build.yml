@@ -20,13 +20,13 @@ jobs:
   desktop:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -48,25 +48,27 @@ jobs:
 
       - name: Build Tauri desktop
         working-directory: desktop
-        run: cargo tauri build --bundles appimage
+        run: npx @tauri-apps/cli@^2 build --bundles appimage
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: yse-desktop-x86_64
-          path: desktop/target/release/bundle/appimage/*.AppImage
+          name: yse-linux-desktop-x86_64
+          path: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.deb
 
   # ── Android APK ─────────────────────────────────────────────────────
   android:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          target: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -88,9 +90,6 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2"
-
       - name: Build frontend
         working-directory: frontend
         run: |
@@ -100,26 +99,81 @@ jobs:
       - name: Init Android project
         working-directory: mobile
         continue-on-error: true
-        run: cargo tauri android init
+        run: npx @tauri-apps/cli@^2 android init
+
+      - name: Install npm deps for mobile
+        working-directory: mobile
+        run: npm install
+
+      - name: Set up NDK env for OpenSSL build
+        run: |
+          NDK_DIR=$(ls -1d "$ANDROID_SDK_ROOT/ndk/"*/ 2>/dev/null | head -1)
+          BIN_DIR="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "TARGET_RANLIB=$BIN_DIR/llvm-ranlib" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_RANLIB=$BIN_DIR/llvm-ranlib" >> "$GITHUB_ENV"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
 
       - name: Build Android APK
         working-directory: mobile
-        run: cargo tauri android build --apk
+        run: npx @tauri-apps/cli@^2 android build --apk
 
-      - uses: actions/upload-artifact@v4
+      - name: Sign APK with debug key
+        run: |
+          # Locate Android SDK build-tools
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools"
+          TOOLS_DIR=$(ls -1d "$BUILD_TOOLS"/*/ 2>/dev/null | head -1)
+          if [ -n "$TOOLS_DIR" ]; then
+            echo "Using build-tools: $TOOLS_DIR"
+            export PATH="$TOOLS_DIR:$PATH"
+          else
+            # Fallback: try to find in PATH or common locations
+            echo "build-tools not found at $BUILD_TOOLS, searching PATH..."
+            which zipalign 2>/dev/null || true
+          fi
+
+          APK=$(find mobile/gen/android -name '*-universal-release-unsigned.apk' | head -1)
+          if [ -z "$APK" ]; then
+            # Try broader pattern
+            APK=$(find mobile/gen/android -name '*.apk' | head -1)
+          fi
+          echo "Found unsigned APK: $APK"
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: no APK found to sign"
+            ls -la mobile/gen/android/app/build/outputs/apk/ 2>/dev/null || true
+            exit 1
+          fi
+
+          ALIGNED="${APK/-universal-release-unsigned/-universal-release}"
+          # zipalign may already have been run by Tauri; skip if fails
+          zipalign -f -v 4 "$APK" "$ALIGNED" 2>/dev/null || cp "$APK" "$ALIGNED"
+
+          KEYSTORE=~/.android/debug.keystore
+          if [ -f "$KEYSTORE" ]; then
+            echo "Signing with debug keystore..."
+            apksigner sign --ks "$KEYSTORE" \
+              --ks-key-alias androiddebugkey \
+              --ks-pass pass:android \
+              "$ALIGNED"
+          else
+            echo "Warning: debug keystore not found ($KEYSTORE), APK will be unsigned"
+          fi
+          mv -f "$ALIGNED" "mobile/yse-android-universal-release.apk"
+
+      - uses: actions/upload-artifact@v7
         with:
           name: yse-android-apk
-          path: mobile/gen/android/app/build/outputs/apk/**/*.apk
+          path: mobile/yse-android-universal-release.apk
 
   # ── Smoke: core tests ────────────────────────────────────────────────
   check:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -130,3 +184,38 @@ jobs:
         run: |
           npm ci
           npm run build
+
+  # ── Release: upload artifacts to GitHub Release ─────────────────────
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [desktop, android, check]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to GitHub Release
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          # Find all release files recursively, ignore empty dirs
+          FILES=$(find release-artifacts -type f ! -name '.*' | sort)
+          echo "Uploading files:"
+          echo "$FILES"
+          gh release create latest \
+            --title "Latest Build (${{ steps.sha.outputs.short }})" \
+            --notes "自动构建于 commit \`${{ github.sha }}\`
+
+            **分支:** ${{ github.ref_name }}
+            **Commit:** ${{ github.event.head_commit.message }}
+            **时间:** ${{ github.event.head_commit.timestamp }}" \
+            --prerelease \
+            $FILES
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

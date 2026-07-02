@@ -1,13 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/config.schema.json",
-  "productName": "盐水鹅",
+  "productName": "YSE",
   "version": "0.1.0",
   "identifier": "org.yse.app",
   "build": {
     "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "npm --prefix ../frontend run dev",
+    "beforeBuildCommand": "[ -n \"$CI\" ] || (cd ../frontend && npm run build)"
   },
   "app": {
     "windows": [],

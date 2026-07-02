@@ -355,7 +355,7 @@ pub async fn get_logs(
 
 #[tauri::command]
 pub async fn test_email(
-    state: State<'_, YseState>,
+    _state: State<'_, YseState>,
     server: String,
     port: u16,
     username: String,
