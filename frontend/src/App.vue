@@ -1,7 +1,9 @@
 <template>
   <t-layout class="app-layout">
     <t-aside class="app-aside">
-      <div class="aside-logo">YSE</div>
+      <div class="aside-logo">
+        <img src="/icon.png" alt="YSE" class="logo-img" />
+      </div>
       <div class="aside-nav">
         <div
           v-for="item in navItems"
@@ -80,11 +82,18 @@ function toggleDark(v: boolean) {
   background: var(--td-bg-color-container);
 }
 .aside-logo {
-  font-size: 18px;
-  font-weight: bold;
-  color: var(--td-brand-color);
+  width: 44px;
+  height: 44px;
   margin-bottom: 24px;
   margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.logo-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
 }
 .aside-nav {
   flex: 1;
