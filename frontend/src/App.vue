@@ -89,20 +89,12 @@ function toggleDark(v: boolean) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: rgba(0,0,0,0.6);
   border-radius: 10px;
-}
-:root[theme-mode="dark"] .aside-logo {
-  background: transparent;
-  border-radius: 0;
 }
 .logo-img {
   width: 32px;
   height: 32px;
-  filter: drop-shadow(0 0 3px rgba(0,0,0,0.45));
-}
-:root[theme-mode="dark"] .logo-img {
-  filter: none;
 }
 .aside-nav {
   flex: 1;
