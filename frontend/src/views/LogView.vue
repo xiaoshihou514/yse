@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from "vue";
+import { ref, computed, onMounted, nextTick, watch } from "vue";
 import type { LogEntry } from "@/api/commands";
 import { useYseStore } from "@/stores/yse";
 
@@ -66,20 +66,29 @@ function tagTheme(level: string) {
   }
 }
 
-async function refresh() {
-  await store.loadLogs();
+async function scrollToBottom() {
   await nextTick();
   if (logContainer.value) {
     logContainer.value.scrollTop = logContainer.value.scrollHeight;
   }
 }
 
+async function refresh() {
+  await store.loadLogs();
+  await scrollToBottom();
+}
+
 function clear() {
-  // Clear via Pinia action (resets to empty)
   store.logs.splice(0);
 }
 
-onMounted(refresh);
+// Auto-scroll when new log entries arrive
+watch(() => store.logs.length, scrollToBottom);
+
+onMounted(async () => {
+  await refresh();
+  store.listenForLogs();
+});
 </script>
 
 <style scoped>

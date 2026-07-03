@@ -89,6 +89,26 @@ export const useYseStore = defineStore("yse", () => {
     }
   }
 
+  let unlistenLogs: (() => void) | null = null;
+
+  async function listenForLogs() {
+    // Clean up previous listener
+    if (unlistenLogs) unlistenLogs();
+
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlistenLogs = await listen<LogEntry>("log-entry", (event) => {
+        logs.value.push(event.payload);
+        // Keep last 500 entries
+        if (logs.value.length > 500) {
+          logs.value = logs.value.slice(logs.value.length - 500);
+        }
+      });
+    } catch {
+      // Not in Tauri environment
+    }
+  }
+
   return {
     messages,
     plugins,
@@ -106,5 +126,6 @@ export const useYseStore = defineStore("yse", () => {
     togglePlugin,
     startPolling,
     stopPolling,
+    listenForLogs,
   };
 });

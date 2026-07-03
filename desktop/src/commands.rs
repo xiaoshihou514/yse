@@ -34,6 +34,21 @@ pub struct LogEntry {
 // Application state
 // ---------------------------------------------------------------------------
 
+/// Emit a log entry to the frontend via Tauri event (used from contexts without YseState).
+fn log_emit(app_handle: &Arc<std::sync::Mutex<Option<tauri::AppHandle>>>, level: &str, message: String) {
+    let entry = LogEntry {
+        level: level.into(),
+        message,
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64,
+    };
+    if let Some(h) = app_handle.lock().unwrap().as_ref() {
+        let _ = h.emit("log-entry", &entry);
+    }
+}
+
 pub struct YseState {
     pub store: Arc<dyn Storage>,
     pub config: Arc<RwLock<YseConfig>>,
@@ -137,45 +152,68 @@ impl YseState {
                     tokio::spawn(async move {
                         let own_addr = config.read().await.own_address.clone();
                         let email_user = config.read().await.email_username.clone();
-                        let msg = Message::new(own_addr, to_addr.clone(), text.clone());
+                        let msg = Message::new(own_addr.clone(), to_addr.clone(), text.clone());
+
                         let payload = match msg.to_json() {
                             Ok(p) => p,
-                            Err(_) => return,
+                            Err(_) => {
+                                let _ = log_emit(&app_handle, "error", format!("plugin Send serialization failed"));
+                                return;
+                            }
                         };
                         let key = match crypto_key.read().await.as_ref() {
                             Some(k) => *k,
-                            None => return,
+                            None => {
+                                let _ = log_emit(&app_handle, "warn", format!("plugin Send skipped: crypto key not set"));
+                                return;
+                            }
                         };
                         let encrypted = match encrypt(&key, &payload) {
                             Ok(e) => e,
-                            Err(_) => return,
+                            Err(_) => {
+                                let _ = log_emit(&app_handle, "error", format!("plugin Send encrypt failed"));
+                                return;
+                            }
                         };
+
+                        // Send via SMTP (envelope FROM must match authenticated user)
+                        if let Some(s) = sender.read().await.as_ref() {
+                            let d = disguise::disguise();
+                            match s
+                                .send((&email_user, &d.display_name), &email_user, encrypted, vec![])
+                                .await
+                            {
+                                Ok(_) => {
+                                    let _ = log_emit(&app_handle, "info", format!("plugin Send delivered to {}", to_addr));
+                                }
+                                Err(e) => {
+                                    let _ = log_emit(&app_handle, "error", format!("plugin Send SMTP failed: {}", e));
+                                }
+                            }
+                        }
+
+                        let _ = store.save_message(&msg).await;
+                        let _ = log_emit(&app_handle, "info", format!("plugin Send saved msg {} to {}: {}", msg.id, to_addr, text.as_deref().unwrap_or("")));
 
                         // Notify frontend
                         if let Some(h) = app_handle.lock().unwrap().as_ref() {
                             let _ = h.emit("new-message", &msg);
                         }
-
-                        // Send via SMTP (envelope FROM must match authenticated user)
-                        if let Some(s) = sender.read().await.as_ref() {
-                            let d = disguise::disguise();
-                            // Only the display name is disguised; envelope FROM uses real email
-                            let _ = s
-                                .send((&email_user, &d.display_name), &email_user, encrypted, vec![])
-                                .await;
-                        }
-                        let _ = store.save_message(&msg).await;
                     });
                 }
                 PluginRequest::Log { level, msg } => {
                     let entry = LogEntry {
-                        level,
-                        message: msg,
+                        level: level.clone(),
+                        message: msg.clone(),
                         timestamp: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
                             .as_millis() as u64,
                     };
+                    // Emit to frontend
+                    if let Some(h) = app_handle.lock().unwrap().as_ref() {
+                        let _ = h.emit("log-entry", &entry);
+                    }
                     let buf = log_buffer.clone();
                     tokio::spawn(async move {
                         let mut b = buf.write().await;
@@ -205,6 +243,11 @@ impl YseState {
             level: entry.level.clone(),
             message: entry.message.clone(),
         });
+
+        // Push to frontend in real-time
+        if let Some(handle) = self.app_handle.lock().unwrap().as_ref() {
+            let _ = handle.emit("log-entry", &entry);
+        }
 
         let buf = self.log_buffer.clone();
         tokio::spawn(async move {
@@ -309,6 +352,8 @@ impl YseState {
         &self,
         app_handle: tauri::AppHandle,
     ) -> Result<(), String> {
+        use tauri::Emitter;
+
         let (imap_cfg, key, store, own_addr, mappings, plugin_manager) = {
             let cfg = self.config.read().await;
             let imap = ImapConfig {
@@ -343,15 +388,58 @@ impl YseState {
                 .run(move |raw_email| {
                     let parsed = match parse_incoming(&raw_email) {
                         Ok(p) => p,
-                        Err(_) => return,
+                        Err(e) => {
+                            let entry = LogEntry {
+                                level: "warn".into(),
+                                message: format!("IMAP parse failed: {}", e),
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as u64,
+                            };
+                            let _ = app_handle.emit("log-entry", &entry);
+                            return;
+                        }
                     };
+                    let entry = LogEntry {
+                        level: "info".into(),
+                        message: format!("IMAP received {} bytes, decrypting...", parsed.encrypted_body.len()),
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64,
+                    };
+                    let _ = app_handle.emit("log-entry", &entry);
+
                     let decrypted = match decrypt(&key, &parsed.encrypted_body) {
                         Ok(d) => d,
-                        Err(_) => return,
+                        Err(e) => {
+                            let entry = LogEntry {
+                                level: "warn".into(),
+                                message: format!("decrypt failed: {}", e),
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as u64,
+                            };
+                            let _ = app_handle.emit("log-entry", &entry);
+                            return;
+                        }
                     };
                     let msg = match Message::from_json(&decrypted) {
                         Ok(m) => m,
-                        Err(_) => return,
+                        Err(e) => {
+                            let entry = LogEntry {
+                                level: "warn".into(),
+                                message: format!("JSON parse failed: {}", e),
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as u64,
+                            };
+                            let _ = app_handle.emit("log-entry", &entry);
+                            return;
+                        }
                     };
 
                     let store = store.clone();
@@ -372,6 +460,16 @@ impl YseState {
                             &mapping,
                         )
                         .await;
+
+                        let entry = LogEntry {
+                            level: "info".into(),
+                            message: format!("received msg {} from {} to {}", msg.id, msg.from_addr, msg.to_addr),
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_millis() as u64,
+                        };
+                        let _ = handle.emit("log-entry", &entry);
 
                         if msg.to_addr == own || msg.from_addr == own {
                             let _ = handle.emit("new-message", &msg);
