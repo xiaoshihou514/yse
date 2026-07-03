@@ -389,11 +389,13 @@ impl YseState {
         self.log("info", "IMAP polling started".into());
 
         let poller = ImapPoller::new(imap_cfg);
+        let warn_handle = app_handle.clone();
 
         tokio::spawn(async move {
             poller
-                .run(move |raw_email| {
-                    let parsed = match parse_incoming(&raw_email) {
+                .run_with_warn(
+                    move |raw_email| {
+                        let parsed = match parse_incoming(&raw_email) {
                         Ok(p) => p,
                         Err(e) => {
                             let entry = LogEntry {
@@ -507,8 +509,20 @@ impl YseState {
                             let _ = handle.emit("new-message", &msg);
                         }
                     });
-                })
-                .await;
+                },
+                Arc::new(move |msg| {
+                    let entry = LogEntry {
+                        level: "warn".into(),
+                        message: msg,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64,
+                    };
+                    let _ = warn_handle.emit("log-entry", &entry);
+                }),
+            )
+            .await;
         });
 
         Ok(())
