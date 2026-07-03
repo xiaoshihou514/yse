@@ -26,6 +26,7 @@
         <t-input v-model="newId" placeholder="插件 ID" />
         <t-input v-model="newName" placeholder="显示名称" />
         <t-input v-model="newExec" placeholder="可执行文件路径" style="width: 300px" />
+        <t-button variant="outline" @click="pickFile">选择文件</t-button>
         <t-button @click="handleAdd">添加插件</t-button>
       </t-space>
     </t-card>
@@ -94,6 +95,21 @@ async function handleAdd() {
     await MessagePlugin.success("插件已添加");
   } catch (e) {
     await MessagePlugin.error(`添加失败: ${e}`);
+  }
+}
+
+async function pickFile() {
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      multiple: false,
+      title: "选择可执行文件",
+    });
+    if (selected) {
+      newExec.value = selected;
+    }
+  } catch {
+    // Not in Tauri runtime, skip
   }
 }
 
