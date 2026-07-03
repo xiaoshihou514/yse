@@ -387,10 +387,14 @@ pub async fn list_plugins(
 #[tauri::command]
 pub async fn add_plugin(
     state: State<'_, YseState>,
-    id: String,
     name: String,
     exec_path: String,
 ) -> Result<(), String> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    name.hash(&mut hasher);
+    let id = format!("{:x}", hasher.finish());
+
     let pc = PluginConfig {
         id: id.clone(),
         name,

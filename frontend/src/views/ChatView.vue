@@ -115,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch, markRaw } from "vue";
+import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { useYseStore } from "@/stores/yse";
 import { PoweroffIcon, PlayIcon, EditIcon } from "tdesign-icons-vue-next";
 
@@ -131,7 +131,7 @@ const ownAddress = computed(() => store.config?.own_address ?? "me@yse.org");
 const polling = computed(() => store.polling);
 const connected = computed(() => store.connected);
 
-// Build contact list from messages
+// Build contact list from messages + mappings
 interface Contact {
   address: string;
   lastText: string;
@@ -139,6 +139,7 @@ interface Contact {
 }
 const contacts = computed<Contact[]>(() => {
   const map = new Map<string, Contact>();
+  // From messages
   for (const m of store.sortedMessages) {
     const addr = m.from === ownAddress.value ? m.to : m.from;
     if (addr === ownAddress.value) continue;
@@ -147,6 +148,16 @@ const contacts = computed<Contact[]>(() => {
         address: addr,
         lastText: m.text ?? "(文件)",
         lastTime: m.timestamp,
+      });
+    }
+  }
+  // From mappings (contacts without messages yet)
+  for (const m of store.config?.plugin_mappings ?? []) {
+    if (!map.has(m.virtual_addr)) {
+      map.set(m.virtual_addr, {
+        address: m.virtual_addr,
+        lastText: m.plugin_id ? `→ ${m.plugin_id}` : "",
+        lastTime: 0,
       });
     }
   }

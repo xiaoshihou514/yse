@@ -21,12 +21,8 @@
           :title="isDark ? '切换亮色' : '切换暗色'"
           @click="toggleDark(!isDark)"
         >
-          <template v-if="isDark">
-            <mode-light-icon />
-          </template>
-          <template v-else>
-            <mode-dark-icon />
-          </template>
+          <template v-if="isDark"><mode-light-icon /></template>
+          <template v-else><mode-dark-icon /></template>
         </div>
       </div>
     </t-aside>
@@ -40,7 +36,7 @@
 import { ref, computed, markRaw } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import {
-  ChatIcon, ExtensionIcon, SettingIcon, FileIcon,
+  ChatIcon, ExtensionIcon, SettingIcon, FileIcon, UserIcon,
   ModeLightIcon, ModeDarkIcon,
 } from "tdesign-icons-vue-next";
 
@@ -53,6 +49,7 @@ const isDark = ref(document.documentElement.getAttribute("theme-mode") === "dark
 const navItems = [
   { path: "/", label: "聊天", icon: markRaw(ChatIcon) },
   { path: "/plugins", label: "插件", icon: markRaw(ExtensionIcon) },
+  { path: "/contacts", label: "联系人", icon: markRaw(UserIcon) },
   { path: "/config", label: "配置", icon: markRaw(SettingIcon) },
   { path: "/logs", label: "日志", icon: markRaw(FileIcon) },
 ];
@@ -69,66 +66,28 @@ function toggleDark(v: boolean) {
 </script>
 
 <style scoped>
-.app-layout {
-  height: 100vh;
-}
+.app-layout { height: 100vh; }
 .app-aside {
-  display: flex !important;
-  flex-direction: column;
-  align-items: center;
-  width: 64px !important;
-  padding: 8px 0;
+  display: flex !important; flex-direction: column; align-items: center;
+  width: 64px !important; padding: 8px 0;
   border-right: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
 }
 .aside-logo {
-  width: 44px;
-  height: 44px;
-  margin-bottom: 24px;
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0,0,0,0.6);
-  border-radius: 10px;
+  width: 44px; height: 44px; margin-bottom: 24px; margin-top: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.6); border-radius: 10px;
 }
-.logo-img {
-  width: 32px;
-  height: 32px;
-}
-.aside-nav {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.aside-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.logo-img { width: 32px; height: 32px; }
+.aside-nav { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.aside-footer { display: flex; flex-direction: column; gap: 4px; }
 .nav-item {
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--td-text-color-secondary);
-  font-size: 22px;
+  width: 44px; height: 44px; display: flex; align-items: center;
+  justify-content: center; border-radius: 8px; cursor: pointer;
+  color: var(--td-text-color-secondary); font-size: 22px;
   transition: background 0.15s, color 0.15s;
 }
-.nav-item:hover {
-  background: var(--td-bg-color-secondarycontainer);
-  color: var(--td-text-color-primary);
-}
-.nav-item.active {
-  background: var(--td-brand-color-light);
-  color: var(--td-brand-color);
-}
-.main-content {
-  overflow-y: auto;
-  background: var(--td-bg-color-page);
-}
+.nav-item:hover { background: var(--td-bg-color-secondarycontainer); color: var(--td-text-color-primary); }
+.nav-item.active { background: var(--td-brand-color-light); color: var(--td-brand-color); }
+.main-content { overflow-y: auto; background: var(--td-bg-color-page); }
 </style>
