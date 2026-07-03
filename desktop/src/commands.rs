@@ -45,6 +45,7 @@ pub struct YseState {
     pub router: Arc<Router>,
     pub log_buffer: Arc<RwLock<Vec<LogEntry>>>,
     pub event_tx: EventSender,
+    pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
 }
 
 impl YseState {
@@ -65,6 +66,7 @@ impl YseState {
             router,
             log_buffer: Arc::new(RwLock::new(Vec::new())),
             event_tx,
+            app_handle: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 
@@ -115,12 +117,14 @@ impl YseState {
     pub fn setup_plugin_handler(&self) {
         use yse_core::crypto::encrypt;
         use yse_core::plugin::protocol::PluginRequest;
+        use tauri::Emitter;
 
         let store = self.store.clone();
         let config = self.config.clone();
         let crypto_key = self.crypto_key.clone();
         let sender = self.sender.clone();
         let log_buffer = self.log_buffer.clone();
+        let app_handle = self.app_handle.clone();
 
         let handler: yse_core::plugin::process::PluginRequestHandler = Arc::new(move |req| {
             match req {
@@ -129,6 +133,7 @@ impl YseState {
                     let config = config.clone();
                     let crypto_key = crypto_key.clone();
                     let sender = sender.clone();
+                    let app_handle = app_handle.clone();
                     tokio::spawn(async move {
                         let own_addr = config.read().await.own_address.clone();
                         let email_user = config.read().await.email_username.clone();
@@ -145,10 +150,18 @@ impl YseState {
                             Ok(e) => e,
                             Err(_) => return,
                         };
-                        let d = disguise::disguise();
+
+                        // Notify frontend
+                        if let Some(h) = app_handle.lock().unwrap().as_ref() {
+                            let _ = h.emit("new-message", &msg);
+                        }
+
+                        // Send via SMTP (envelope FROM must match authenticated user)
                         if let Some(s) = sender.read().await.as_ref() {
+                            let d = disguise::disguise();
+                            // Only the display name is disguised; envelope FROM uses real email
                             let _ = s
-                                .send((&d.from_addr, &d.display_name), &email_user, encrypted, vec![])
+                                .send((&email_user, &d.display_name), &email_user, encrypted, vec![])
                                 .await;
                         }
                         let _ = store.save_message(&msg).await;
@@ -216,42 +229,20 @@ pub async fn send_message(
     text: String,
     _files: Option<Vec<String>>,
 ) -> Result<(), String> {
-    let cfg = state.config.read().await;
     let key = state.crypto_key.read().await;
     let key = key.as_ref().ok_or("crypto key not set")?;
-    let sender = state.sender.read().await;
-    let sender = sender.as_ref().ok_or("SMTP not configured")?;
-
-    let email_username = cfg.email_username.clone();
-    let own_addr = cfg.own_address.clone();
+    let own_addr = state.config.read().await.own_address.clone();
     let msg = Message::new(own_addr, to.clone(), Some(text));
-    drop(cfg);
 
-    let payload = msg.to_json().map_err(|e| e.to_string())?;
-    let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
-    let d = disguise::disguise();
-
-    // Use authenticated user's email as FROM (SMTP relay requires envelope sender match)
-    sender
-        .send(
-            (&email_username, &d.display_name),
-            &email_username,
-            encrypted,
-            vec![],
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
-    state.store.save_message(&msg).await.map_err(|e| e.to_string())?;
-
-    // Also dispatch locally if to address matches a plugin mapping
-    {
+    // Dispatch to plugins first (independent of SMTP availability)
+    let email_username = {
         let cfg = state.config.read().await;
         let mappings: Vec<(String, String)> = cfg
             .plugin_mappings
             .iter()
             .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
             .collect();
+        let email = cfg.email_username.clone();
         state
             .plugin_manager
             .dispatch_message(
@@ -263,6 +254,26 @@ pub async fn send_message(
                 &mappings,
             )
             .await;
+        email
+    };
+
+    // Save message regardless of SMTP
+    state.store.save_message(&msg).await.map_err(|e| e.to_string())?;
+
+    // Send via SMTP (best-effort for external delivery)
+    if let Some(sender) = state.sender.read().await.as_ref() {
+        let payload = msg.to_json().map_err(|e| e.to_string())?;
+        let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
+        let d = disguise::disguise();
+        sender
+            .send(
+                (&email_username, &d.display_name),
+                &email_username,
+                encrypted,
+                vec![],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     state.log("info", format!("sent message to {}", to));

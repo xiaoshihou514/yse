@@ -31,6 +31,8 @@ pub fn run() {
         .setup(|app| {
             let state = app.state::<YseState>();
             let handle = app.handle().clone();
+            // Store app handle for plugin handler to emit events
+            *state.app_handle.lock().unwrap() = Some(handle.clone());
             if let Ok(rt) = tokio::runtime::Runtime::new() {
                 rt.block_on(async {
                     state.load_config().await;
