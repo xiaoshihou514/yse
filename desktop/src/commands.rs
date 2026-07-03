@@ -354,8 +354,10 @@ pub async fn start_plugin(
 
 #[tauri::command]
 pub async fn stop_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
-    state.plugin_manager.stop_plugin(&id).await?;
-    state.log("info", format!("plugin stopped: {}", id));
+    match state.plugin_manager.stop_plugin(&id).await {
+        Ok(_) => state.log("info", format!("plugin stopped: {}", id)),
+        Err(_) => state.log("info", format!("plugin {} not running, skipping", id)),
+    }
     Ok(())
 }
 

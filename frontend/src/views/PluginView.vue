@@ -73,7 +73,9 @@ async function handleToggle(row: PluginConfig, enabled: boolean) {
 
 async function handleDelete(row: PluginConfig) {
   try {
+    const { invoke } = await import("@tauri-apps/api/core");
     await store.togglePlugin(row.id, false);
+    await invoke("remove_plugin", { id: row.id });
     await MessagePlugin.success(`已删除 ${row.name}`);
     await store.loadPlugins();
   } catch (e) {
