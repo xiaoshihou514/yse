@@ -12,6 +12,9 @@
             <t-button theme="danger" variant="text">删除</t-button>
           </t-popconfirm>
         </template>
+        <template #plugin_id="{ row }">
+          {{ pluginName(row.plugin_id) || row.plugin_id }}
+        </template>
       </t-table>
 
       <t-divider />
@@ -66,6 +69,10 @@ function ensureSuffix(name: string): string {
   if (!name) return "";
   if (name.includes("@")) return name;
   return name + "@yse.org";
+}
+
+function pluginName(id: string): string | undefined {
+  return store.plugins.find((p) => p.id === id)?.name;
 }
 
 async function handleAdd() {

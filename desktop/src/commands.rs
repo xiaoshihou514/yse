@@ -111,6 +111,20 @@ impl YseState {
                         self.log("info", "crypto key restored from saved password".into());
                     }
                 }
+                // Initialize SMTP sender so it's ready without re-saving
+                {
+                    let cfg = self.config.read().await;
+                    let smtp_cfg = SmtpConfig {
+                        server: cfg.email_smtp_server.clone(),
+                        port: cfg.email_smtp_port,
+                        username: cfg.email_username.clone(),
+                        password: cfg.email_password.clone(),
+                    };
+                    if !smtp_cfg.server.is_empty() && !smtp_cfg.username.is_empty() {
+                        *self.sender.write().await = Some(SmtpSender::new(smtp_cfg));
+                        self.log("info", "SMTP sender initialized from saved config".into());
+                    }
+                }
             }
         }
     }
