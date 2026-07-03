@@ -47,7 +47,6 @@ pub fn run() {
             commands::get_messages,
             commands::get_config,
             commands::save_config,
-            commands::set_crypto_password,
             commands::start_polling,
             commands::stop_polling,
             commands::list_plugins,

@@ -22,8 +22,7 @@ pub struct YseConfig {
     /// Own virtual identity
     pub own_address: String,
 
-    /// Encryption password (kept in memory, not serialized to disk as plaintext)
-    #[serde(skip)]
+    /// Encryption password (derived into ChaCha20-Poly1305 key via Argon2id)
     pub crypto_password: String,
 
     /// Mapping from virtual address → plugin id

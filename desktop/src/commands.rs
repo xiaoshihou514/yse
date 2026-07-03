@@ -72,8 +72,17 @@ impl YseState {
     pub async fn load_config(&self) {
         if let Ok(Some(json)) = self.store.get_config_value("config").await {
             if let Ok(cfg) = serde_json::from_str::<YseConfig>(&json) {
+                let password = cfg.crypto_password.clone();
                 let mut w = self.config.write().await;
                 *w = cfg;
+                drop(w);
+                if !password.is_empty() {
+                    let key = derive_key(&password).map_err(|e| e.to_string()).ok();
+                    if let Some(k) = key {
+                        *self.crypto_key.write().await = Some(k);
+                        self.log("info", "crypto key restored from saved password".into());
+                    }
+                }
             }
         }
     }
@@ -86,6 +95,12 @@ impl YseState {
             password: cfg.email_password.clone(),
         };
         *self.sender.write().await = Some(SmtpSender::new(smtp_cfg));
+
+        // Auto-derive crypto key if password changed
+        if !cfg.crypto_password.is_empty() {
+            let new_key = derive_key(&cfg.crypto_password).map_err(|e| e.to_string())?;
+            *self.crypto_key.write().await = Some(new_key);
+        }
 
         self.store
             .set_config_value("config", &serde_json::to_string(&cfg).unwrap())
@@ -275,17 +290,6 @@ pub async fn get_config(state: State<'_, YseState>) -> Result<YseConfig, String>
 #[tauri::command]
 pub async fn save_config(state: State<'_, YseState>, config: YseConfig) -> Result<(), String> {
     state.update_config(config).await
-}
-
-#[tauri::command]
-pub async fn set_crypto_password(
-    state: State<'_, YseState>,
-    password: String,
-) -> Result<(), String> {
-    let key = derive_key(&password).map_err(|e| e.to_string())?;
-    *state.crypto_key.write().await = Some(key);
-    state.log("info", "crypto key derived".into());
-    Ok(())
 }
 
 impl YseState {
