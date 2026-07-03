@@ -65,11 +65,10 @@ impl ImapPoller {
             .map_err(|(e, _)| ImapError::Login(e.to_string()))?;
 
         // IMAP requires a selected (or examined) mailbox before SEARCH/FETCH.
-        // Try EXAMINE (read-only) first; some servers (e.g. 163) may reject SELECT
-        // but accept EXAMINE.
+        // Some servers (e.g. 163) may reject SELECT (read-write) but accept
+        // EXAMINE (read-only).  Try EXAMINE first, fall back to SELECT.
         let mailbox = session
-            .noop()
-            .and_then(|_| session.examine("INBOX"))
+            .examine("INBOX")
             .or_else(|_| session.select("INBOX"));
 
         if let Err(e) = mailbox {
