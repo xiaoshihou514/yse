@@ -1,0 +1,6 @@
+[plugin]
+id = "echo-bot"
+name = "Echo Bot"
+version = "0.1.0"
+exec = "echo-bot"
+description = "Simple echo plugin for testing JSON-RPC communication"

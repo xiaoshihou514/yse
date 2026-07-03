@@ -6,4 +6,3 @@ dist
 frontend/node_modules
 frontend/dist
 mobile/gen/
-plugins/
