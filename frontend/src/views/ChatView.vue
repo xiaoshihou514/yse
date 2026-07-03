@@ -46,7 +46,10 @@
           :key="msg.id"
           :class="['msg-row', msg.from === ownAddress ? 'row-self' : 'row-other']"
         >
-          <div class="msg-bubble">
+          <div
+            class="msg-bubble"
+            @contextmenu.prevent="onBubbleContext($event, msg)"
+          >
             <div class="msg-text" v-if="msg.text">{{ msg.text }}</div>
             <div class="msg-files" v-if="msg.files?.length">
               <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary" size="small">
@@ -81,6 +84,14 @@
     <div class="chat-panel chat-empty" v-else>
       <t-empty description="选择一个联系人开始聊天" />
     </div>
+  <!-- Context menu -->
+    <div
+      v-if="ctxMenu.visible"
+      class="context-menu"
+      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+    >
+      <div class="ctx-item" @click="copyCtxText">复制</div>
+    </div>
   </div>
 </template>
 
@@ -96,6 +107,25 @@ const selectedContact = ref("");
 const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+
+// Context menu state
+const ctxMenu = ref<{ visible: boolean; x: number; y: number; text: string }>({
+  visible: false, x: 0, y: 0, text: "",
+});
+
+function onBubbleContext(e: MouseEvent, msg: { text?: string }) {
+  ctxMenu.value = { visible: true, x: e.clientX, y: e.clientY, text: msg.text ?? "" };
+}
+
+function copyCtxText() {
+  if (ctxMenu.value.text) navigator.clipboard.writeText(ctxMenu.value.text);
+  ctxMenu.value.visible = false;
+}
+
+// Close context menu on click outside
+document.addEventListener("click", () => {
+  if (ctxMenu.value.visible) ctxMenu.value.visible = false;
+});
 
 const ownAddress = computed(() => store.config?.own_address ?? "me@yse.org");
 const connected = computed(() => store.connected);
@@ -371,5 +401,25 @@ onMounted(async () => {
 .input-hint {
   font-size: 12px;
   color: var(--td-text-color-placeholder);
+}
+.context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 8px;
+  box-shadow: var(--td-shadow-2);
+  padding: 4px 0;
+  min-width: 100px;
+}
+.ctx-item {
+  padding: 6px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--td-text-color-primary);
+  transition: background 0.1s;
+}
+.ctx-item:hover {
+  background: var(--td-bg-color-secondarycontainer);
 }
 </style>
