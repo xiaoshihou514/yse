@@ -239,6 +239,7 @@ watch(selectedContact, scrollToBottom);
 
 onMounted(async () => {
   await store.loadMessages();
+  store.listenForMessages();
 });
 </script>
 

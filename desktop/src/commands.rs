@@ -37,7 +37,7 @@ pub struct LogEntry {
 /// Emit a log entry: push to Tauri event (if app_handle ready) + buffer.
 fn log_emit(
     app_handle: &Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
-    log_buffer: &Arc<tokio::sync::RwLock<Vec<LogEntry>>>,
+    log_buffer: &Arc<std::sync::Mutex<Vec<LogEntry>>>,
     level: &str,
     message: String,
 ) {
@@ -52,15 +52,12 @@ fn log_emit(
     if let Some(h) = app_handle.lock().unwrap().as_ref() {
         let _ = h.emit("log-entry", &entry);
     }
-    let buf = log_buffer.clone();
-    tokio::spawn(async move {
-        let mut b = buf.write().await;
-        b.push(entry);
-        if b.len() > 1000 {
-            let keep = b.len() - 500;
-            b.drain(0..keep);
-        }
-    });
+    let mut buf = log_buffer.lock().unwrap();
+    buf.push(entry);
+    if buf.len() > 1000 {
+        let keep = buf.len() - 500;
+        buf.drain(0..keep);
+    }
 }
 
 pub struct YseState {
@@ -72,7 +69,7 @@ pub struct YseState {
     pub plugin_manager: Arc<PluginManager>,
     #[allow(dead_code)]
     pub router: Arc<Router>,
-    pub log_buffer: Arc<RwLock<Vec<LogEntry>>>,
+    pub log_buffer: Arc<std::sync::Mutex<Vec<LogEntry>>>,
     pub event_tx: EventSender,
     pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
 }
@@ -93,7 +90,7 @@ impl YseState {
             poller_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             plugin_manager,
             router,
-            log_buffer: Arc::new(RwLock::new(Vec::new())),
+            log_buffer: Arc::new(std::sync::Mutex::new(Vec::new())),
             event_tx,
             app_handle: Arc::new(std::sync::Mutex::new(None)),
         })
@@ -243,15 +240,12 @@ impl YseState {
             let _ = handle.emit("log-entry", &entry);
         }
 
-        let buf = self.log_buffer.clone();
-        tokio::spawn(async move {
-            let mut b = buf.write().await;
-            b.push(entry);
-            if b.len() > 1000 {
-                let keep = b.len() - 500;
-                b.drain(0..keep);
-            }
-        });
+        let mut buf = self.log_buffer.lock().unwrap();
+        buf.push(entry);
+        if buf.len() > 1000 {
+            let keep = buf.len() - 500;
+            buf.drain(0..keep);
+        }
     }
 }
 
@@ -313,6 +307,8 @@ pub async fn send_message(
         {
             state.log("error", format!("SMTP send failed: {}", e));
         }
+    } else {
+        state.log("warn", "SMTP not configured, message not sent via email".into());
     }
 
     state.log("info", format!("sent message to {}", to));
@@ -626,7 +622,7 @@ pub async fn get_logs(
     state: State<'_, YseState>,
     limit: Option<usize>,
 ) -> Result<Vec<LogEntry>, String> {
-    let buf = state.log_buffer.read().await;
+    let buf = state.log_buffer.lock().unwrap();
     let limit = limit.unwrap_or(100);
     let start = if buf.len() > limit { buf.len() - limit } else { 0 };
     Ok(buf[start..].to_vec())

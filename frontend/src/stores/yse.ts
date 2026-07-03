@@ -90,6 +90,8 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   let unlistenLogs: (() => void) | null = null;
+  let unlistenMessages: (() => void) | null = null;
+  let messageReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function listenForLogs() {
     // Clean up previous listener
@@ -103,6 +105,19 @@ export const useYseStore = defineStore("yse", () => {
         if (logs.value.length > 500) {
           logs.value = logs.value.slice(logs.value.length - 500);
         }
+      });
+    } catch {
+      // Not in Tauri environment
+    }
+  }
+
+  async function listenForMessages() {
+    if (unlistenMessages) unlistenMessages();
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlistenMessages = await listen("new-message", () => {
+        if (messageReloadTimer) clearTimeout(messageReloadTimer);
+        messageReloadTimer = setTimeout(loadMessages, 500);
       });
     } catch {
       // Not in Tauri environment
@@ -127,5 +142,6 @@ export const useYseStore = defineStore("yse", () => {
     startPolling,
     stopPolling,
     listenForLogs,
+    listenForMessages,
   };
 });
