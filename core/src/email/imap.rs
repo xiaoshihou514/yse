@@ -64,9 +64,20 @@ impl ImapPoller {
             .login(&self.config.username, &self.config.password)
             .map_err(|(e, _)| ImapError::Login(e.to_string()))?;
 
-        session
-            .select("INBOX")
-            .map_err(|e| ImapError::Connect(format!("select INBOX failed: {}", e)))?;
+        // IMAP requires a selected (or examined) mailbox before SEARCH/FETCH.
+        // Try EXAMINE (read-only) first; some servers (e.g. 163) may reject SELECT
+        // but accept EXAMINE.
+        let mailbox = session
+            .noop()
+            .and_then(|_| session.examine("INBOX"))
+            .or_else(|_| session.select("INBOX"));
+
+        if let Err(e) = mailbox {
+            return Err(ImapError::Connect(format!(
+                "select/examine INBOX failed: {}",
+                e
+            )));
+        }
 
         Ok(session)
     }
