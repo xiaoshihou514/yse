@@ -89,11 +89,12 @@ function toggleDark(v: boolean) {
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #fff;
+  border-radius: 10px;
 }
 .logo-img {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
 }
 .aside-nav {
   flex: 1;
