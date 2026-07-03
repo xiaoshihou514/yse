@@ -82,8 +82,10 @@ impl ManagedPlugin {
                         "send" => {
                             if let Some(p) = params {
                                 if let Some(to) = p["to"].as_str() {
+                                    let from = p["from"].as_str().unwrap_or("plugin");
                                     if let Some(h) = handler {
                                         h(PluginRequest::Send {
+                                            from_addr: from.to_string(),
                                             to_addr: to.to_string(),
                                             text: p["text"].as_str().map(String::from),
                                             meta: p.get("meta").cloned(),

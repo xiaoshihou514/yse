@@ -31,6 +31,7 @@ fn main() {
                 let mut response = serde_json::json!({
                     "method": "send",
                     "params": {
+                        "from": _to,
                         "to": from,
                         "text": format!("Echo: {}", text)
                     },

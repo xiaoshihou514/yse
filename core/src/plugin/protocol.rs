@@ -7,6 +7,8 @@ pub enum PluginRequest {
     /// Plugin asks core to send a message
     #[serde(rename = "send")]
     Send {
+        #[serde(rename = "from")]
+        from_addr: String,
         #[serde(rename = "to")]
         to_addr: String,
         text: Option<String>,

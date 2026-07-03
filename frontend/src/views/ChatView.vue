@@ -22,7 +22,7 @@
         >
           <t-avatar size="40px">{{ initials(c.address) }}</t-avatar>
           <div class="contact-info">
-            <div class="contact-name">{{ c.address }}</div>
+            <div class="contact-name">{{ contactLabel(c.address) }}</div>
             <div class="contact-preview">{{ c.lastText }}</div>
           </div>
         </div>
@@ -38,7 +38,7 @@
     <!-- Chat area -->
     <div class="chat-panel" v-if="selectedContact">
       <div class="chat-topbar">
-        <span class="topbar-name">{{ selectedContact }}</span>
+        <span class="topbar-name">{{ contactLabel(selectedContact) }}</span>
       </div>
       <div class="message-area" ref="messagesContainer">
         <div
@@ -180,6 +180,10 @@ const conversation = computed(() => {
 
 function initials(addr: string) {
   return addr.charAt(0).toUpperCase();
+}
+
+function contactLabel(addr: string) {
+  return addr.replace(/@yse\.org$/, "");
 }
 
 function selectContact(addr: string) {

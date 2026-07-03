@@ -157,7 +157,7 @@ impl YseState {
 
         let handler: yse_core::plugin::process::PluginRequestHandler = Arc::new(move |req| {
             match req {
-                PluginRequest::Send { to_addr, text, .. } => {
+                PluginRequest::Send { from_addr, to_addr, text, .. } => {
                     let store = store.clone();
                     let config = config.clone();
                     let crypto_key = crypto_key.clone();
@@ -165,9 +165,8 @@ impl YseState {
                     let app_handle = app_handle.clone();
                     let log_buffer = log_buffer.clone();
                     tokio::spawn(async move {
-                        let own_addr = config.read().await.own_address.clone();
                         let email_user = config.read().await.email_username.clone();
-                        let msg = Message::new(own_addr.clone(), to_addr.clone(), text.clone());
+                        let msg = Message::new(from_addr.clone(), to_addr.clone(), text.clone());
 
                         let payload = match msg.to_json() {
                             Ok(p) => p,
