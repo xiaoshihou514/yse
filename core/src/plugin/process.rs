@@ -220,6 +220,8 @@ impl PluginManager {
         }
     }
 
+    /// Dispatch a message to matching plugins. Returns number of plugins that
+    /// actually received the notification (i.e. the plugin was running).
     pub async fn dispatch_message(
         &self,
         to_addr: &str,
@@ -228,17 +230,20 @@ impl PluginManager {
         meta: Option<&serde_json::Value>,
         files: Option<&Vec<crate::message::FileAttachment>>,
         mapping: &[(String, String)],
-    ) {
+    ) -> usize {
         let map = self.plugins.lock().await;
+        let mut count = 0;
         for (vaddr, pid) in mapping {
             if vaddr == to_addr {
                 if let Some(plugin) = map.get(pid.as_str()) {
                     let _ = plugin
                         .send_message_notification(from_addr, to_addr, text, meta, files)
                         .await;
+                    count += 1;
                 }
             }
         }
+        count
     }
 
     pub async fn list_running(&self) -> Vec<String> {

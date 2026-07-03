@@ -280,7 +280,7 @@ pub async fn send_message(
     let msg = Message::new(own_addr, to.clone(), Some(text));
 
     // Dispatch to plugins first (independent of SMTP availability)
-    let email_username = {
+    let (email_username, dispatch_count) = {
         let cfg = state.config.read().await;
         let mappings: Vec<(String, String)> = cfg
             .plugin_mappings
@@ -288,7 +288,7 @@ pub async fn send_message(
             .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
             .collect();
         let email = cfg.email_username.clone();
-        state
+        let n = state
             .plugin_manager
             .dispatch_message(
                 &msg.to_addr,
@@ -299,18 +299,13 @@ pub async fn send_message(
                 &mappings,
             )
             .await;
-        email
+        (email, n)
     };
 
-    // Log plugin dispatch status
-    {
-        let cfg = state.config.read().await;
-        let match_count = cfg.plugin_mappings.iter()
-            .filter(|m| m.virtual_addr == msg.to_addr)
-            .count();
-        if match_count > 0 {
-            state.log("info", format!("dispatched to {} plugin(s) for {}", match_count, msg.to_addr));
-        }
+    if dispatch_count > 0 {
+        state.log("info", format!("dispatched to {} plugin(s) for {}", dispatch_count, msg.to_addr));
+    } else {
+        state.log("debug", format!("no running plugin for {}", msg.to_addr));
     }
 
     // Save message regardless of SMTP
@@ -371,7 +366,7 @@ impl YseState {
     ) -> Result<(), String> {
         use tauri::Emitter;
 
-        let (imap_cfg, key, store, own_addr, mappings, plugin_manager) = {
+        let (imap_cfg, key, store, own_addr, plugin_manager, yse_cfg) = {
             let cfg = self.config.read().await;
             let imap = ImapConfig {
                 server: cfg.email_imap_server.clone(),
@@ -379,11 +374,6 @@ impl YseState {
                 username: cfg.email_username.clone(),
                 password: cfg.email_password.clone(),
             };
-            let mappings: Vec<(String, String)> = cfg
-                .plugin_mappings
-                .iter()
-                .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
-                .collect();
             drop(cfg);
 
             let key = self
@@ -393,7 +383,7 @@ impl YseState {
                 .clone()
                 .ok_or("crypto key not set")?;
 
-            (imap, key, self.store.clone(), self.config.read().await.own_address.clone(), mappings, self.plugin_manager.clone())
+            (imap, key, self.store.clone(), self.config.read().await.own_address.clone(), self.plugin_manager.clone(), self.config.clone())
         };
 
         self.log("info", "IMAP polling started".into());
@@ -463,26 +453,38 @@ impl YseState {
                     let handle = app_handle.clone();
                     let own = own_addr.clone();
                     let pm = plugin_manager.clone();
-                    let mapping = mappings.clone();
+                    let cfg = yse_cfg.clone();
 
                     tokio::spawn(async move {
                         let _ = store.save_message(&msg).await;
 
                         let already = store.is_processed(&msg.id).await.unwrap_or(false);
                         if !already {
-                            pm.dispatch_message(
+                            let mappings: Vec<(String, String)> = cfg
+                                .read()
+                                .await
+                                .plugin_mappings
+                                .iter()
+                                .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
+                                .collect();
+                            let n = pm.dispatch_message(
                                 &msg.to_addr,
                                 &msg.from_addr,
                                 msg.text.as_deref(),
                                 msg.meta.as_ref(),
                                 msg.files.as_ref(),
-                                &mapping,
+                                &mappings,
                             )
                             .await;
                             let _ = store.mark_processed(&msg.id).await;
+                            let log_msg = if n > 0 {
+                                format!("dispatched msg {} to {} plugin(s)", msg.id, n)
+                            } else {
+                                format!("msg {}: no running plugin for {}", msg.id, msg.to_addr)
+                            };
                             let log = LogEntry {
                                 level: "info".into(),
-                                message: format!("dispatched msg {} to plugins", msg.id),
+                                message: log_msg,
                                 timestamp: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap()
