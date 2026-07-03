@@ -58,12 +58,14 @@
         </div>
       </div>
       <div class="input-area">
-        <t-textarea
+        <textarea
+          ref="inputRef"
           v-model="inputText"
           placeholder="输入消息..."
-          :autosize="{ minRows: 1, maxRows: 4 }"
+          rows="1"
+          class="chat-textarea"
           @keydown="onInputKeydown"
-        />
+        ></textarea>
         <div class="input-actions">
           <span class="input-hint">Enter 发送</span>
           <t-button
@@ -84,6 +86,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 
 
@@ -92,6 +95,7 @@ const inputText = ref("");
 const selectedContact = ref("");
 const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
+const inputRef = ref<HTMLTextAreaElement | null>(null);
 
 const ownAddress = computed(() => store.config?.own_address ?? "me@yse.org");
 const connected = computed(() => store.connected);
@@ -171,13 +175,23 @@ function onInputKeydown(e: KeyboardEvent) {
     e.preventDefault();
     handleSend();
   }
+  // Auto-resize
+  const el = inputRef.value;
+  if (el) {
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  }
 }
 
 async function handleSend() {
   if (!inputText.value.trim() || !selectedContact.value) return;
-  await store.sendMessage(selectedContact.value, inputText.value.trim());
-  inputText.value = "";
-  await scrollToBottom();
+  try {
+    await store.sendMessage(selectedContact.value, inputText.value.trim());
+    inputText.value = "";
+    await scrollToBottom();
+  } catch (e) {
+    await MessagePlugin.error(`发送失败: ${e}`);
+  }
 }
 
 async function scrollToBottom() {
@@ -332,6 +346,21 @@ onMounted(async () => {
   padding: 8px 16px 12px;
   border-top: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
+}
+.chat-textarea {
+  width: 100%;
+  border: none;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 6px 0;
+  background: transparent;
+  color: var(--td-text-color-primary);
+}
+.chat-textarea::placeholder {
+  color: var(--td-text-color-placeholder);
 }
 .input-actions {
   display: flex;

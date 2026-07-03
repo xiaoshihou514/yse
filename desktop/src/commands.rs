@@ -208,16 +208,18 @@ pub async fn send_message(
     let sender = sender.as_ref().ok_or("SMTP not configured")?;
 
     let email_username = cfg.email_username.clone();
-    let msg = Message::new(cfg.own_address.clone(), to.clone(), Some(text));
+    let own_addr = cfg.own_address.clone();
+    let msg = Message::new(own_addr, to.clone(), Some(text));
     drop(cfg);
 
     let payload = msg.to_json().map_err(|e| e.to_string())?;
     let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
     let d = disguise::disguise();
 
+    // Use authenticated user's email as FROM (SMTP relay requires envelope sender match)
     sender
         .send(
-            (&d.from_addr, &d.display_name),
+            (&email_username, &d.display_name),
             &email_username,
             encrypted,
             vec![],

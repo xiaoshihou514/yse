@@ -56,12 +56,8 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function sendMessage(to: string, text: string) {
-    try {
-      await api.sendMessage(to, text);
-      await loadMessages();
-    } catch (e) {
-      console.error("sendMessage failed:", e);
-    }
+    await api.sendMessage(to, text);
+    await loadMessages();
   }
 
   async function togglePlugin(id: string, enable: boolean) {
