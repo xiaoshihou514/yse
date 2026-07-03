@@ -4,38 +4,15 @@
     <div class="contact-panel">
       <div class="panel-header">
         <span class="panel-title">消息</span>
-        <t-space size="4px">
-          <t-button
-            size="small"
-            variant="text"
-            @click="showNewChat = true"
-            title="新建对话"
-          >
-            <template #icon><edit-icon /></template>
-          </t-button>
-          <t-button
-            size="small"
-            variant="text"
-            :theme="polling ? 'danger' : 'primary'"
-            @click="togglePolling"
-            :title="polling ? '停止轮询' : '开始轮询'"
-          >
-            <template #icon><poweroff-icon v-if="polling" /><play-icon v-else /></template>
-          </t-button>
-        </t-space>
-      </div>
-
-      <!-- New chat input -->
-      <div v-if="showNewChat" class="new-chat-bar">
-        <t-input
-          v-model="newChatAddr"
-          placeholder="输入虚拟地址 (如 echo@yse.org)"
+        <t-button
           size="small"
-          style="flex:1"
-          @keydown.enter="startNewChat"
-        />
-        <t-button size="small" @click="startNewChat">开始</t-button>
-        <t-button size="small" variant="text" @click="cancelNewChat">取消</t-button>
+          variant="text"
+          :theme="polling ? 'danger' : 'primary'"
+          @click="togglePolling"
+          :title="polling ? '停止轮询' : '开始轮询'"
+        >
+          <template #icon><poweroff-icon v-if="polling" /><play-icon v-else /></template>
+        </t-button>
       </div>
 
       <t-input
@@ -43,7 +20,7 @@
         placeholder="搜索联系人"
         size="small"
         clearable
-        style="margin: 0 8px 8px"
+        style="margin: 0 8px; width: calc(100% - 16px); box-sizing: border-box;"
       />
       <div class="contact-list">
         <div
@@ -94,7 +71,7 @@
           v-model="inputText"
           placeholder="输入消息..."
           :autosize="{ minRows: 1, maxRows: 4 }"
-          @keydown.enter.prevent="handleSend"
+          @keydown="onInputKeydown"
         />
         <div class="input-actions">
           <span class="input-hint">Enter 发送</span>
@@ -117,14 +94,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { useYseStore } from "@/stores/yse";
-import { PoweroffIcon, PlayIcon, EditIcon } from "tdesign-icons-vue-next";
+import { PoweroffIcon, PlayIcon } from "tdesign-icons-vue-next";
 
 const store = useYseStore();
 const inputText = ref("");
 const selectedContact = ref("");
 const searchText = ref("");
-const showNewChat = ref(false);
-const newChatAddr = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 
 const ownAddress = computed(() => store.config?.own_address ?? "me@yse.org");
@@ -187,19 +162,6 @@ function selectContact(addr: string) {
   selectedContact.value = addr;
 }
 
-function startNewChat() {
-  const addr = newChatAddr.value.trim();
-  if (!addr) return;
-  selectedContact.value = addr;
-  showNewChat.value = false;
-  newChatAddr.value = "";
-}
-
-function cancelNewChat() {
-  showNewChat.value = false;
-  newChatAddr.value = "";
-}
-
 function formatTime(ts: number) {
   const d = new Date(ts);
   const now = new Date();
@@ -212,6 +174,13 @@ function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function onInputKeydown(e: KeyboardEvent) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
 }
 
 async function handleSend() {
@@ -305,12 +274,6 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-top: 2px;
-}
-.new-chat-bar {
-  display: flex;
-  gap: 6px;
-  padding: 0 8px 8px;
-  align-items: center;
 }
 .connection-bar {
   padding: 8px 12px;

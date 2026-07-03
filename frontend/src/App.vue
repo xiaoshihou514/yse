@@ -69,7 +69,7 @@ function toggleDark(v: boolean) {
 .app-layout { height: 100vh; }
 .app-aside {
   display: flex !important; flex-direction: column; align-items: center;
-  width: 64px !important; padding: 8px 0;
+  width: 64px !important; min-width: 64px !important; padding: 8px 0;
   border-right: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
 }

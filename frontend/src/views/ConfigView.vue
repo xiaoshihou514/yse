@@ -105,8 +105,4 @@ onMounted(async () => {
 });
 </script>
 
-<style scoped>
-.config-page {
-  max-width: 800px;
-}
-</style>
+<style scoped></style>

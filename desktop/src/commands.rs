@@ -397,7 +397,7 @@ pub async fn add_plugin(
 
     let pc = PluginConfig {
         id: id.clone(),
-        name,
+        name: name.clone(),
         exec_path: exec_path.clone(),
         args: vec![],
         enabled: true,
@@ -407,6 +407,26 @@ pub async fn add_plugin(
         .plugin_manager
         .start_plugin(&id, &exec_path, &[])
         .await?;
+
+    // Auto-create a contact mapping
+    let vaddr = if name.contains('@') {
+        name.clone()
+    } else {
+        format!("{}@yse.org", name)
+    };
+    {
+        let mut cfg = state.config.write().await;
+        if !cfg.plugin_mappings.iter().any(|m| m.virtual_addr == vaddr) {
+            cfg.plugin_mappings.push(yse_core::config::PluginMapping {
+                virtual_addr: vaddr.clone(),
+                plugin_id: id.clone(),
+            });
+            // Persist to DB
+            let json = serde_json::to_string(&*cfg).map_err(|e| e.to_string())?;
+            state.store.set_config_value("config", &json).await.map_err(|e| e.to_string())?;
+        }
+    }
+
     state.log("info", format!("plugin added: {}", id));
     Ok(())
 }

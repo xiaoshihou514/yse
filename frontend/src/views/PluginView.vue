@@ -94,6 +94,7 @@ async function handleAdd() {
     newName.value = "";
     newExec.value = "";
     await store.loadPlugins();
+    await store.loadConfig();
     await MessagePlugin.success("插件已添加");
   } catch (e) {
     await MessagePlugin.error(`添加失败: ${e}`);
