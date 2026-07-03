@@ -113,13 +113,8 @@ impl ImapPoller {
     {
         let last_uid = { *self.last_uid.lock().unwrap() };
 
-        let search_query = if let Some(uid) = last_uid {
-            format!("UID {}:*", uid + 1)
-        } else {
-            "ALL".to_string()
-        };
-
-        let uids = match session.uid_search(&search_query) {
+        // Use "ALL" for compatibility (QQ Mail rejects "UID SEARCH UID N:*").
+        let all_uids = match session.uid_search("ALL") {
             Ok(ids) => ids,
             Err(e) => {
                 let msg = format!("IMAP search failed: {}", e);
@@ -129,12 +124,26 @@ impl ImapPoller {
             }
         };
 
-        if uids.is_empty() {
-            on_warn("IMAP fetch: no new messages".into());
+        // Filter to only UIDs > last_uid (new messages)
+        let new_uids: Vec<u32> = all_uids
+            .iter()
+            .copied()
+            .filter(|u| last_uid.map_or(true, |l| *u > l))
+            .collect();
+
+        if new_uids.is_empty() {
             return;
         }
 
-        let uid_list: Vec<String> = uids.iter().map(|u| u.to_string()).collect();
+        // Track the highest UID ever seen
+        if let Some(&max_uid) = all_uids.iter().max() {
+            let mut last = self.last_uid.lock().unwrap();
+            if last.map_or(true, |l| max_uid > l) {
+                *last = Some(max_uid);
+            }
+        }
+
+        let uid_list: Vec<String> = new_uids.iter().map(|u| u.to_string()).collect();
         let uid_set = uid_list.join(",");
 
         let fetches = match session.uid_fetch(uid_set.as_str(), "(BODY[])") {
@@ -150,12 +159,6 @@ impl ImapPoller {
         for msg in fetches.iter() {
             if let Some(body) = msg.body() {
                 on_message(body.to_vec());
-            }
-            if let Some(uid) = msg.uid {
-                let mut last = self.last_uid.lock().unwrap();
-                if last.map_or(true, |l| uid > l) {
-                    *last = Some(uid);
-                }
             }
         }
     }
