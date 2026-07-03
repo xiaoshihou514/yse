@@ -34,8 +34,13 @@ pub struct LogEntry {
 // Application state
 // ---------------------------------------------------------------------------
 
-/// Emit a log entry to the frontend via Tauri event (used from contexts without YseState).
-fn log_emit(app_handle: &Arc<std::sync::Mutex<Option<tauri::AppHandle>>>, level: &str, message: String) {
+/// Emit a log entry: push to Tauri event (if app_handle ready) + buffer.
+fn log_emit(
+    app_handle: &Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
+    log_buffer: &Arc<tokio::sync::RwLock<Vec<LogEntry>>>,
+    level: &str,
+    message: String,
+) {
     let entry = LogEntry {
         level: level.into(),
         message,
@@ -47,6 +52,15 @@ fn log_emit(app_handle: &Arc<std::sync::Mutex<Option<tauri::AppHandle>>>, level:
     if let Some(h) = app_handle.lock().unwrap().as_ref() {
         let _ = h.emit("log-entry", &entry);
     }
+    let buf = log_buffer.clone();
+    tokio::spawn(async move {
+        let mut b = buf.write().await;
+        b.push(entry);
+        if b.len() > 1000 {
+            let keep = b.len() - 500;
+            b.drain(0..keep);
+        }
+    });
 }
 
 pub struct YseState {
@@ -149,6 +163,7 @@ impl YseState {
                     let crypto_key = crypto_key.clone();
                     let sender = sender.clone();
                     let app_handle = app_handle.clone();
+                    let log_buffer = log_buffer.clone();
                     tokio::spawn(async move {
                         let own_addr = config.read().await.own_address.clone();
                         let email_user = config.read().await.email_username.clone();
@@ -157,21 +172,21 @@ impl YseState {
                         let payload = match msg.to_json() {
                             Ok(p) => p,
                             Err(_) => {
-                                let _ = log_emit(&app_handle, "error", format!("plugin Send serialization failed"));
+                                log_emit(&app_handle, &log_buffer, "error", format!("plugin Send serialization failed"));
                                 return;
                             }
                         };
                         let key = match crypto_key.read().await.as_ref() {
                             Some(k) => *k,
                             None => {
-                                let _ = log_emit(&app_handle, "warn", format!("plugin Send skipped: crypto key not set"));
+                                log_emit(&app_handle, &log_buffer, "warn", format!("plugin Send skipped: crypto key not set"));
                                 return;
                             }
                         };
                         let encrypted = match encrypt(&key, &payload) {
                             Ok(e) => e,
                             Err(_) => {
-                                let _ = log_emit(&app_handle, "error", format!("plugin Send encrypt failed"));
+                                log_emit(&app_handle, &log_buffer, "error", format!("plugin Send encrypt failed"));
                                 return;
                             }
                         };
@@ -184,16 +199,16 @@ impl YseState {
                                 .await
                             {
                                 Ok(_) => {
-                                    let _ = log_emit(&app_handle, "info", format!("plugin Send delivered to {}", to_addr));
+                                    log_emit(&app_handle, &log_buffer, "info", format!("plugin Send delivered to {}", to_addr));
                                 }
                                 Err(e) => {
-                                    let _ = log_emit(&app_handle, "error", format!("plugin Send SMTP failed: {}", e));
+                                    log_emit(&app_handle, &log_buffer, "error", format!("plugin Send SMTP failed: {}", e));
                                 }
                             }
                         }
 
                         let _ = store.save_message(&msg).await;
-                        let _ = log_emit(&app_handle, "info", format!("plugin Send saved msg {} to {}: {}", msg.id, to_addr, text.as_deref().unwrap_or("")));
+                        log_emit(&app_handle, &log_buffer, "info", format!("plugin Send saved msg {} to {}: {}", msg.id, to_addr, text.as_deref().unwrap_or("")));
 
                         // Notify frontend
                         if let Some(h) = app_handle.lock().unwrap().as_ref() {
@@ -202,27 +217,7 @@ impl YseState {
                     });
                 }
                 PluginRequest::Log { level, msg } => {
-                    let entry = LogEntry {
-                        level: level.clone(),
-                        message: msg.clone(),
-                        timestamp: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis() as u64,
-                    };
-                    // Emit to frontend
-                    if let Some(h) = app_handle.lock().unwrap().as_ref() {
-                        let _ = h.emit("log-entry", &entry);
-                    }
-                    let buf = log_buffer.clone();
-                    tokio::spawn(async move {
-                        let mut b = buf.write().await;
-                        b.push(entry);
-                        if b.len() > 1000 {
-                            let keep = b.len() - 500;
-                            b.drain(0..keep);
-                        }
-                    });
+                    log_emit(&app_handle, &log_buffer, &level, msg);
                 }
             }
         });
@@ -308,7 +303,7 @@ pub async fn send_message(
         let payload = msg.to_json().map_err(|e| e.to_string())?;
         let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
         let d = disguise::disguise();
-        sender
+        if let Err(e) = sender
             .send(
                 (&email_username, &d.display_name),
                 &email_username,
@@ -316,7 +311,9 @@ pub async fn send_message(
                 vec![],
             )
             .await
-            .map_err(|e| e.to_string())?;
+        {
+            state.log("error", format!("SMTP send failed: {}", e));
+        }
     }
 
     state.log("info", format!("sent message to {}", to));
