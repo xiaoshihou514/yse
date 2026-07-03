@@ -30,8 +30,15 @@ pub fn run() {
         .manage(state)
         .setup(|app| {
             let state = app.state::<YseState>();
+            let handle = app.handle().clone();
             if let Ok(rt) = tokio::runtime::Runtime::new() {
-                rt.block_on(state.load_config());
+                rt.block_on(async {
+                    state.load_config().await;
+                    // Auto-start polling (fails gracefully if crypto key not set)
+                    if let Err(e) = state.start_polling_inner(handle).await {
+                        state.log("warn", format!("auto-start polling skipped: {}", e));
+                    }
+                });
             }
             Ok(())
         })

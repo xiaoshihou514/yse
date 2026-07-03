@@ -286,86 +286,94 @@ pub async fn set_crypto_password(
     Ok(())
 }
 
+impl YseState {
+    /// Start IMAP polling. Called from Tauri command or auto-start.
+    pub async fn start_polling_inner(
+        &self,
+        app_handle: tauri::AppHandle,
+    ) -> Result<(), String> {
+        let (imap_cfg, key, store, own_addr, mappings, plugin_manager) = {
+            let cfg = self.config.read().await;
+            let imap = ImapConfig {
+                server: cfg.email_imap_server.clone(),
+                port: cfg.email_imap_port,
+                username: cfg.email_username.clone(),
+                password: cfg.email_password.clone(),
+            };
+            let mappings: Vec<(String, String)> = cfg
+                .plugin_mappings
+                .iter()
+                .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
+                .collect();
+            drop(cfg);
+
+            let key = self
+                .crypto_key
+                .read()
+                .await
+                .clone()
+                .ok_or("crypto key not set")?;
+
+            (imap, key, self.store.clone(), self.config.read().await.own_address.clone(), mappings, self.plugin_manager.clone())
+        };
+
+        self.log("info", "IMAP polling started".into());
+
+        let poller = ImapPoller::new(imap_cfg);
+
+        tokio::spawn(async move {
+            poller
+                .run(move |raw_email| {
+                    let parsed = match parse_incoming(&raw_email) {
+                        Ok(p) => p,
+                        Err(_) => return,
+                    };
+                    let decrypted = match decrypt(&key, &parsed.encrypted_body) {
+                        Ok(d) => d,
+                        Err(_) => return,
+                    };
+                    let msg = match Message::from_json(&decrypted) {
+                        Ok(m) => m,
+                        Err(_) => return,
+                    };
+
+                    let store = store.clone();
+                    let handle = app_handle.clone();
+                    let own = own_addr.clone();
+                    let pm = plugin_manager.clone();
+                    let mapping = mappings.clone();
+
+                    tokio::spawn(async move {
+                        let _ = store.save_message(&msg).await;
+
+                        pm.dispatch_message(
+                            &msg.to_addr,
+                            &msg.from_addr,
+                            msg.text.as_deref(),
+                            msg.meta.as_ref(),
+                            msg.files.as_ref(),
+                            &mapping,
+                        )
+                        .await;
+
+                        if msg.to_addr == own || msg.from_addr == own {
+                            let _ = handle.emit("new-message", &msg);
+                        }
+                    });
+                })
+                .await;
+        });
+
+        Ok(())
+    }
+}
+
 #[tauri::command]
 pub async fn start_polling(
     state: State<'_, YseState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Read config and key inside a block so locks are dropped before spawn
-    let (imap_cfg, key, store, own_addr, mappings, plugin_manager) = {
-        let cfg = state.config.read().await;
-        let imap = ImapConfig {
-            server: cfg.email_imap_server.clone(),
-            port: cfg.email_imap_port,
-            username: cfg.email_username.clone(),
-            password: cfg.email_password.clone(),
-        };
-        let mappings: Vec<(String, String)> = cfg
-            .plugin_mappings
-            .iter()
-            .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
-            .collect();
-        drop(cfg);
-
-        let key = state
-            .crypto_key
-            .read()
-            .await
-            .clone()
-            .ok_or("crypto key not set")?;
-
-        (imap, key, state.store.clone(), state.config.read().await.own_address.clone(), mappings, state.plugin_manager.clone())
-    };
-
-    state.log("info", "IMAP polling started".into());
-
-    let poller = ImapPoller::new(imap_cfg);
-
-    tokio::spawn(async move {
-        poller
-            .run(move |raw_email| {
-                let parsed = match parse_incoming(&raw_email) {
-                    Ok(p) => p,
-                    Err(_) => return,
-                };
-                let decrypted = match decrypt(&key, &parsed.encrypted_body) {
-                    Ok(d) => d,
-                    Err(_) => return,
-                };
-                let msg = match Message::from_json(&decrypted) {
-                    Ok(m) => m,
-                    Err(_) => return,
-                };
-
-                let store = store.clone();
-                let handle = app_handle.clone();
-                let own = own_addr.clone();
-                let pm = plugin_manager.clone();
-                let mapping = mappings.clone();
-
-                tokio::spawn(async move {
-                    let _ = store.save_message(&msg).await;
-
-                    // Dispatch to plugins if address matches
-                    pm.dispatch_message(
-                        &msg.to_addr,
-                        &msg.from_addr,
-                        msg.text.as_deref(),
-                        msg.meta.as_ref(),
-                        msg.files.as_ref(),
-                        &mapping,
-                    )
-                    .await;
-
-                    if msg.to_addr == own || msg.from_addr == own {
-                        let _ = handle.emit("new-message", &msg);
-                    }
-                });
-            })
-            .await;
-    });
-
-    Ok(())
+    state.start_polling_inner(app_handle).await
 }
 
 #[tauri::command]
