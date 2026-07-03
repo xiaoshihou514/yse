@@ -65,21 +65,18 @@ impl ImapPoller {
             .map_err(|(e, _)| ImapError::Login(e.to_string()))?;
 
         // IMAP requires a selected (or examined) mailbox before SEARCH/FETCH.
-        // Some servers (e.g. 163) reject `SELECT "INBOX"` with quotes but accept
-        // the unquoted form. Try raw SELECT first, then EXAMINE as fallback.
+        // Some servers (e.g. 163 / Coremail) require an ID command first.
+        let _ = session.run_command_and_check_ok(r#"ID ("name" "yse" "version" "1.0")"#);
+
+        // Try SELECT first, fall back to EXAMINE.
         if session
-            .run_command_and_check_ok("SELECT INBOX")
+            .select("INBOX")
+            .or_else(|_| session.examine("INBOX"))
             .is_err()
         {
-            session
-                .examine("INBOX")
-                .or_else(|_| session.select("INBOX"))
-                .map_err(|e| {
-                    ImapError::Connect(format!(
-                        "select/examine INBOX all failed: {}",
-                        e
-                    ))
-                })?;
+            return Err(ImapError::Connect(
+                "select/examine INBOX failed".into(),
+            ));
         }
 
         Ok(session)
