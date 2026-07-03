@@ -4,16 +4,40 @@
     <div class="contact-panel">
       <div class="panel-header">
         <span class="panel-title">消息</span>
-        <t-button
-          size="small"
-          variant="text"
-          :theme="polling ? 'danger' : 'primary'"
-          @click="togglePolling"
-          :title="polling ? '停止轮询' : '开始轮询'"
-        >
-          <template #icon><poweroff-icon v-if="polling" /><play-icon v-else /></template>
-        </t-button>
+        <t-space size="4px">
+          <t-button
+            size="small"
+            variant="text"
+            @click="showNewChat = true"
+            title="新建对话"
+          >
+            <template #icon><edit-icon /></template>
+          </t-button>
+          <t-button
+            size="small"
+            variant="text"
+            :theme="polling ? 'danger' : 'primary'"
+            @click="togglePolling"
+            :title="polling ? '停止轮询' : '开始轮询'"
+          >
+            <template #icon><poweroff-icon v-if="polling" /><play-icon v-else /></template>
+          </t-button>
+        </t-space>
       </div>
+
+      <!-- New chat input -->
+      <div v-if="showNewChat" class="new-chat-bar">
+        <t-input
+          v-model="newChatAddr"
+          placeholder="输入虚拟地址 (如 echo@yse.org)"
+          size="small"
+          style="flex:1"
+          @keydown.enter="startNewChat"
+        />
+        <t-button size="small" @click="startNewChat">开始</t-button>
+        <t-button size="small" variant="text" @click="cancelNewChat">取消</t-button>
+      </div>
+
       <t-input
         v-model="searchText"
         placeholder="搜索联系人"
@@ -93,12 +117,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch, markRaw } from "vue";
 import { useYseStore } from "@/stores/yse";
-import { PoweroffIcon, PlayIcon } from "tdesign-icons-vue-next";
+import { PoweroffIcon, PlayIcon, EditIcon } from "tdesign-icons-vue-next";
 
 const store = useYseStore();
 const inputText = ref("");
 const selectedContact = ref("");
 const searchText = ref("");
+const showNewChat = ref(false);
+const newChatAddr = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 
 const ownAddress = computed(() => store.config?.own_address ?? "me@yse.org");
@@ -148,6 +174,19 @@ function initials(addr: string) {
 
 function selectContact(addr: string) {
   selectedContact.value = addr;
+}
+
+function startNewChat() {
+  const addr = newChatAddr.value.trim();
+  if (!addr) return;
+  selectedContact.value = addr;
+  showNewChat.value = false;
+  newChatAddr.value = "";
+}
+
+function cancelNewChat() {
+  showNewChat.value = false;
+  newChatAddr.value = "";
 }
 
 function formatTime(ts: number) {
@@ -255,6 +294,12 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-top: 2px;
+}
+.new-chat-bar {
+  display: flex;
+  gap: 6px;
+  padding: 0 8px 8px;
+  align-items: center;
 }
 .connection-bar {
   padding: 8px 12px;
