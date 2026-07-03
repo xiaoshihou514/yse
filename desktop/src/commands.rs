@@ -288,6 +288,17 @@ pub async fn send_message(
         email
     };
 
+    // Log plugin dispatch status
+    {
+        let cfg = state.config.read().await;
+        let match_count = cfg.plugin_mappings.iter()
+            .filter(|m| m.virtual_addr == msg.to_addr)
+            .count();
+        if match_count > 0 {
+            state.log("info", format!("dispatched to {} plugin(s) for {}", match_count, msg.to_addr));
+        }
+    }
+
     // Save message regardless of SMTP
     state.store.save_message(&msg).await.map_err(|e| e.to_string())?;
 
@@ -472,6 +483,22 @@ impl YseState {
         });
 
         Ok(())
+    }
+
+    /// Auto-start all enabled plugins from DB (called during app setup).
+    pub async fn auto_start_plugins(&self) {
+        let plugins = match self.store.list_plugins().await {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        for p in &plugins {
+            if p.enabled {
+                match self.plugin_manager.start_plugin(&p.id, &p.exec_path, &p.args).await {
+                    Ok(_) => self.log("info", format!("auto-started plugin: {} ({})", p.name, p.id)),
+                    Err(e) => self.log("warn", format!("auto-start plugin {} failed: {}", p.name, e)),
+                }
+            }
+        }
     }
 }
 

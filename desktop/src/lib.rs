@@ -36,6 +36,7 @@ pub fn run() {
             if let Ok(rt) = tokio::runtime::Runtime::new() {
                 rt.block_on(async {
                     state.load_config().await;
+                    state.auto_start_plugins().await;
                     // Auto-start polling (fails gracefully if crypto key not set)
                     if let Err(e) = state.start_polling_inner(handle).await {
                         state.log("warn", format!("auto-start polling skipped: {}", e));
