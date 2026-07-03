@@ -468,15 +468,28 @@ impl YseState {
                     tokio::spawn(async move {
                         let _ = store.save_message(&msg).await;
 
-                        pm.dispatch_message(
-                            &msg.to_addr,
-                            &msg.from_addr,
-                            msg.text.as_deref(),
-                            msg.meta.as_ref(),
-                            msg.files.as_ref(),
-                            &mapping,
-                        )
-                        .await;
+                        let already = store.is_processed(&msg.id).await.unwrap_or(false);
+                        if !already {
+                            pm.dispatch_message(
+                                &msg.to_addr,
+                                &msg.from_addr,
+                                msg.text.as_deref(),
+                                msg.meta.as_ref(),
+                                msg.files.as_ref(),
+                                &mapping,
+                            )
+                            .await;
+                            let _ = store.mark_processed(&msg.id).await;
+                            let log = LogEntry {
+                                level: "info".into(),
+                                message: format!("dispatched msg {} to plugins", msg.id),
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as u64,
+                            };
+                            let _ = handle.emit("log-entry", &log);
+                        }
 
                         let entry = LogEntry {
                             level: "info".into(),
