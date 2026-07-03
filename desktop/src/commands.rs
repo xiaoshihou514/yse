@@ -36,9 +36,9 @@ pub struct LogEntry {
 
 pub struct YseState {
     pub store: Arc<dyn Storage>,
-    pub config: RwLock<YseConfig>,
-    pub crypto_key: RwLock<Option<chacha20poly1305::Key>>,
-    pub sender: RwLock<Option<SmtpSender>>,
+    pub config: Arc<RwLock<YseConfig>>,
+    pub crypto_key: Arc<RwLock<Option<chacha20poly1305::Key>>>,
+    pub sender: Arc<RwLock<Option<SmtpSender>>>,
     pub poller_running: Arc<std::sync::atomic::AtomicBool>,
     pub plugin_manager: Arc<PluginManager>,
     #[allow(dead_code)]
@@ -57,9 +57,9 @@ impl YseState {
 
         Ok(Self {
             store,
-            config: RwLock::new(YseConfig::default()),
-            crypto_key: RwLock::new(None),
-            sender: RwLock::new(None),
+            config: Arc::new(RwLock::new(YseConfig::default())),
+            crypto_key: Arc::new(RwLock::new(None)),
+            sender: Arc::new(RwLock::new(None)),
             poller_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             plugin_manager,
             router,
@@ -94,6 +94,74 @@ impl YseState {
 
         *self.config.write().await = cfg;
         Ok(())
+    }
+
+    /// Set up the plugin request handler so plugins can send/log via core.
+    pub fn setup_plugin_handler(&self) {
+        use yse_core::crypto::encrypt;
+        use yse_core::plugin::protocol::PluginRequest;
+
+        let store = self.store.clone();
+        let config = self.config.clone();
+        let crypto_key = self.crypto_key.clone();
+        let sender = self.sender.clone();
+        let log_buffer = self.log_buffer.clone();
+
+        let handler: yse_core::plugin::process::PluginRequestHandler = Arc::new(move |req| {
+            match req {
+                PluginRequest::Send { to_addr, text, .. } => {
+                    let store = store.clone();
+                    let config = config.clone();
+                    let crypto_key = crypto_key.clone();
+                    let sender = sender.clone();
+                    tokio::spawn(async move {
+                        let own_addr = config.read().await.own_address.clone();
+                        let email_user = config.read().await.email_username.clone();
+                        let msg = Message::new(own_addr, to_addr.clone(), text.clone());
+                        let payload = match msg.to_json() {
+                            Ok(p) => p,
+                            Err(_) => return,
+                        };
+                        let key = match crypto_key.read().await.as_ref() {
+                            Some(k) => *k,
+                            None => return,
+                        };
+                        let encrypted = match encrypt(&key, &payload) {
+                            Ok(e) => e,
+                            Err(_) => return,
+                        };
+                        let d = disguise::disguise();
+                        if let Some(s) = sender.read().await.as_ref() {
+                            let _ = s
+                                .send((&d.from_addr, &d.display_name), &email_user, encrypted, vec![])
+                                .await;
+                        }
+                        let _ = store.save_message(&msg).await;
+                    });
+                }
+                PluginRequest::Log { level, msg } => {
+                    let entry = LogEntry {
+                        level,
+                        message: msg,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64,
+                    };
+                    let buf = log_buffer.clone();
+                    tokio::spawn(async move {
+                        let mut b = buf.write().await;
+                        b.push(entry);
+                        if b.len() > 1000 {
+                            let keep = b.len() - 500;
+                            b.drain(0..keep);
+                        }
+                    });
+                }
+            }
+        });
+
+        self.plugin_manager.set_request_handler(handler);
     }
 
     pub fn log(&self, level: &str, message: String) {

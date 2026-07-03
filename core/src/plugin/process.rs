@@ -9,6 +9,9 @@ use tracing::{info, warn};
 
 use super::protocol::*;
 
+/// Callback type for handling plugin → core requests (send, log, etc.)
+pub type PluginRequestHandler = Arc<dyn Fn(PluginRequest) + Send + Sync>;
+
 pub struct ManagedPlugin {
     pub id: String,
     process: Option<tokio::process::Child>,
@@ -18,7 +21,12 @@ pub struct ManagedPlugin {
 }
 
 impl ManagedPlugin {
-    pub fn spawn(id: String, exec_path: &str, args: &[String]) -> Result<Self, String> {
+    pub fn spawn(
+        id: String,
+        exec_path: &str,
+        args: &[String],
+        handler: Option<PluginRequestHandler>,
+    ) -> Result<Self, String> {
         let mut cmd = TokioCommand::new(exec_path);
         cmd.args(args)
             .stdin(Stdio::piped())
@@ -44,25 +52,67 @@ impl ManagedPlugin {
             next_id: Arc::new(AtomicU64::new(1)),
         };
 
+        // Spawn stdout reader task that routes plugin requests
         let id_clone = id.clone();
+        let handler_id = id.clone();
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
+            let my_id = id_clone;
             while let Ok(Some(line)) = lines.next_line().await {
                 if line.trim().is_empty() {
                     continue;
                 }
-                match serde_json::from_str::<serde_json::Value>(&line) {
-                    Ok(_val) => {
-                        info!(plugin = %id_clone, "plugin request: {}", line);
-                        // TODO: route to core handler
-                    }
+                let val: serde_json::Value = match serde_json::from_str(&line) {
+                    Ok(v) => v,
                     Err(e) => {
-                        warn!(plugin = %id_clone, "invalid JSON from plugin: {} | {}", e, line);
+                        warn!(plugin = %my_id, "invalid JSON: {} | {}", e, line);
+                        continue;
                     }
-                }
+                };
+                let method = match val["method"].as_str() {
+                    Some(m) => m.to_string(),
+                    None => continue,
+                };
+                let params = val.get("params").cloned();
+                let handler = handler.clone();
+                let pid = handler_id.clone();
+                tokio::spawn(async move {
+                    match method.as_str() {
+                        "send" => {
+                            if let Some(p) = params {
+                                if let Some(to) = p["to"].as_str() {
+                                    if let Some(h) = handler {
+                                        h(PluginRequest::Send {
+                                            to_addr: to.to_string(),
+                                            text: p["text"].as_str().map(String::from),
+                                            meta: p.get("meta").cloned(),
+                                            files: None,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        "log" => {
+                            if let Some(p) = params {
+                                let level = p["level"].as_str().unwrap_or("info");
+                                let msg = p["msg"].as_str().unwrap_or("");
+                                info!(plugin = %pid, "[{}] {}", level, msg);
+                                if let Some(h) = handler {
+                                    h(PluginRequest::Log {
+                                        level: level.to_string(),
+                                        msg: msg.to_string(),
+                                    });
+                                }
+                            }
+                        }
+                        _ => {
+                            info!(plugin = %pid, "unhandled request: {}", method);
+                        }
+                    }
+                });
             }
-            warn!(plugin = %id_clone, "plugin stdout closed");
+            warn!(plugin = %my_id, "stdout closed");
         });
 
         Ok(plugin)
@@ -120,13 +170,23 @@ impl Drop for ManagedPlugin {
 
 pub struct PluginManager {
     plugins: Arc<Mutex<HashMap<String, ManagedPlugin>>>,
+    request_handler: std::sync::Mutex<Option<PluginRequestHandler>>,
 }
 
 impl PluginManager {
     pub fn new() -> Self {
         Self {
             plugins: Arc::new(Mutex::new(HashMap::new())),
+            request_handler: std::sync::Mutex::new(None),
         }
+    }
+
+    pub fn set_request_handler(&self, handler: PluginRequestHandler) {
+        *self.request_handler.lock().unwrap() = Some(handler);
+    }
+
+    pub fn get_request_handler(&self) -> Option<PluginRequestHandler> {
+        self.request_handler.lock().unwrap().clone()
     }
 
     pub async fn start_plugin(
@@ -139,7 +199,8 @@ impl PluginManager {
         if map.contains_key(id) {
             return Err(format!("plugin {} already running", id));
         }
-        let plugin = ManagedPlugin::spawn(id.into(), exec_path, args)?;
+        let handler = self.get_request_handler();
+        let plugin = ManagedPlugin::spawn(id.into(), exec_path, args, handler)?;
         map.insert(id.into(), plugin);
         info!("plugin started: {}", id);
         Ok(())
