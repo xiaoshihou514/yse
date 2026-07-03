@@ -60,9 +60,13 @@ impl ImapPoller {
         )
         .map_err(|e| ImapError::Connect(e.to_string()))?;
 
-        let session = client
+        let mut session = client
             .login(&self.config.username, &self.config.password)
             .map_err(|(e, _)| ImapError::Login(e.to_string()))?;
+
+        session
+            .select("INBOX")
+            .map_err(|e| ImapError::Connect(format!("select INBOX failed: {}", e)))?;
 
         Ok(session)
     }
