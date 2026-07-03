@@ -338,6 +338,28 @@ pub async fn toggle_plugin(
 }
 
 #[tauri::command]
+pub async fn start_plugin(
+    state: State<'_, YseState>,
+    id: String,
+) -> Result<(), String> {
+    let plugins = state.store.list_plugins().await.map_err(|e| e.to_string())?;
+    let p = plugins.iter().find(|p| p.id == id).ok_or("plugin not found")?;
+    state
+        .plugin_manager
+        .start_plugin(&id, &p.exec_path, &p.args)
+        .await?;
+    state.log("info", format!("plugin started: {}", id));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
+    state.plugin_manager.stop_plugin(&id).await?;
+    state.log("info", format!("plugin stopped: {}", id));
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn list_running_plugins(state: State<'_, YseState>) -> Result<Vec<String>, String> {
     Ok(state.plugin_manager.list_running().await)
 }

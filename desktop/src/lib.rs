@@ -46,6 +46,8 @@ pub fn run() {
             commands::add_plugin,
             commands::remove_plugin,
             commands::toggle_plugin,
+            commands::start_plugin,
+            commands::stop_plugin,
             commands::list_running_plugins,
             commands::get_logs,
             commands::test_email,

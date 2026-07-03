@@ -87,7 +87,12 @@ async function handleAdd() {
     return;
   }
   try {
-    await store.togglePlugin(newId.value, true);
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("add_plugin", {
+      id: newId.value,
+      name: newName.value || newId.value,
+      execPath: newExec.value,
+    });
     newId.value = "";
     newName.value = "";
     newExec.value = "";
