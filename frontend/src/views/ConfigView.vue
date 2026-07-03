@@ -40,23 +40,11 @@
       </t-form>
     </t-card>
 
-    <t-card title="消息分发映射" :bordered="false">
-      <t-table :data="form.plugin_mappings" :columns="mappingColumns" row-key="virtual_addr">
-        <template #operation="{ row }">
-          <t-button theme="danger" variant="text" @click="removeMapping(row)">删除</t-button>
-        </template>
-      </t-table>
-      <t-space style="margin-top: 12px">
-        <t-input v-model="newMappingAddr" placeholder="虚拟地址" style="width: 200px" />
-        <t-select v-model="newMappingPlugin" placeholder="选择插件" style="width: 200px" :options="pluginOptions" />
-        <t-button @click="addMapping">添加</t-button>
-      </t-space>
-    </t-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import * as api from "@/api/commands";
@@ -64,15 +52,6 @@ import * as api from "@/api/commands";
 const store = useYseStore();
 const saving = ref(false);
 const cryptoPassword = ref("");
-const newMappingAddr = ref("");
-const newMappingPlugin = ref("");
-
-const pluginOptions = computed(() =>
-  store.plugins.map((p) => ({
-    label: `${p.name || p.id} (${p.id})`,
-    value: p.id,
-  })),
-);
 
 const form = reactive({
   email_imap_server: "",
@@ -82,35 +61,13 @@ const form = reactive({
   email_username: "",
   email_password: "",
   own_address: "me@yse.org",
-  plugin_mappings: [] as { virtual_addr: string; plugin_id: string }[],
 });
-
-const mappingColumns = [
-  { colKey: "virtual_addr", title: "虚拟地址" },
-  { colKey: "plugin_id", title: "插件 ID" },
-  { colKey: "operation", title: "操作" },
-];
-
-function addMapping() {
-  if (!newMappingAddr.value || !newMappingPlugin.value) return;
-  form.plugin_mappings.push({
-    virtual_addr: newMappingAddr.value,
-    plugin_id: newMappingPlugin.value,
-  });
-  newMappingAddr.value = "";
-  newMappingPlugin.value = "";
-}
-
-function removeMapping(row: { virtual_addr: string }) {
-  form.plugin_mappings = form.plugin_mappings.filter(
-    (m) => m.virtual_addr !== row.virtual_addr,
-  );
-}
 
 async function handleSave() {
   saving.value = true;
   try {
-    await store.saveConfigAndApply({ ...form });
+    const mappings = store.config?.plugin_mappings ?? [];
+    await store.saveConfigAndApply({ ...form, plugin_mappings: mappings });
     await MessagePlugin.success("配置已保存");
   } catch (e) {
     await MessagePlugin.error(`保存失败: ${e}`);
@@ -144,7 +101,6 @@ onMounted(async () => {
     form.email_username = store.config.email_username;
     form.email_password = store.config.email_password;
     form.own_address = store.config.own_address;
-    form.plugin_mappings = store.config.plugin_mappings;
   }
 });
 </script>

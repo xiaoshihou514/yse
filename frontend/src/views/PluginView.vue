@@ -3,7 +3,7 @@
     <t-card title="插件管理" :bordered="false">
       <t-table
         :data="store.plugins"
-        :columns="columns"
+        :columns="pluginColumns"
         row-key="id"
         :loading="loading"
       >
@@ -31,6 +31,20 @@
       </t-space>
     </t-card>
 
+    <t-card title="消息映射" :bordered="false" style="margin-top: 20px">
+      <p class="card-desc">配置虚拟地址 → 插件的分发规则</p>
+      <t-table :data="mappings" :columns="mappingColumns" row-key="virtual_addr" size="small">
+        <template #operation="{ row }">
+          <t-button theme="danger" variant="text" @click="removeMapping(row)">删除</t-button>
+        </template>
+      </t-table>
+      <t-space style="margin-top: 12px">
+        <t-input v-model="newMappingAddr" placeholder="虚拟地址 (如 echo@yse.org)" style="width: 240px" />
+        <t-select v-model="newMappingPlugin" placeholder="选择插件" style="width: 200px" :options="pluginOptions" />
+        <t-button @click="addMapping">添加映射</t-button>
+      </t-space>
+    </t-card>
+
     <t-card title="插件运行状态" :bordered="false" style="margin-top: 20px">
       <t-space v-if="runningPlugins.length">
         <t-tag v-for="id in runningPlugins" :key="id" theme="success">{{ id }}</t-tag>
@@ -45,6 +59,7 @@ import { ref, computed, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import type { PluginConfig } from "@/api/commands";
+import * as api from "@/api/commands";
 
 const store = useYseStore();
 const loading = ref(false);
@@ -54,13 +69,58 @@ const newExec = ref("");
 
 const runningPlugins = ref<string[]>([]);
 
-const columns = [
+// Mapping state
+const newMappingAddr = ref("");
+const newMappingPlugin = ref("");
+
+const mappings = computed(() => store.config?.plugin_mappings ?? []);
+
+const pluginOptions = computed(() =>
+  store.plugins.map((p) => ({
+    label: `${p.name || p.id} (${p.id})`,
+    value: p.id,
+  })),
+);
+
+const pluginColumns = [
   { colKey: "id", title: "ID" },
   { colKey: "name", title: "名称" },
   { colKey: "exec_path", title: "路径" },
   { colKey: "enabled", title: "启用" },
   { colKey: "operation", title: "操作" },
 ];
+
+const mappingColumns = [
+  { colKey: "virtual_addr", title: "虚拟地址" },
+  { colKey: "plugin_id", title: "插件 ID" },
+  { colKey: "operation", title: "操作" },
+];
+
+async function addMapping() {
+  if (!newMappingAddr.value || !newMappingPlugin.value) return;
+  if (!store.config) return;
+  const cfg = { ...store.config };
+  cfg.plugin_mappings.push({
+    virtual_addr: newMappingAddr.value,
+    plugin_id: newMappingPlugin.value,
+  });
+  await api.saveConfig(cfg);
+  await store.loadConfig();
+  newMappingAddr.value = "";
+  newMappingPlugin.value = "";
+  await MessagePlugin.success("映射已添加");
+}
+
+async function removeMapping(row: { virtual_addr: string }) {
+  if (!store.config) return;
+  const cfg = { ...store.config };
+  cfg.plugin_mappings = cfg.plugin_mappings.filter(
+    (m) => m.virtual_addr !== row.virtual_addr,
+  );
+  await api.saveConfig(cfg);
+  await store.loadConfig();
+  await MessagePlugin.success("映射已删除");
+}
 
 async function handleToggle(row: PluginConfig, enabled: boolean) {
   try {
@@ -132,7 +192,16 @@ async function fetchRunning() {
 onMounted(async () => {
   loading.value = true;
   await store.loadPlugins();
+  await store.loadConfig();
   await fetchRunning();
   loading.value = false;
 });
 </script>
+
+<style scoped>
+.card-desc {
+  color: var(--td-text-color-placeholder);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+</style>

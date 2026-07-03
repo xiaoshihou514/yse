@@ -139,7 +139,10 @@ pub async fn send_message(
     let sender = state.sender.read().await;
     let sender = sender.as_ref().ok_or("SMTP not configured")?;
 
+    let email_username = cfg.email_username.clone();
     let msg = Message::new(cfg.own_address.clone(), to.clone(), Some(text));
+    drop(cfg);
+
     let payload = msg.to_json().map_err(|e| e.to_string())?;
     let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
     let d = disguise::disguise();
@@ -147,7 +150,7 @@ pub async fn send_message(
     sender
         .send(
             (&d.from_addr, &d.display_name),
-            &cfg.email_username,
+            &email_username,
             encrypted,
             vec![],
         )
@@ -155,6 +158,28 @@ pub async fn send_message(
         .map_err(|e| e.to_string())?;
 
     state.store.save_message(&msg).await.map_err(|e| e.to_string())?;
+
+    // Also dispatch locally if to address matches a plugin mapping
+    {
+        let cfg = state.config.read().await;
+        let mappings: Vec<(String, String)> = cfg
+            .plugin_mappings
+            .iter()
+            .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
+            .collect();
+        state
+            .plugin_manager
+            .dispatch_message(
+                &msg.to_addr,
+                &msg.from_addr,
+                msg.text.as_deref(),
+                msg.meta.as_ref(),
+                msg.files.as_ref(),
+                &mappings,
+            )
+            .await;
+    }
+
     state.log("info", format!("sent message to {}", to));
     Ok(())
 }
@@ -199,7 +224,7 @@ pub async fn start_polling(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     // Read config and key inside a block so locks are dropped before spawn
-    let (imap_cfg, key, store, own_addr) = {
+    let (imap_cfg, key, store, own_addr, mappings, plugin_manager) = {
         let cfg = state.config.read().await;
         let imap = ImapConfig {
             server: cfg.email_imap_server.clone(),
@@ -207,6 +232,11 @@ pub async fn start_polling(
             username: cfg.email_username.clone(),
             password: cfg.email_password.clone(),
         };
+        let mappings: Vec<(String, String)> = cfg
+            .plugin_mappings
+            .iter()
+            .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
+            .collect();
         drop(cfg);
 
         let key = state
@@ -216,7 +246,7 @@ pub async fn start_polling(
             .clone()
             .ok_or("crypto key not set")?;
 
-        (imap, key, state.store.clone(), state.config.read().await.own_address.clone())
+        (imap, key, state.store.clone(), state.config.read().await.own_address.clone(), mappings, state.plugin_manager.clone())
     };
 
     state.log("info", "IMAP polling started".into());
@@ -242,9 +272,23 @@ pub async fn start_polling(
                 let store = store.clone();
                 let handle = app_handle.clone();
                 let own = own_addr.clone();
+                let pm = plugin_manager.clone();
+                let mapping = mappings.clone();
 
                 tokio::spawn(async move {
                     let _ = store.save_message(&msg).await;
+
+                    // Dispatch to plugins if address matches
+                    pm.dispatch_message(
+                        &msg.to_addr,
+                        &msg.from_addr,
+                        msg.text.as_deref(),
+                        msg.meta.as_ref(),
+                        msg.files.as_ref(),
+                        &mapping,
+                    )
+                    .await;
+
                     if msg.to_addr == own || msg.from_addr == own {
                         let _ = handle.emit("new-message", &msg);
                     }
