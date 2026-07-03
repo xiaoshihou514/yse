@@ -4,15 +4,6 @@
     <div class="contact-panel">
       <div class="panel-header">
         <span class="panel-title">消息</span>
-        <t-button
-          size="small"
-          variant="text"
-          :theme="polling ? 'danger' : 'primary'"
-          @click="togglePolling"
-          :title="polling ? '停止轮询' : '开始轮询'"
-        >
-          <template #icon><poweroff-icon v-if="polling" /><play-icon v-else /></template>
-        </t-button>
       </div>
 
       <t-input
@@ -94,7 +85,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { useYseStore } from "@/stores/yse";
-import { PoweroffIcon, PlayIcon } from "tdesign-icons-vue-next";
+
 
 const store = useYseStore();
 const inputText = ref("");
@@ -103,7 +94,6 @@ const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 
 const ownAddress = computed(() => store.config?.own_address ?? "me@yse.org");
-const polling = computed(() => store.polling);
 const connected = computed(() => store.connected);
 
 // Build contact list from messages + mappings
@@ -188,14 +178,6 @@ async function handleSend() {
   await store.sendMessage(selectedContact.value, inputText.value.trim());
   inputText.value = "";
   await scrollToBottom();
-}
-
-async function togglePolling() {
-  if (polling.value) {
-    await store.stopPolling();
-  } else {
-    await store.startPolling();
-  }
 }
 
 async function scrollToBottom() {
