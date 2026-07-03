@@ -48,7 +48,7 @@
       </t-table>
       <t-space style="margin-top: 12px">
         <t-input v-model="newMappingAddr" placeholder="虚拟地址" style="width: 200px" />
-        <t-select v-model="newMappingPlugin" placeholder="选择插件" style="width: 200px" />
+        <t-select v-model="newMappingPlugin" placeholder="选择插件" style="width: 200px" :options="pluginOptions" />
         <t-button @click="addMapping">添加</t-button>
       </t-space>
     </t-card>
@@ -56,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import * as api from "@/api/commands";
@@ -66,6 +66,13 @@ const saving = ref(false);
 const cryptoPassword = ref("");
 const newMappingAddr = ref("");
 const newMappingPlugin = ref("");
+
+const pluginOptions = computed(() =>
+  store.plugins.map((p) => ({
+    label: `${p.name || p.id} (${p.id})`,
+    value: p.id,
+  })),
+);
 
 const form = reactive({
   email_imap_server: "",
@@ -128,6 +135,7 @@ async function handleTest() {
 
 onMounted(async () => {
   await store.loadConfig();
+  await store.loadPlugins();
   if (store.config) {
     form.email_imap_server = store.config.email_imap_server;
     form.email_imap_port = store.config.email_imap_port;
