@@ -394,7 +394,7 @@ impl YseState {
 
         tokio::spawn(async move {
             poller
-                .run_with_warn(
+                .run_with_log(
                     move |raw_email| {
                         let parsed = match parse_incoming(&raw_email) {
                         Ok(p) => p,
@@ -511,8 +511,8 @@ impl YseState {
                         }
                     });
                 },
-                Arc::new(move |msg| {
-                    log_emit(&state_app_handle, &state_log_buffer, "warn", msg);
+                Arc::new(move |level, msg| {
+                    log_emit(&state_app_handle, &state_log_buffer, level, msg);
                 }),
             )
             .await;

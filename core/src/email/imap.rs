@@ -5,7 +5,7 @@ use tokio::time::{interval, Duration};
 use thiserror::Error;
 use tracing::warn;
 
-type WarnFn = Arc<dyn Fn(String) + Send + Sync>;
+type LogFn = Arc<dyn Fn(&str, String) + Send + Sync>;
 
 #[derive(Error, Debug)]
 pub enum ImapError {
@@ -71,10 +71,11 @@ impl ImapPoller {
     where
         F: FnMut(Vec<u8>) + Send + 'static,
     {
-        self.run_with_warn(on_message, Arc::new(|_| {})).await;
+        self.run_with_log(on_message, Arc::new(|_, _| {})).await;
     }
 
-    pub async fn run_with_warn<F>(self, mut on_message: F, on_warn: WarnFn)
+    /// Run the poller with a log callback. The callback receives (level, message).
+    pub async fn run_with_log<F>(self, mut on_message: F, log_fn: LogFn)
     where
         F: FnMut(Vec<u8>) + Send + 'static,
     {
@@ -82,12 +83,12 @@ impl ImapPoller {
 
         match self.connect_sync() {
             Ok(mut session) => {
-                self.fetch_new_sync(&mut session, &mut on_message, &on_warn);
+                self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
             }
             Err(e) => {
                 let msg = format!("IMAP initial connect failed: {}", e);
                 warn!("{}", msg);
-                on_warn(msg);
+                log_fn("error", msg);
             }
         }
 
@@ -96,18 +97,18 @@ impl ImapPoller {
             tick.tick().await;
             match self.connect_sync() {
                 Ok(mut session) => {
-                    self.fetch_new_sync(&mut session, &mut on_message, &on_warn);
+                    self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
                 }
                 Err(e) => {
                     let msg = format!("IMAP reconnect failed: {:?}", e);
                     warn!("{}", msg);
-                    on_warn(msg);
+                    log_fn("error", msg);
                 }
             }
         }
     }
 
-    fn fetch_new_sync<F>(&self, session: &mut imap::Session<Stream>, on_message: &mut F, on_warn: &WarnFn)
+    fn fetch_new_sync<F>(&self, session: &mut imap::Session<Stream>, on_message: &mut F, log_fn: &LogFn)
     where
         F: FnMut(Vec<u8>),
     {
@@ -119,7 +120,7 @@ impl ImapPoller {
             Err(e) => {
                 let msg = format!("IMAP search failed: {}", e);
                 warn!("{}", msg);
-                on_warn(msg);
+                log_fn("error", msg);
                 return;
             }
         };
@@ -132,8 +133,11 @@ impl ImapPoller {
             .collect();
 
         if new_uids.is_empty() {
+            log_fn("info", "IMAP fetch: no new messages".into());
             return;
         }
+
+        log_fn("info", format!("IMAP fetch: {} new UID(s), fetching bodies...", new_uids.len()));
 
         // Track the highest UID ever seen
         if let Some(&max_uid) = all_uids.iter().max() {
@@ -151,10 +155,12 @@ impl ImapPoller {
             Err(e) => {
                 let msg = format!("IMAP fetch failed: {}", e);
                 warn!("{}", msg);
-                on_warn(msg);
+                log_fn("error", msg);
                 return;
             }
         };
+
+        log_fn("info", format!("IMAP fetch: got {} message(s)", fetches.len()));
 
         for msg in fetches.iter() {
             if let Some(body) = msg.body() {
