@@ -90,12 +90,15 @@ impl ImapPoller {
                     "IMAP: ID response unparseable (Coremail style), draining buffer".into(),
                 );
                 info!("IMAP: ID response unparseable (Coremail style), draining buffer");
-                if let Err(drain_err) = unsafe { Self::drain_response_line(&mut session) } {
-                    let msg = format!("IMAP: drain ID response line failed: {drain_err}");
-                    warn!("{}", msg);
-                    log_fn("warn", msg);
-                } else {
+                // Set a short read timeout so drain doesn't hang if the
+                // tagged response hasn't arrived in the BufReader yet.
+                let drain_ok = unsafe { Self::drain_response_line(&mut session) }.is_ok();
+                if drain_ok {
                     log_fn("info", "IMAP: drained ID response line".into());
+                } else {
+                    let msg = "IMAP: drain ID response line failed/timed out, continuing anyway";
+                    warn!("{}", msg);
+                    log_fn("warn", msg.into());
                 }
             }
             Err(e) => {
@@ -133,8 +136,24 @@ impl ImapPoller {
         let bufstream = session as *mut imap::Session<Stream> as *mut bufstream::BufStream<Stream>;
         let bufstream = &mut *bufstream;
 
+        // Set a 3 s read timeout on the TCP socket so we don't hang
+        // indefinitely if the tagged response hasn't been buffered yet.
+        {
+            let raw: &mut Stream = bufstream.get_mut();
+            let _ = raw
+                .get_ref()
+                .set_read_timeout(Some(std::time::Duration::from_secs(3)));
+        }
+
         let mut line = String::new();
         let n = bufstream.read_line(&mut line)?;
+
+        // Restore infinite timeout.
+        {
+            let raw: &mut Stream = bufstream.get_mut();
+            let _ = raw.get_ref().set_read_timeout(None);
+        }
+
         if n > 0 {
             info!("IMAP: drained response line: {}", line.trim());
         }
