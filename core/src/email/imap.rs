@@ -51,9 +51,16 @@ impl ImapPoller {
     }
 
     pub fn connect_sync(&self) -> Result<imap::Session<Stream>, ImapError> {
+        let noop: LogFn = Arc::new(|_, _| {});
+        self.connect_sync_log(&noop)
+    }
+
+    fn connect_sync_log(&self, log_fn: &LogFn) -> Result<imap::Session<Stream>, ImapError> {
         let tls = native_tls::TlsConnector::builder()
             .build()
             .map_err(|e| ImapError::Tls(e.to_string()))?;
+
+        log_fn("info", "IMAP: connecting...".into());
 
         let client = imap::connect(
             (self.config.server.clone(), self.config.port),
@@ -62,25 +69,43 @@ impl ImapPoller {
         )
         .map_err(|e| ImapError::Connect(e.to_string()))?;
 
+        log_fn("info", format!("IMAP: connected to {}", self.config.server));
+
         let mut session = client
             .login(&self.config.username, &self.config.password)
             .map_err(|(e, _)| ImapError::Login(e.to_string()))?;
 
+        log_fn("info", "IMAP: login OK".into());
         info!("IMAP: login OK");
 
         // Some servers (e.g. 163 / Coremail) require an ID command before SELECT.
         match session.run_command_and_check_ok(r#"ID ("name" "yse" "version" "1.0")"#) {
-            Ok(_) => info!("IMAP: ID command OK"),
+            Ok(_) => {
+                log_fn("info", "IMAP: ID command OK".into());
+                info!("IMAP: ID command OK");
+            }
             Err(ref e) if matches!(e, imap::error::Error::Parse(_)) => {
+                log_fn(
+                    "info",
+                    "IMAP: ID response unparseable (Coremail style), draining buffer".into(),
+                );
                 info!("IMAP: ID response unparseable (Coremail style), draining buffer");
                 if let Err(drain_err) = unsafe { Self::drain_response_line(&mut session) } {
-                    warn!("IMAP: drain ID response line failed: {drain_err}");
+                    let msg = format!("IMAP: drain ID response line failed: {drain_err}");
+                    warn!("{}", msg);
+                    log_fn("warn", msg);
+                } else {
+                    log_fn("info", "IMAP: drained ID response line".into());
                 }
             }
             Err(e) => {
-                info!("IMAP: ID command not supported by server: {e}");
+                let msg = format!("IMAP: ID command not supported: {e}");
+                info!("{msg}");
+                log_fn("info", msg);
             }
         }
+
+        log_fn("info", "IMAP: selecting INBOX...".into());
 
         // Try SELECT first, fall back to EXAMINE.
         if session
@@ -91,6 +116,7 @@ impl ImapPoller {
             return Err(ImapError::Connect("select/examine INBOX failed".into()));
         }
 
+        log_fn("info", "IMAP: SELECT/EXAMINE INBOX OK".into());
         info!("IMAP: SELECT/EXAMINE INBOX OK");
         Ok(session)
     }
@@ -129,7 +155,7 @@ impl ImapPoller {
     {
         self.running.store(true, Ordering::SeqCst);
 
-        match self.connect_sync() {
+        match self.connect_sync_log(&log_fn) {
             Ok(mut session) => {
                 self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
             }
@@ -143,7 +169,7 @@ impl ImapPoller {
         let mut tick = interval(Duration::from_secs(10));
         while self.running.load(Ordering::SeqCst) {
             tick.tick().await;
-            match self.connect_sync() {
+            match self.connect_sync_log(&log_fn) {
                 Ok(mut session) => {
                     self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
                 }
