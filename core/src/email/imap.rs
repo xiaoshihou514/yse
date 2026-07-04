@@ -48,6 +48,13 @@ impl ImapPoller {
         self.running.clone()
     }
 
+    /// Replace the internal running flag with an externally-owned one,
+    /// enabling the caller (e.g. YseState.poller_running) to stop the poller
+    /// by setting it to `false` from another context.
+    pub fn set_running_flag(&mut self, flag: Arc<AtomicBool>) {
+        self.running = flag;
+    }
+
     pub fn connect_sync(&self) -> Result<imap::Session<Stream>, ImapError> {
         let noop: LogFn = Arc::new(|_, _| {});
         self.connect_sync_log(&noop)
@@ -144,12 +151,13 @@ impl ImapPoller {
     }
 
     /// Run the poller with a log callback. The callback receives (level, message).
+    /// The caller must ensure `self.running` is set to `true` before calling this
+    /// (e.g. via `set_running_flag` + `store(true, …)`). Otherwise the while loop
+    /// will not execute.
     pub async fn run_with_log<F>(self, mut on_message: F, log_fn: LogFn)
     where
         F: FnMut(Vec<u8>) + Send + 'static,
     {
-        self.running.store(true, Ordering::SeqCst);
-
         match self.connect_sync_log(&log_fn) {
             Ok(mut session) => {
                 self.fetch_new_sync(&mut session, &mut on_message, &log_fn);

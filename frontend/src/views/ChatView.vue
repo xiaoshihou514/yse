@@ -240,6 +240,8 @@ watch(selectedContact, scrollToBottom);
 onMounted(async () => {
   await store.loadMessages();
   store.listenForMessages();
+  store.listenForLogs();
+  store.startPolling();
 });
 </script>
 
