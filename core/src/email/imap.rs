@@ -5,8 +5,6 @@ use thiserror::Error;
 use tokio::time::{interval, Duration};
 use tracing::{info, warn};
 
-use std::io::BufRead;
-
 type LogFn = Arc<dyn Fn(&str, String) + Send + Sync>;
 
 #[derive(Error, Debug)]
@@ -79,30 +77,15 @@ impl ImapPoller {
         info!("IMAP: login OK");
 
         // Some servers (e.g. 163 / Coremail) require an ID command before SELECT.
-        match session.run_command_and_check_ok(r#"ID ("name" "yse" "version" "1.0")"#) {
+        // We bypass the imap crate's parser (it can't handle `* ID (...)`) and
+        // send the command + read the response manually through the raw BufStream.
+        match unsafe { Self::send_id_raw(&mut session) } {
             Ok(_) => {
-                log_fn("info", "IMAP: ID command OK".into());
-                info!("IMAP: ID command OK");
-            }
-            Err(ref e) if matches!(e, imap::error::Error::Parse(_)) => {
-                log_fn(
-                    "info",
-                    "IMAP: ID response unparseable (Coremail style), draining buffer".into(),
-                );
-                info!("IMAP: ID response unparseable (Coremail style), draining buffer");
-                // Set a short read timeout so drain doesn't hang if the
-                // tagged response hasn't arrived in the BufReader yet.
-                let drain_ok = unsafe { Self::drain_response_line(&mut session) }.is_ok();
-                if drain_ok {
-                    log_fn("info", "IMAP: drained ID response line".into());
-                } else {
-                    let msg = "IMAP: drain ID response line failed/timed out, continuing anyway";
-                    warn!("{}", msg);
-                    log_fn("warn", msg.into());
-                }
+                log_fn("info", "IMAP: ID exchange OK".into());
+                info!("IMAP: ID exchange OK");
             }
             Err(e) => {
-                let msg = format!("IMAP: ID command not supported: {e}");
+                let msg = format!("IMAP: ID exchange skipped/failed: {e}");
                 info!("{msg}");
                 log_fn("info", msg);
             }
@@ -124,39 +107,32 @@ impl ImapPoller {
         Ok(session)
     }
 
-    /// After sending an `ID` command, `imap_proto` cannot parse `* ID (...)` responses.
-    /// The untagged line is consumed but the tagged response remains in the BufReader's
-    /// internal buffer. We drain it here to avoid tag mismatch panic on the next command.
+    /// Send the IMAP `ID` command and consume both response lines manually,
+    /// bypassing `imap_proto` which cannot parse `* ID (...)` responses.
+    ///
+    /// After `login` the internal tag is 1. We send `a0002 ID …` then consume
+    /// `* ID (…)` + `a0002 OK ID completed`. The next crate command (`SELECT`)
+    /// increments to 2 and sends `a0002 SELECT …` — tags are opaque to the
+    /// server, so re‑using `a0002` is fine.
     ///
     /// # Safety
-    /// Transmutes `Session` → `BufStream` to access the internal BufReader.
-    /// Layout: `Session { conn: Connection { stream: BufStream, … }, … }`.
-    /// Both types share the same starting address (Rust preserves field order).
-    unsafe fn drain_response_line(session: &mut imap::Session<Stream>) -> std::io::Result<()> {
+    /// Transmutes `Session` → `BufStream` to read/write the raw IMAP protocol.
+    unsafe fn send_id_raw(session: &mut imap::Session<Stream>) -> std::io::Result<()> {
+        use std::io::{BufRead, Write};
         let bufstream = session as *mut imap::Session<Stream> as *mut bufstream::BufStream<Stream>;
         let bufstream = &mut *bufstream;
 
-        // Set a 3 s read timeout on the TCP socket so we don't hang
-        // indefinitely if the tagged response hasn't been buffered yet.
-        {
-            let raw: &mut Stream = bufstream.get_mut();
-            let _ = raw
-                .get_ref()
-                .set_read_timeout(Some(std::time::Duration::from_secs(3)));
-        }
+        bufstream.write_all(b"a0002 ID (\"name\" \"yse\" \"version\" \"1.0\")\r\n")?;
+        bufstream.flush()?;
 
-        let mut line = String::new();
-        let n = bufstream.read_line(&mut line)?;
+        let mut raw = String::new();
+        bufstream.read_line(&mut raw)?;
+        info!("IMAP: ID untagged: {}", raw.trim());
 
-        // Restore infinite timeout.
-        {
-            let raw: &mut Stream = bufstream.get_mut();
-            let _ = raw.get_ref().set_read_timeout(None);
-        }
+        raw.clear();
+        bufstream.read_line(&mut raw)?;
+        info!("IMAP: ID tagged: {}", raw.trim());
 
-        if n > 0 {
-            info!("IMAP: drained response line: {}", line.trim());
-        }
         Ok(())
     }
 
