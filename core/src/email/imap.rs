@@ -27,8 +27,6 @@ pub struct ImapConfig {
     pub password: String,
 }
 
-type Stream = native_tls::TlsStream<std::net::TcpStream>;
-
 pub struct ImapPoller {
     config: ImapConfig,
     running: Arc<AtomicBool>,
@@ -55,24 +53,20 @@ impl ImapPoller {
         self.running = flag;
     }
 
-    pub fn connect_sync(&self) -> Result<imap::Session<Stream>, ImapError> {
+    pub fn connect_sync(&self) -> Result<imap::Session<imap::Connection>, ImapError> {
         let noop: LogFn = Arc::new(|_, _| {});
         self.connect_sync_log(&noop)
     }
 
-    fn connect_sync_log(&self, log_fn: &LogFn) -> Result<imap::Session<Stream>, ImapError> {
-        let tls = native_tls::TlsConnector::builder()
-            .build()
-            .map_err(|e| ImapError::Tls(e.to_string()))?;
-
+    fn connect_sync_log(
+        &self,
+        log_fn: &LogFn,
+    ) -> Result<imap::Session<imap::Connection>, ImapError> {
         log_fn("info", "IMAP: connecting...".into());
 
-        let client = imap::connect(
-            (self.config.server.clone(), self.config.port),
-            self.config.server.as_str(),
-            &tls,
-        )
-        .map_err(|e| ImapError::Connect(e.to_string()))?;
+        let client = imap::ClientBuilder::new(&self.config.server, self.config.port)
+            .connect()
+            .map_err(|e| ImapError::Connect(e.to_string()))?;
 
         log_fn("info", format!("IMAP: connected to {}", self.config.server));
 
@@ -83,64 +77,38 @@ impl ImapPoller {
         log_fn("info", "IMAP: login OK".into());
         info!("IMAP: login OK");
 
-        // Some servers (e.g. 163 / Coremail) require an ID command before SELECT.
-        // We bypass the imap crate's parser (it can't handle `* ID (...)`) and
-        // send the command + read the response manually through the raw BufStream.
-        match unsafe { Self::send_id_raw(&mut session) } {
-            Ok(_) => {
-                log_fn("info", "IMAP: ID exchange OK".into());
-                info!("IMAP: ID exchange OK");
-            }
+        // Some servers (QQ Mail, 163/Coremail) require the ID command (RFC 2971)
+        // before SELECT/EXAMINE. imap-proto >=0.16 natively supports parsing the
+        // `* ID (...)` response via `Response::Id`.
+        match session.run_command_and_check_ok(r#"ID ("name" "yse" "version" "1.0")"#) {
+            Ok(()) => log_fn("info", "IMAP: ID exchange OK".into()),
             Err(e) => {
-                let msg = format!("IMAP: ID exchange skipped/failed: {e}");
-                info!("{msg}");
-                log_fn("info", msg);
+                let msg = format!("IMAP: ID exchange failed: {e}");
+                warn!("{msg}");
+                log_fn("warn", msg);
             }
         }
 
         log_fn("info", "IMAP: selecting INBOX...".into());
 
         // Try SELECT first, fall back to EXAMINE.
-        if session
-            .select("INBOX")
-            .or_else(|_| session.examine("INBOX"))
-            .is_err()
-        {
-            return Err(ImapError::Connect("select/examine INBOX failed".into()));
+        if let Err(e) = session.select("INBOX").or_else(|e| {
+            let msg = format!("IMAP: SELECT INBOX failed: {e}");
+            info!("{msg}");
+            log_fn("warn", msg);
+            session.examine("INBOX")
+        }) {
+            let msg = format!("IMAP: EXAMINE INBOX also failed: {e}");
+            warn!("{msg}");
+            log_fn("error", msg);
+            return Err(ImapError::Connect(format!(
+                "select/examine INBOX failed: {e}"
+            )));
         }
 
         log_fn("info", "IMAP: SELECT/EXAMINE INBOX OK".into());
         info!("IMAP: SELECT/EXAMINE INBOX OK");
         Ok(session)
-    }
-
-    /// Send the IMAP `ID` command and consume both response lines manually,
-    /// bypassing `imap_proto` which cannot parse `* ID (...)` responses.
-    ///
-    /// After `login` the internal tag is 1. We send `a0002 ID …` then consume
-    /// `* ID (…)` + `a0002 OK ID completed`. The next crate command (`SELECT`)
-    /// increments to 2 and sends `a0002 SELECT …` — tags are opaque to the
-    /// server, so re‑using `a0002` is fine.
-    ///
-    /// # Safety
-    /// Transmutes `Session` → `BufStream` to read/write the raw IMAP protocol.
-    unsafe fn send_id_raw(session: &mut imap::Session<Stream>) -> std::io::Result<()> {
-        use std::io::{BufRead, Write};
-        let bufstream = session as *mut imap::Session<Stream> as *mut bufstream::BufStream<Stream>;
-        let bufstream = &mut *bufstream;
-
-        bufstream.write_all(b"a0002 ID (\"name\" \"yse\" \"version\" \"1.0\")\r\n")?;
-        bufstream.flush()?;
-
-        let mut raw = String::new();
-        bufstream.read_line(&mut raw)?;
-        info!("IMAP: ID untagged: {}", raw.trim());
-
-        raw.clear();
-        bufstream.read_line(&mut raw)?;
-        info!("IMAP: ID tagged: {}", raw.trim());
-
-        Ok(())
     }
 
     pub async fn run<F>(self, on_message: F)
@@ -187,7 +155,7 @@ impl ImapPoller {
 
     fn fetch_new_sync<F>(
         &self,
-        session: &mut imap::Session<Stream>,
+        session: &mut imap::Session<imap::Connection>,
         on_message: &mut F,
         log_fn: &LogFn,
     ) where
