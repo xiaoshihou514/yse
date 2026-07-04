@@ -32,15 +32,18 @@ pub fn run() {
             let handle = app.handle().clone();
             // Store app handle for plugin handler to emit events
             *state.app_handle.lock().unwrap() = Some(handle.clone());
+            // Use a temporary runtime for async initialization.
+            // MUST leak (mem::forget) so that tokio::spawn tasks started
+            // inside (plugin stdout readers, etc.) survive beyond .setup().
             if let Ok(rt) = tokio::runtime::Runtime::new() {
                 rt.block_on(async {
                     state.load_config().await;
                     state.auto_start_plugins().await;
-                    // Auto-start polling (fails gracefully if crypto key not set)
                     if let Err(e) = state.start_polling_inner(handle).await {
                         state.log("warn", format!("auto-start polling skipped: {}", e));
                     }
                 });
+                std::mem::forget(rt);
             }
             Ok(())
         })
