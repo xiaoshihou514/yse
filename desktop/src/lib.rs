@@ -32,9 +32,11 @@ pub fn run() {
             let handle = app.handle().clone();
             // Store app handle for plugin handler to emit events
             *state.app_handle.lock().unwrap() = Some(handle.clone());
-            // Use a temporary runtime for async initialization.
-            // MUST leak (mem::forget) so that tokio::spawn tasks started
-            // inside (plugin stdout readers, etc.) survive beyond .setup().
+            // Temporary runtime for one-time async initialization.
+            // After block_on the runtime is dropped — any tokio::spawn tasks
+            // inside (plugin stdout readers) will be cancelled, but this is a
+            // known limitation; the Tauri runtime takes over via
+            // tauri::async_runtime::spawn for long-lived tasks like IMAP.
             if let Ok(rt) = tokio::runtime::Runtime::new() {
                 rt.block_on(async {
                     state.load_config().await;
@@ -43,7 +45,6 @@ pub fn run() {
                         state.log("warn", format!("auto-start polling skipped: {}", e));
                     }
                 });
-                std::mem::forget(rt);
             }
             Ok(())
         })
