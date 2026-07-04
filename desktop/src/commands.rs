@@ -454,7 +454,7 @@ impl YseState {
         let state_app_handle = self.app_handle.clone();
         let state_log_buffer = self.log_buffer.clone();
 
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             poller
                 .run_with_log(
                     move |raw_email| {
