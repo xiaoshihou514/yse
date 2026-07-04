@@ -1,14 +1,14 @@
-pub mod crypto;
-pub mod message;
-pub mod disguise;
 pub mod config;
-pub mod store;
+pub mod crypto;
+pub mod disguise;
 pub mod email;
+pub mod event;
+pub mod message;
 pub mod plugin;
 pub mod router;
-pub mod event;
+pub mod store;
 
-pub use crypto::{derive_key, decrypt, encrypt, CryptoError};
-pub use message::{FileAttachment, Message, MessageError};
-pub use disguise::{disguise, DisguisedSender};
 pub use config::{PluginMapping, YseConfig};
+pub use crypto::{decrypt, derive_key, encrypt, CryptoError};
+pub use disguise::{disguise, DisguisedSender};
+pub use message::{FileAttachment, Message, MessageError};

@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::message::Message;
+use async_trait::async_trait;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

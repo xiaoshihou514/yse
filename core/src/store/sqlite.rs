@@ -22,7 +22,10 @@ impl SqliteStorage {
     }
 
     fn migrate(&self) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS messages (
@@ -60,8 +63,14 @@ impl SqliteStorage {
 #[async_trait]
 impl Storage for SqliteStorage {
     async fn save_message(&self, msg: &Message) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
-        let files_json = msg.files.as_ref().map(|f| serde_json::to_string(f).unwrap());
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let files_json = msg
+            .files
+            .as_ref()
+            .map(|f| serde_json::to_string(f).unwrap());
         let meta_json = msg.meta.as_ref().map(|m| m.to_string());
         conn.execute(
             "INSERT OR IGNORE INTO messages (id, from_addr, to_addr, timestamp, protocol, text, files, meta, created_at)
@@ -82,7 +91,10 @@ impl Storage for SqliteStorage {
     }
 
     async fn list_messages(&self, limit: u32, offset: u32) -> Result<Vec<Message>, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, from_addr, to_addr, timestamp, protocol, text, files, meta
@@ -101,8 +113,7 @@ impl Storage for SqliteStorage {
                     timestamp: row.get(3)?,
                     id: row.get(0)?,
                     text: row.get(5)?,
-                    files: files_json
-                        .and_then(|s| serde_json::from_str(&s).ok()),
+                    files: files_json.and_then(|s| serde_json::from_str(&s).ok()),
                     meta: meta_json.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })
@@ -116,7 +127,10 @@ impl Storage for SqliteStorage {
     }
 
     async fn is_processed(&self, msg_id: &str) -> Result<bool, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT processed FROM messages WHERE id = ?1")
             .map_err(|e| StoreError::Db(e.to_string()))?;
@@ -127,7 +141,10 @@ impl Storage for SqliteStorage {
     }
 
     async fn mark_processed(&self, msg_id: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         conn.execute(
             "UPDATE messages SET processed = 1 WHERE id = ?1",
             rusqlite::params![msg_id],
@@ -137,7 +154,10 @@ impl Storage for SqliteStorage {
     }
 
     async fn list_plugins(&self) -> Result<Vec<PluginConfig>, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT id, name, exec_path, args, enabled FROM plugins")
             .map_err(|e| StoreError::Db(e.to_string()))?;
@@ -161,7 +181,10 @@ impl Storage for SqliteStorage {
     }
 
     async fn save_plugin(&self, plugin: &PluginConfig) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         let args_str = serde_json::to_string(&plugin.args).unwrap_or_default();
         conn.execute(
             "INSERT OR REPLACE INTO plugins (id, name, exec_path, args, enabled) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -172,14 +195,20 @@ impl Storage for SqliteStorage {
     }
 
     async fn delete_plugin(&self, id: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         conn.execute("DELETE FROM plugins WHERE id = ?1", rusqlite::params![id])
             .map_err(|e| StoreError::Db(e.to_string()))?;
         Ok(())
     }
 
     async fn get_config_value(&self, key: &str) -> Result<Option<String>, StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT value FROM config WHERE key = ?1")
             .map_err(|e| StoreError::Db(e.to_string()))?;
@@ -192,7 +221,10 @@ impl Storage for SqliteStorage {
     }
 
     async fn set_config_value(&self, key: &str, value: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().map_err(|e| StoreError::Db(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO config (key, value) VALUES (?1, ?2)",
             rusqlite::params![key, value],
@@ -212,7 +244,11 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let msg = Message::new("alice@yse.org".into(), "bob@yse.org".into(), Some("hi".into()));
+            let msg = Message::new(
+                "alice@yse.org".into(),
+                "bob@yse.org".into(),
+                Some("hi".into()),
+            );
             db.save_message(&msg).await.unwrap();
 
             assert!(!db.is_processed(&msg.id).await.unwrap());
@@ -237,7 +273,10 @@ mod tests {
 
             // config
             db.set_config_value("key1", "val1").await.unwrap();
-            assert_eq!(db.get_config_value("key1").await.unwrap(), Some("val1".into()));
+            assert_eq!(
+                db.get_config_value("key1").await.unwrap(),
+                Some("val1".into())
+            );
         });
     }
 }

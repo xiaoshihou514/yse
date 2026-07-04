@@ -5395,6 +5395,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "base64 0.22.1",
+ "bufstream",
  "chacha20poly1305",
  "futures-util",
  "imap",

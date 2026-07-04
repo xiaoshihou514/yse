@@ -1,9 +1,9 @@
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tauri::{Emitter, State};
+use tokio::sync::RwLock;
 use yse_core::{
     config::YseConfig,
-    crypto::{derive_key, decrypt, encrypt},
+    crypto::{decrypt, derive_key, encrypt},
     disguise,
     email::{
         imap::{ImapConfig, ImapPoller},
@@ -14,7 +14,7 @@ use yse_core::{
     message::Message,
     plugin::process::PluginManager,
     router::Router,
-    store::{PluginConfig, Storage, sqlite::SqliteStorage},
+    store::{sqlite::SqliteStorage, PluginConfig, Storage},
 };
 
 use serde::Serialize;
@@ -155,9 +155,9 @@ impl YseState {
 
     /// Set up the plugin request handler so plugins can send/log via core.
     pub fn setup_plugin_handler(&self) {
+        use tauri::Emitter;
         use yse_core::crypto::encrypt;
         use yse_core::plugin::protocol::PluginRequest;
-        use tauri::Emitter;
 
         let store = self.store.clone();
         let config = self.config.clone();
@@ -168,7 +168,12 @@ impl YseState {
 
         let handler: yse_core::plugin::process::PluginRequestHandler = Arc::new(move |req| {
             match req {
-                PluginRequest::Send { from_addr, to_addr, text, .. } => {
+                PluginRequest::Send {
+                    from_addr,
+                    to_addr,
+                    text,
+                    ..
+                } => {
                     let store = store.clone();
                     let config = config.clone();
                     let crypto_key = crypto_key.clone();
@@ -182,21 +187,36 @@ impl YseState {
                         let payload = match msg.to_json() {
                             Ok(p) => p,
                             Err(_) => {
-                                log_emit(&app_handle, &log_buffer, "error", format!("plugin Send serialization failed"));
+                                log_emit(
+                                    &app_handle,
+                                    &log_buffer,
+                                    "error",
+                                    format!("plugin Send serialization failed"),
+                                );
                                 return;
                             }
                         };
                         let key = match crypto_key.read().await.as_ref() {
                             Some(k) => *k,
                             None => {
-                                log_emit(&app_handle, &log_buffer, "warn", format!("plugin Send skipped: crypto key not set"));
+                                log_emit(
+                                    &app_handle,
+                                    &log_buffer,
+                                    "warn",
+                                    format!("plugin Send skipped: crypto key not set"),
+                                );
                                 return;
                             }
                         };
                         let encrypted = match encrypt(&key, &payload) {
                             Ok(e) => e,
                             Err(_) => {
-                                log_emit(&app_handle, &log_buffer, "error", format!("plugin Send encrypt failed"));
+                                log_emit(
+                                    &app_handle,
+                                    &log_buffer,
+                                    "error",
+                                    format!("plugin Send encrypt failed"),
+                                );
                                 return;
                             }
                         };
@@ -205,20 +225,45 @@ impl YseState {
                         if let Some(s) = sender.read().await.as_ref() {
                             let d = disguise::disguise();
                             match s
-                                .send((&email_user, &d.display_name), &email_user, encrypted, vec![])
+                                .send(
+                                    (&email_user, &d.display_name),
+                                    &email_user,
+                                    encrypted,
+                                    vec![],
+                                )
                                 .await
                             {
                                 Ok(_) => {
-                                    log_emit(&app_handle, &log_buffer, "info", format!("plugin Send delivered to {}", to_addr));
+                                    log_emit(
+                                        &app_handle,
+                                        &log_buffer,
+                                        "info",
+                                        format!("plugin Send delivered to {}", to_addr),
+                                    );
                                 }
                                 Err(e) => {
-                                    log_emit(&app_handle, &log_buffer, "error", format!("plugin Send SMTP failed: {}", e));
+                                    log_emit(
+                                        &app_handle,
+                                        &log_buffer,
+                                        "error",
+                                        format!("plugin Send SMTP failed: {}", e),
+                                    );
                                 }
                             }
                         }
 
                         let _ = store.save_message(&msg).await;
-                        log_emit(&app_handle, &log_buffer, "info", format!("plugin Send saved msg {} to {}: {}", msg.id, to_addr, text.as_deref().unwrap_or("")));
+                        log_emit(
+                            &app_handle,
+                            &log_buffer,
+                            "info",
+                            format!(
+                                "plugin Send saved msg {} to {}: {}",
+                                msg.id,
+                                to_addr,
+                                text.as_deref().unwrap_or("")
+                            ),
+                        );
 
                         // Notify frontend
                         if let Some(h) = app_handle.lock().unwrap().as_ref() {
@@ -303,13 +348,23 @@ pub async fn send_message(
     };
 
     if dispatch_count > 0 {
-        state.log("info", format!("dispatched to {} plugin(s) for {}", dispatch_count, msg.to_addr));
+        state.log(
+            "info",
+            format!(
+                "dispatched to {} plugin(s) for {}",
+                dispatch_count, msg.to_addr
+            ),
+        );
     } else {
         state.log("debug", format!("no running plugin for {}", msg.to_addr));
     }
 
     // Save message regardless of SMTP
-    state.store.save_message(&msg).await.map_err(|e| e.to_string())?;
+    state
+        .store
+        .save_message(&msg)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Send via SMTP (best-effort for external delivery)
     if let Some(sender) = state.sender.read().await.as_ref() {
@@ -328,7 +383,10 @@ pub async fn send_message(
             state.log("error", format!("SMTP send failed: {}", e));
         }
     } else {
-        state.log("warn", "SMTP not configured, message not sent via email".into());
+        state.log(
+            "warn",
+            "SMTP not configured, message not sent via email".into(),
+        );
     }
 
     state.log("info", format!("sent message to {}", to));
@@ -360,10 +418,7 @@ pub async fn save_config(state: State<'_, YseState>, config: YseConfig) -> Resul
 
 impl YseState {
     /// Start IMAP polling. Called from Tauri command or auto-start.
-    pub async fn start_polling_inner(
-        &self,
-        app_handle: tauri::AppHandle,
-    ) -> Result<(), String> {
+    pub async fn start_polling_inner(&self, app_handle: tauri::AppHandle) -> Result<(), String> {
         use tauri::Emitter;
 
         let (imap_cfg, key, store, own_addr, plugin_manager, yse_cfg) = {
@@ -383,7 +438,14 @@ impl YseState {
                 .clone()
                 .ok_or("crypto key not set")?;
 
-            (imap, key, self.store.clone(), self.config.read().await.own_address.clone(), self.plugin_manager.clone(), self.config.clone())
+            (
+                imap,
+                key,
+                self.store.clone(),
+                self.config.read().await.own_address.clone(),
+                self.plugin_manager.clone(),
+                self.config.clone(),
+            )
         };
 
         self.log("info", "IMAP polling started".into());
@@ -397,125 +459,136 @@ impl YseState {
                 .run_with_log(
                     move |raw_email| {
                         let parsed = match parse_incoming(&raw_email) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            let entry = LogEntry {
-                                level: "warn".into(),
-                                message: format!("IMAP parse failed: {}", e),
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() as u64,
-                            };
-                            let _ = app_handle.emit("log-entry", &entry);
-                            return;
-                        }
-                    };
-                    let entry = LogEntry {
-                        level: "info".into(),
-                        message: format!("IMAP received {} bytes, decrypting...", parsed.encrypted_body.len()),
-                        timestamp: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis() as u64,
-                    };
-                    let _ = app_handle.emit("log-entry", &entry);
-
-                    let decrypted = match decrypt(&key, &parsed.encrypted_body) {
-                        Ok(d) => d,
-                        Err(e) => {
-                            let entry = LogEntry {
-                                level: "warn".into(),
-                                message: format!("decrypt failed: {}", e),
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() as u64,
-                            };
-                            let _ = app_handle.emit("log-entry", &entry);
-                            return;
-                        }
-                    };
-                    let msg = match Message::from_json(&decrypted) {
-                        Ok(m) => m,
-                        Err(e) => {
-                            let entry = LogEntry {
-                                level: "warn".into(),
-                                message: format!("JSON parse failed: {}", e),
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() as u64,
-                            };
-                            let _ = app_handle.emit("log-entry", &entry);
-                            return;
-                        }
-                    };
-
-                    let store = store.clone();
-                    let handle = app_handle.clone();
-                    let own = own_addr.clone();
-                    let pm = plugin_manager.clone();
-                    let cfg = yse_cfg.clone();
-
-                    tokio::spawn(async move {
-                        let _ = store.save_message(&msg).await;
-
-                        let already = store.is_processed(&msg.id).await.unwrap_or(false);
-                        if !already {
-                            let mappings: Vec<(String, String)> = cfg
-                                .read()
-                                .await
-                                .plugin_mappings
-                                .iter()
-                                .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
-                                .collect();
-                            let n = pm.dispatch_message(
-                                &msg.to_addr,
-                                &msg.from_addr,
-                                msg.text.as_deref(),
-                                msg.meta.as_ref(),
-                                msg.files.as_ref(),
-                                &mappings,
-                            )
-                            .await;
-                            let _ = store.mark_processed(&msg.id).await;
-                            let log_msg = if n > 0 {
-                                format!("dispatched msg {} to {} plugin(s)", msg.id, n)
-                            } else {
-                                format!("msg {}: no running plugin for {}", msg.id, msg.to_addr)
-                            };
-                            let log = LogEntry {
-                                level: "info".into(),
-                                message: log_msg,
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() as u64,
-                            };
-                            let _ = handle.emit("log-entry", &log);
-                        }
-
+                            Ok(p) => p,
+                            Err(e) => {
+                                let entry = LogEntry {
+                                    level: "warn".into(),
+                                    message: format!("IMAP parse failed: {}", e),
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis()
+                                        as u64,
+                                };
+                                let _ = app_handle.emit("log-entry", &entry);
+                                return;
+                            }
+                        };
                         let entry = LogEntry {
                             level: "info".into(),
-                            message: format!("received msg {} from {} to {}", msg.id, msg.from_addr, msg.to_addr),
+                            message: format!(
+                                "IMAP received {} bytes, decrypting...",
+                                parsed.encrypted_body.len()
+                            ),
                             timestamp: std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap()
                                 .as_millis() as u64,
                         };
-                        let _ = handle.emit("log-entry", &entry);
+                        let _ = app_handle.emit("log-entry", &entry);
 
-                        if msg.to_addr == own || msg.from_addr == own {
-                            let _ = handle.emit("new-message", &msg);
-                        }
-                    });
-                },
-                Arc::new(move |level, msg| {
-                    log_emit(&state_app_handle, &state_log_buffer, level, msg);
-                }),
-            )
-            .await;
+                        let decrypted = match decrypt(&key, &parsed.encrypted_body) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                let entry = LogEntry {
+                                    level: "warn".into(),
+                                    message: format!("decrypt failed: {}", e),
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis()
+                                        as u64,
+                                };
+                                let _ = app_handle.emit("log-entry", &entry);
+                                return;
+                            }
+                        };
+                        let msg = match Message::from_json(&decrypted) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                let entry = LogEntry {
+                                    level: "warn".into(),
+                                    message: format!("JSON parse failed: {}", e),
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis()
+                                        as u64,
+                                };
+                                let _ = app_handle.emit("log-entry", &entry);
+                                return;
+                            }
+                        };
+
+                        let store = store.clone();
+                        let handle = app_handle.clone();
+                        let own = own_addr.clone();
+                        let pm = plugin_manager.clone();
+                        let cfg = yse_cfg.clone();
+
+                        tokio::spawn(async move {
+                            let _ = store.save_message(&msg).await;
+
+                            let already = store.is_processed(&msg.id).await.unwrap_or(false);
+                            if !already {
+                                let mappings: Vec<(String, String)> = cfg
+                                    .read()
+                                    .await
+                                    .plugin_mappings
+                                    .iter()
+                                    .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
+                                    .collect();
+                                let n = pm
+                                    .dispatch_message(
+                                        &msg.to_addr,
+                                        &msg.from_addr,
+                                        msg.text.as_deref(),
+                                        msg.meta.as_ref(),
+                                        msg.files.as_ref(),
+                                        &mappings,
+                                    )
+                                    .await;
+                                let _ = store.mark_processed(&msg.id).await;
+                                let log_msg = if n > 0 {
+                                    format!("dispatched msg {} to {} plugin(s)", msg.id, n)
+                                } else {
+                                    format!("msg {}: no running plugin for {}", msg.id, msg.to_addr)
+                                };
+                                let log = LogEntry {
+                                    level: "info".into(),
+                                    message: log_msg,
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis()
+                                        as u64,
+                                };
+                                let _ = handle.emit("log-entry", &log);
+                            }
+
+                            let entry = LogEntry {
+                                level: "info".into(),
+                                message: format!(
+                                    "received msg {} from {} to {}",
+                                    msg.id, msg.from_addr, msg.to_addr
+                                ),
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as u64,
+                            };
+                            let _ = handle.emit("log-entry", &entry);
+
+                            if msg.to_addr == own || msg.from_addr == own {
+                                let _ = handle.emit("new-message", &msg);
+                            }
+                        });
+                    },
+                    Arc::new(move |level, msg| {
+                        log_emit(&state_app_handle, &state_log_buffer, level, msg);
+                    }),
+                )
+                .await;
         });
 
         Ok(())
@@ -529,9 +602,19 @@ impl YseState {
         };
         for p in &plugins {
             if p.enabled {
-                match self.plugin_manager.start_plugin(&p.id, &p.exec_path, &p.args).await {
-                    Ok(_) => self.log("info", format!("auto-started plugin: {} ({})", p.name, p.id)),
-                    Err(e) => self.log("warn", format!("auto-start plugin {} failed: {}", p.name, e)),
+                match self
+                    .plugin_manager
+                    .start_plugin(&p.id, &p.exec_path, &p.args)
+                    .await
+                {
+                    Ok(_) => self.log(
+                        "info",
+                        format!("auto-started plugin: {} ({})", p.name, p.id),
+                    ),
+                    Err(e) => self.log(
+                        "warn",
+                        format!("auto-start plugin {} failed: {}", p.name, e),
+                    ),
                 }
             }
         }
@@ -556,9 +639,7 @@ pub async fn stop_polling(state: State<'_, YseState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn list_plugins(
-    state: State<'_, YseState>,
-) -> Result<Vec<PluginConfig>, String> {
+pub async fn list_plugins(state: State<'_, YseState>) -> Result<Vec<PluginConfig>, String> {
     state.store.list_plugins().await.map_err(|e| e.to_string())
 }
 
@@ -580,7 +661,11 @@ pub async fn add_plugin(
         args: vec![],
         enabled: true,
     };
-    state.store.save_plugin(&pc).await.map_err(|e| e.to_string())?;
+    state
+        .store
+        .save_plugin(&pc)
+        .await
+        .map_err(|e| e.to_string())?;
     state
         .plugin_manager
         .start_plugin(&id, &exec_path, &[])
@@ -601,7 +686,11 @@ pub async fn add_plugin(
             });
             // Persist to DB
             let json = serde_json::to_string(&*cfg).map_err(|e| e.to_string())?;
-            state.store.set_config_value("config", &json).await.map_err(|e| e.to_string())?;
+            state
+                .store
+                .set_config_value("config", &json)
+                .await
+                .map_err(|e| e.to_string())?;
         }
     }
 
@@ -612,7 +701,11 @@ pub async fn add_plugin(
 #[tauri::command]
 pub async fn remove_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
     let _ = state.plugin_manager.stop_plugin(&id).await;
-    state.store.delete_plugin(&id).await.map_err(|e| e.to_string())?;
+    state
+        .store
+        .delete_plugin(&id)
+        .await
+        .map_err(|e| e.to_string())?;
     state.log("info", format!("plugin removed: {}", id));
     Ok(())
 }
@@ -624,7 +717,11 @@ pub async fn toggle_plugin(
     enabled: bool,
 ) -> Result<(), String> {
     if enabled {
-        let plugins = state.store.list_plugins().await.map_err(|e| e.to_string())?;
+        let plugins = state
+            .store
+            .list_plugins()
+            .await
+            .map_err(|e| e.to_string())?;
         let p = plugins
             .iter()
             .find(|p| p.id == id)
@@ -652,12 +749,16 @@ pub async fn toggle_plugin(
 }
 
 #[tauri::command]
-pub async fn start_plugin(
-    state: State<'_, YseState>,
-    id: String,
-) -> Result<(), String> {
-    let plugins = state.store.list_plugins().await.map_err(|e| e.to_string())?;
-    let p = plugins.iter().find(|p| p.id == id).ok_or("plugin not found")?;
+pub async fn start_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
+    let plugins = state
+        .store
+        .list_plugins()
+        .await
+        .map_err(|e| e.to_string())?;
+    let p = plugins
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or("plugin not found")?;
     state
         .plugin_manager
         .start_plugin(&id, &p.exec_path, &p.args)
@@ -687,7 +788,11 @@ pub async fn get_logs(
 ) -> Result<Vec<LogEntry>, String> {
     let buf = state.log_buffer.lock().unwrap();
     let limit = limit.unwrap_or(100);
-    let start = if buf.len() > limit { buf.len() - limit } else { 0 };
+    let start = if buf.len() > limit {
+        buf.len() - limit
+    } else {
+        0
+    };
     Ok(buf[start..].to_vec())
 }
 
@@ -705,6 +810,8 @@ pub async fn test_email(
         username,
         password,
     });
-    let _session = p.connect_sync().map_err(|e| format!("IMAP 连接失败: {}", e))?;
+    let _session = p
+        .connect_sync()
+        .map_err(|e| format!("IMAP 连接失败: {}", e))?;
     Ok("邮箱连接正常".into())
 }

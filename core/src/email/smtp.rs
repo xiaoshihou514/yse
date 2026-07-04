@@ -1,8 +1,11 @@
+use lettre::message::{
+    header::{ContentDisposition, ContentType},
+    MultiPart, SinglePart,
+};
 use lettre::{
     transport::smtp::authentication::Credentials, AsyncSmtpTransport, AsyncTransport,
     Message as LettreMessage, Tokio1Executor,
 };
-use lettre::message::{MultiPart, SinglePart, header::{ContentType, ContentDisposition}};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -37,12 +40,11 @@ impl SmtpSender {
         body: Vec<u8>,
         attachments: Vec<(&str, Vec<u8>)>,
     ) -> Result<(), SmtpError> {
-        let mut multipart = MultiPart::mixed()
-            .singlepart(
-                SinglePart::builder()
-                    .header(ContentType::parse("text/plain").unwrap())
-                    .body(body),
-            );
+        let mut multipart = MultiPart::mixed().singlepart(
+            SinglePart::builder()
+                .header(ContentType::parse("text/plain").unwrap())
+                .body(body),
+        );
 
         for (fname, data) in attachments {
             let part = SinglePart::builder()
@@ -58,7 +60,9 @@ impl SmtpSender {
                     .parse::<lettre::message::Mailbox>()
                     .map_err(|e| SmtpError::Build(e.to_string()))?,
             )
-            .to(to.parse::<lettre::message::Mailbox>().map_err(|e| SmtpError::Build(e.to_string()))?)
+            .to(to
+                .parse::<lettre::message::Mailbox>()
+                .map_err(|e| SmtpError::Build(e.to_string()))?)
             .subject("")
             .multipart(multipart)
             .map_err(|e| SmtpError::Build(e.to_string()))?;

@@ -57,7 +57,8 @@ impl Router {
         }
 
         let mappings = self.mappings.lock().await;
-        let _ = self.plugin_manager
+        let _ = self
+            .plugin_manager
             .dispatch_message(
                 &msg.to_addr,
                 &msg.from_addr,
@@ -96,7 +97,8 @@ impl Router {
 
         for msg in to_deliver {
             let mappings = self.mappings.lock().await;
-            let _ = self.plugin_manager
+            let _ = self
+                .plugin_manager
                 .dispatch_message(
                     &msg.to_addr,
                     &msg.from_addr,

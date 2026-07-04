@@ -23,3 +23,4 @@ base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 async-trait = "0.1"
 futures-util = "0.3"
+bufstream = "0.1"

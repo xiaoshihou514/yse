@@ -1,5 +1,5 @@
-use tokio::sync::broadcast;
 use crate::message::Message;
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone)]
 pub enum CoreEvent {

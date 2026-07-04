@@ -20,8 +20,7 @@ pub fn run() {
 
     let db_path = app_data_dir.join("yse.db");
 
-    let state =
-        YseState::new(db_path).expect("failed to initialize YSE application state");
+    let state = YseState::new(db_path).expect("failed to initialize YSE application state");
     state.setup_plugin_handler();
 
     tauri::Builder::default()

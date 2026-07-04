@@ -51,7 +51,10 @@ pub enum CoreNotification {
     },
     /// Config changed
     #[serde(rename = "config")]
-    Config { key: String, value: serde_json::Value },
+    Config {
+        key: String,
+        value: serde_json::Value,
+    },
     /// Plugin should shut down
     #[serde(rename = "shutdown")]
     Shutdown,

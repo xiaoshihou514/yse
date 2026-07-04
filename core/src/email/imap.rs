@@ -1,9 +1,11 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::sync::Mutex;
-use tokio::time::{interval, Duration};
 use thiserror::Error;
-use tracing::warn;
+use tokio::time::{interval, Duration};
+use tracing::{info, warn};
+
+use std::io::BufRead;
 
 type LogFn = Arc<dyn Fn(&str, String) + Send + Sync>;
 
@@ -64,9 +66,21 @@ impl ImapPoller {
             .login(&self.config.username, &self.config.password)
             .map_err(|(e, _)| ImapError::Login(e.to_string()))?;
 
-        // IMAP requires a selected (or examined) mailbox before SEARCH/FETCH.
-        // Some servers (e.g. 163 / Coremail) require an ID command first.
-        let _ = session.run_command_and_check_ok(r#"ID ("name" "yse" "version" "1.0")"#);
+        info!("IMAP: login OK");
+
+        // Some servers (e.g. 163 / Coremail) require an ID command before SELECT.
+        match session.run_command_and_check_ok(r#"ID ("name" "yse" "version" "1.0")"#) {
+            Ok(_) => info!("IMAP: ID command OK"),
+            Err(ref e) if matches!(e, imap::error::Error::Parse(_)) => {
+                info!("IMAP: ID response unparseable (Coremail style), draining buffer");
+                if let Err(drain_err) = unsafe { Self::drain_response_line(&mut session) } {
+                    warn!("IMAP: drain ID response line failed: {drain_err}");
+                }
+            }
+            Err(e) => {
+                info!("IMAP: ID command not supported by server: {e}");
+            }
+        }
 
         // Try SELECT first, fall back to EXAMINE.
         if session
@@ -74,12 +88,31 @@ impl ImapPoller {
             .or_else(|_| session.examine("INBOX"))
             .is_err()
         {
-            return Err(ImapError::Connect(
-                "select/examine INBOX failed".into(),
-            ));
+            return Err(ImapError::Connect("select/examine INBOX failed".into()));
         }
 
+        info!("IMAP: SELECT/EXAMINE INBOX OK");
         Ok(session)
+    }
+
+    /// After sending an `ID` command, `imap_proto` cannot parse `* ID (...)` responses.
+    /// The untagged line is consumed but the tagged response remains in the BufReader's
+    /// internal buffer. We drain it here to avoid tag mismatch panic on the next command.
+    ///
+    /// # Safety
+    /// Transmutes `Session` → `BufStream` to access the internal BufReader.
+    /// Layout: `Session { conn: Connection { stream: BufStream, … }, … }`.
+    /// Both types share the same starting address (Rust preserves field order).
+    unsafe fn drain_response_line(session: &mut imap::Session<Stream>) -> std::io::Result<()> {
+        let bufstream = session as *mut imap::Session<Stream> as *mut bufstream::BufStream<Stream>;
+        let bufstream = &mut *bufstream;
+
+        let mut line = String::new();
+        let n = bufstream.read_line(&mut line)?;
+        if n > 0 {
+            info!("IMAP: drained response line: {}", line.trim());
+        }
+        Ok(())
     }
 
     pub async fn run<F>(self, on_message: F)
@@ -123,59 +156,74 @@ impl ImapPoller {
         }
     }
 
-    fn fetch_new_sync<F>(&self, session: &mut imap::Session<Stream>, on_message: &mut F, log_fn: &LogFn)
-    where
+    fn fetch_new_sync<F>(
+        &self,
+        session: &mut imap::Session<Stream>,
+        on_message: &mut F,
+        log_fn: &LogFn,
+    ) where
         F: FnMut(Vec<u8>),
     {
         let last_uid = { *self.last_uid.lock().unwrap() };
+        info!("IMAP: last_uid = {:?}", last_uid);
 
         // Use "ALL" for compatibility (QQ Mail rejects "UID SEARCH UID N:*").
         let all_uids = match session.uid_search("ALL") {
             Ok(ids) => ids,
             Err(e) => {
-                let msg = format!("IMAP search failed: {}", e);
+                let msg = format!("IMAP UID SEARCH ALL failed: {}", e);
                 warn!("{}", msg);
                 log_fn("error", msg);
                 return;
             }
         };
+        info!("IMAP: UID SEARCH ALL returned {} UIDs", all_uids.len());
 
         // Filter to only UIDs > last_uid (new messages)
         let new_uids: Vec<u32> = all_uids
             .iter()
             .copied()
-            .filter(|u| last_uid.map_or(true, |l| *u > l))
+            .filter(|u| last_uid.map(|l| *u > l).unwrap_or(true))
             .collect();
 
         if new_uids.is_empty() {
-            log_fn("info", "IMAP fetch: no new messages".into());
+            let msg = format!("IMAP: no new messages ({} total)", all_uids.len());
+            info!("{}", msg);
+            log_fn("info", msg);
             return;
         }
-
-        log_fn("info", format!("IMAP fetch: {} new UID(s), fetching bodies...", new_uids.len()));
 
         // Track the highest UID ever seen
         if let Some(&max_uid) = all_uids.iter().max() {
             let mut last = self.last_uid.lock().unwrap();
-            if last.map_or(true, |l| max_uid > l) {
+            if last.map(|l| max_uid > l).unwrap_or(true) {
                 *last = Some(max_uid);
             }
         }
 
         let uid_list: Vec<String> = new_uids.iter().map(|u| u.to_string()).collect();
         let uid_set = uid_list.join(",");
+        info!("IMAP: fetching {} new UID(s): {}", new_uids.len(), uid_set);
+        log_fn(
+            "info",
+            format!("IMAP: fetching {} new message(s)...", new_uids.len()),
+        );
 
         let fetches = match session.uid_fetch(uid_set.as_str(), "(BODY[])") {
             Ok(f) => f,
             Err(e) => {
-                let msg = format!("IMAP fetch failed: {}", e);
+                let msg = format!("IMAP UID FETCH failed: {}", e);
                 warn!("{}", msg);
                 log_fn("error", msg);
                 return;
             }
         };
 
-        log_fn("info", format!("IMAP fetch: got {} message(s)", fetches.len()));
+        info!("IMAP: UID FETCH returned {} message(s)", fetches.len());
+        log_fn(
+            "info",
+            format!("IMAP: got {} message body / bodies", fetches.len()),
+        );
 
         for msg in fetches.iter() {
             if let Some(body) = msg.body() {

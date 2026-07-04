@@ -33,17 +33,16 @@ impl ManagedPlugin {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
 
-        let mut child = cmd.spawn().map_err(|e| format!("spawn plugin failed: {}", e))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("spawn plugin failed: {}", e))?;
 
         let stdin = child
             .stdin
             .take()
             .map(|s| Arc::new(Mutex::new(s)))
             .ok_or("failed to open plugin stdin")?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or("failed to open plugin stdout")?;
+        let stdout = child.stdout.take().ok_or("failed to open plugin stdout")?;
 
         let plugin = ManagedPlugin {
             id: id.clone(),
