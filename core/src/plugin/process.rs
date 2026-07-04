@@ -174,12 +174,18 @@ pub struct PluginManager {
     request_handler: std::sync::Mutex<Option<PluginRequestHandler>>,
 }
 
-impl PluginManager {
-    pub fn new() -> Self {
+impl Default for PluginManager {
+    fn default() -> Self {
         Self {
             plugins: Arc::new(Mutex::new(HashMap::new())),
             request_handler: std::sync::Mutex::new(None),
         }
+    }
+}
+
+impl PluginManager {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn set_request_handler(&self, handler: PluginRequestHandler) {

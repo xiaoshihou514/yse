@@ -191,7 +191,7 @@ impl YseState {
                                     &app_handle,
                                     &log_buffer,
                                     "error",
-                                    format!("plugin Send serialization failed"),
+                                    "plugin Send serialization failed".to_string(),
                                 );
                                 return;
                             }
@@ -203,7 +203,7 @@ impl YseState {
                                     &app_handle,
                                     &log_buffer,
                                     "warn",
-                                    format!("plugin Send skipped: crypto key not set"),
+                                    "plugin Send skipped: crypto key not set".to_string(),
                                 );
                                 return;
                             }
@@ -215,7 +215,7 @@ impl YseState {
                                     &app_handle,
                                     &log_buffer,
                                     "error",
-                                    format!("plugin Send encrypt failed"),
+                                    "plugin Send encrypt failed".to_string(),
                                 );
                                 return;
                             }
@@ -431,12 +431,10 @@ impl YseState {
             };
             drop(cfg);
 
-            let key = self
-                .crypto_key
-                .read()
-                .await
-                .clone()
-                .ok_or("crypto key not set")?;
+            let key = {
+                let guard = self.crypto_key.read().await;
+                guard.as_ref().copied().ok_or("crypto key not set")?
+            };
 
             (
                 imap,

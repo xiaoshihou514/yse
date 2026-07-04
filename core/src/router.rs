@@ -7,12 +7,14 @@ use tracing::info;
 use crate::message::Message;
 use crate::plugin::process::PluginManager;
 
+type SelfMessageCallback = Arc<StdMutex<Option<Box<dyn Fn(Message) + Send>>>>;
+
 pub struct Router {
     pending: Arc<Mutex<BTreeMap<u64, Vec<Message>>>>,
     last_delivered: Arc<Mutex<HashMap<String, u64>>>,
     plugin_manager: Arc<PluginManager>,
     mappings: Arc<Mutex<Vec<(String, String)>>>,
-    on_self_message: Arc<StdMutex<Option<Box<dyn Fn(Message) + Send>>>>,
+    on_self_message: SelfMessageCallback,
 }
 
 impl Router {
