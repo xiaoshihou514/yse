@@ -449,7 +449,8 @@ impl YseState {
         };
 
         self.log("info", "IMAP polling started".into());
-        self.poller_running.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.poller_running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
 
         let mut poller = ImapPoller::new(imap_cfg);
         poller.set_running_flag(self.poller_running.clone());
