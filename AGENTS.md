@@ -97,6 +97,7 @@ Key source layout:
 - Flaky step: `android init` has `continue-on-error: true`.
 - APK signing uses auto-generated debug keystore.
 - Release job runs on push to main after other 3 jobs succeed.
+- Don't wait until the CI is done, the android job is extremely slow (~30mins)
 
 ## Git conventions
 - Commit messages in Chinese, conventional-commits format: `fix:`, `feat:`, `revert:`.

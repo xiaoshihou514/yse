@@ -476,7 +476,7 @@ impl YseState {
                             }
                         };
                         let entry = LogEntry {
-                            level: "info".into(),
+                            level: "debug".into(),
                             message: format!(
                                 "IMAP received {} bytes, decrypting...",
                                 parsed.encrypted_body.len()
@@ -569,7 +569,7 @@ impl YseState {
                             }
 
                             let entry = LogEntry {
-                                level: "info".into(),
+                                level: "debug".into(),
                                 message: format!(
                                     "received msg {} from {} to {}",
                                     msg.id, msg.from_addr, msg.to_addr

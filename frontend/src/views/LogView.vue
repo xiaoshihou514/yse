@@ -38,13 +38,12 @@ import type { LogEntry } from "@/api/commands";
 import { useYseStore } from "@/stores/yse";
 
 const store = useYseStore();
-const levelFilter = ref<string | undefined>(undefined);
+const levelFilter = ref<string>("info");
 const logContainer = ref<HTMLElement | null>(null);
 
 const levelOptions = [
-  { label: "ALL", value: "all" },
-  { label: "DEBUG", value: "debug" },
   { label: "INFO", value: "info" },
+  { label: "DEBUG", value: "debug" },
   { label: "WARN", value: "warn" },
   { label: "ERROR", value: "error" },
 ];
@@ -57,8 +56,7 @@ const levelPriority: Record<string, number> = {
 };
 
 const filteredLogs = computed(() => {
-  if (!levelFilter.value || levelFilter.value === "all") return store.logs;
-  const minPriority = levelPriority[levelFilter.value] ?? 3;
+  const minPriority = levelPriority[levelFilter.value] ?? 1;
   return store.logs.filter((l) => (levelPriority[l.level] ?? 3) >= minPriority);
 });
 

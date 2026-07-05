@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use thiserror::Error;
 use tokio::time::{interval, Duration};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 type LogFn = Arc<dyn Fn(&str, String) + Send + Sync>;
 
@@ -62,26 +62,26 @@ impl ImapPoller {
         &self,
         log_fn: &LogFn,
     ) -> Result<imap::Session<imap::Connection>, ImapError> {
-        log_fn("info", "IMAP: connecting...".into());
+        log_fn("debug", "IMAP: connecting...".into());
 
         let client = imap::ClientBuilder::new(&self.config.server, self.config.port)
             .connect()
             .map_err(|e| ImapError::Connect(e.to_string()))?;
 
-        log_fn("info", format!("IMAP: connected to {}", self.config.server));
+        log_fn("debug", format!("IMAP: connected to {}", self.config.server));
 
         let mut session = client
             .login(&self.config.username, &self.config.password)
             .map_err(|(e, _)| ImapError::Login(e.to_string()))?;
 
-        log_fn("info", "IMAP: login OK".into());
-        info!("IMAP: login OK");
+        log_fn("debug", "IMAP: login OK".into());
+        debug!("IMAP: login OK");
 
         // Some servers (QQ Mail, 163/Coremail) require the ID command (RFC 2971)
         // before SELECT/EXAMINE. imap-proto >=0.16 natively supports parsing the
         // `* ID (...)` response via `Response::Id`.
         match session.run_command_and_check_ok(r#"ID ("name" "yse" "version" "1.0")"#) {
-            Ok(()) => log_fn("info", "IMAP: ID exchange OK".into()),
+            Ok(()) => log_fn("debug", "IMAP: ID exchange OK".into()),
             Err(e) => {
                 let msg = format!("IMAP: ID exchange failed: {e}");
                 warn!("{msg}");
@@ -89,7 +89,7 @@ impl ImapPoller {
             }
         }
 
-        log_fn("info", "IMAP: selecting INBOX...".into());
+        log_fn("debug", "IMAP: selecting INBOX...".into());
 
         // Try SELECT first, fall back to EXAMINE.
         if let Err(e) = session.select("INBOX").or_else(|e| {
@@ -106,8 +106,8 @@ impl ImapPoller {
             )));
         }
 
-        log_fn("info", "IMAP: SELECT/EXAMINE INBOX OK".into());
-        info!("IMAP: SELECT/EXAMINE INBOX OK");
+        log_fn("debug", "IMAP: SELECT/EXAMINE INBOX OK".into());
+        debug!("IMAP: SELECT/EXAMINE INBOX OK");
         Ok(session)
     }
 
@@ -162,7 +162,7 @@ impl ImapPoller {
         F: FnMut(Vec<u8>),
     {
         let last_uid = { *self.last_uid.lock().unwrap() };
-        info!("IMAP: last_uid = {:?}", last_uid);
+        debug!("IMAP: last_uid = {:?}", last_uid);
 
         // Use "ALL" for compatibility (QQ Mail rejects "UID SEARCH UID N:*").
         let all_uids = match session.uid_search("ALL") {
@@ -174,7 +174,7 @@ impl ImapPoller {
                 return;
             }
         };
-        info!("IMAP: UID SEARCH ALL returned {} UIDs", all_uids.len());
+        debug!("IMAP: UID SEARCH ALL returned {} UIDs", all_uids.len());
 
         // Filter to only UIDs > last_uid (new messages)
         let new_uids: Vec<u32> = all_uids
@@ -185,8 +185,8 @@ impl ImapPoller {
 
         if new_uids.is_empty() {
             let msg = format!("IMAP: no new messages ({} total)", all_uids.len());
-            info!("{}", msg);
-            log_fn("info", msg);
+            debug!("{}", msg);
+            log_fn("debug", msg);
             return;
         }
 
@@ -200,9 +200,9 @@ impl ImapPoller {
 
         let uid_list: Vec<String> = new_uids.iter().map(|u| u.to_string()).collect();
         let uid_set = uid_list.join(",");
-        info!("IMAP: fetching {} new UID(s): {}", new_uids.len(), uid_set);
+        debug!("IMAP: fetching {} new UID(s): {}", new_uids.len(), uid_set);
         log_fn(
-            "info",
+            "debug",
             format!("IMAP: fetching {} new message(s)...", new_uids.len()),
         );
 
@@ -216,9 +216,9 @@ impl ImapPoller {
             }
         };
 
-        info!("IMAP: UID FETCH returned {} message(s)", fetches.len());
+        debug!("IMAP: UID FETCH returned {} message(s)", fetches.len());
         log_fn(
-            "info",
+            "debug",
             format!("IMAP: got {} message body / bodies", fetches.len()),
         );
 
