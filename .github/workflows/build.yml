@@ -136,6 +136,14 @@ jobs:
 
       - name: Sign APK with debug key
         run: |
+          # Add build-tools to PATH
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools"
+          TOOLS_DIR=$(ls -1d "$BUILD_TOOLS"/*/ 2>/dev/null | head -1)
+          if [ -n "$TOOLS_DIR" ]; then
+            export PATH="$TOOLS_DIR:$PATH"
+            echo "Using build-tools: $TOOLS_DIR"
+          fi
+
           KEYSTORE=~/.android/debug.keystore
           # Find APK: Tauri 2 produces a debug-signed APK; re-sign for CI consistency
           APK=$(find mobile/gen/android -name '*.apk' ! -name '*-unsigned*' | head -1)
