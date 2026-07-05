@@ -15,21 +15,10 @@
           <component :is="item.icon" />
         </div>
       </div>
-      <div class="aside-footer">
-        <div
-          class="nav-item"
-          :title="isDark ? '切换亮色' : '切换暗色'"
-          @click="toggleDark(!isDark)"
-        >
-          <template v-if="isDark"><mode-light-icon /></template>
-          <template v-else><mode-dark-icon /></template>
-        </div>
-      </div>
     </t-aside>
     <t-content class="main-content">
       <router-view />
     </t-content>
-    <!-- Mobile bottom tab bar -->
     <div v-if="isMobile" class="mobile-tab-bar">
       <div
         v-for="item in navItems"
@@ -40,26 +29,17 @@
         <component :is="item.icon" class="tab-icon" />
         <span class="tab-label">{{ item.label }}</span>
       </div>
-      <div
-        :class="['tab-item']"
-        @click="toggleDark(!isDark)"
-      >
-        <template v-if="isDark"><mode-light-icon class="tab-icon" /></template>
-        <template v-else><mode-dark-icon class="tab-icon" /></template>
-        <span class="tab-label">{{ isDark ? '亮色' : '暗色' }}</span>
-      </div>
     </div>
   </t-layout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, markRaw, onMounted } from "vue";
+import { computed, markRaw, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
 import {
-  ChatIcon, ExtensionIcon, SettingIcon, FileIcon, UserIcon,
-  ModeLightIcon, ModeDarkIcon,
+  ChatIcon, ExtensionIcon, SettingIcon, UserIcon,
 } from "tdesign-icons-vue-next";
 
 const router = useRouter();
@@ -67,7 +47,6 @@ const route = useRoute();
 const store = useYseStore();
 
 const currentRoute = computed(() => route.path);
-const isDark = ref(document.documentElement.getAttribute("theme-mode") === "dark");
 const isMobile = useIsMobile();
 
 const navItems = [
@@ -75,17 +54,10 @@ const navItems = [
   { path: "/plugins", label: "插件", icon: markRaw(ExtensionIcon) },
   { path: "/contacts", label: "联系人", icon: markRaw(UserIcon) },
   { path: "/config", label: "配置", icon: markRaw(SettingIcon) },
-  { path: "/logs", label: "日志", icon: markRaw(FileIcon) },
 ];
 
 function navigate(val: string) {
   router.push(val);
-}
-
-function toggleDark(v: boolean) {
-  isDark.value = v;
-  document.documentElement.setAttribute("theme-mode", v ? "dark" : "light");
-  localStorage.setItem("yse-dark", String(v));
 }
 
 onMounted(async () => {
@@ -111,7 +83,6 @@ onMounted(async () => {
 }
 .logo-img { width: 32px; height: 32px; }
 .aside-nav { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-.aside-footer { display: flex; flex-direction: column; gap: 4px; }
 .nav-item {
   width: 44px; height: 44px; display: flex; align-items: center;
   justify-content: center; border-radius: 8px; cursor: pointer;
@@ -122,7 +93,6 @@ onMounted(async () => {
 .nav-item.active { background: var(--td-brand-color-light); color: var(--td-brand-color); }
 .main-content { overflow-y: auto; background: var(--td-bg-color-page); }
 
-/* Mobile bottom tab bar */
 .mobile-tab-bar {
   position: fixed;
   bottom: 0;

@@ -16,6 +16,9 @@ test-core:
 
 # 全 workspace 检查
 check:
+    cd desktop && {{ tauri }} icon ../icon.png 2>/dev/null; true
+    cd mobile && {{ tauri }} icon ../icon.png 2>/dev/null; true
+    cp desktop/icons/32x32.png frontend/public/icon.png 2>/dev/null; true
     cargo check
 
 # 全 workspace 测试
@@ -40,6 +43,7 @@ dev:
 
 # 构建 AppImage
 build-appimage:
+    cd desktop && {{ tauri }} icon ../icon.png && cp icons/32x32.png ../frontend/public/icon.png
     cd desktop && {{ tauri }} build --bundles appimage
 
 # ── Tauri 移动端 ────────────────────────────────────────────────────────
@@ -63,6 +67,9 @@ plugin-echo:
 
 # Rust clippy 检查
 clippy:
+    cd desktop && {{ tauri }} icon ../icon.png 2>/dev/null; true
+    cd mobile && {{ tauri }} icon ../icon.png 2>/dev/null; true
+    cp desktop/icons/32x32.png frontend/public/icon.png 2>/dev/null; true
     cargo clippy -- -D warnings
 
 # 前端 + Rust 全部检查

@@ -7,6 +7,12 @@
         row-key="virtual_addr"
         size="small"
       >
+        <template #virtual_addr="{ row }">
+          <span :data-label="'虚拟地址'">{{ row.virtual_addr }}</span>
+        </template>
+        <template #plugin_id="{ row }">
+          <span :data-label="'绑定插件'">{{ pluginName(row.plugin_id) || row.plugin_id }}</span>
+        </template>
         <template #operation="{ row }">
           <t-popconfirm content="确定删除此联系人？" @confirm="handleDelete(row)">
             <t-button theme="danger" variant="text">删除</t-button>
@@ -132,8 +138,58 @@ onMounted(async () => {
   .contacts-page :deep(.t-table) {
     font-size: 12px;
   }
-  .contacts-page :deep(.t-table__td) {
-    padding: 6px 4px;
+  .contacts-page :deep(.t-table thead) {
+    display: none;
+  }
+  .contacts-page :deep(.t-table tbody tr) {
+    display: block;
+    margin-bottom: 12px;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--td-bg-color-container);
+  }
+  .contacts-page :deep(.t-table tbody td) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0 !important;
+    border: none !important;
+  }
+  .contacts-page :deep(.t-table tbody td > span) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+  .contacts-page :deep(.t-table tbody td > span::before) {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--td-text-color-placeholder);
+    font-size: 12px;
+  }
+  .contacts-page :deep(.t-table tbody td:last-child > span::before) {
+    display: none;
+  }
+  .contacts-page :deep(.t-table tbody td:last-child) {
+    justify-content: flex-end;
+  }
+  .contacts-page :deep(.t-table tbody td:last-child > span) {
+    justify-content: flex-end;
+  }
+  .contacts-page :deep(.t-table__pagination) {
+    padding-top: 8px;
+  }
+  .contacts-page .t-card .t-space,
+  .contacts-page .t-card .t-space > .t-space-item {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  .contacts-page .t-card :deep(.t-space .t-input__wrap),
+  .contacts-page .t-card :deep(.t-space .t-select__wrap),
+  .contacts-page .t-card :deep(.t-space .t-button) {
+    width: 100%;
   }
 }
 </style>

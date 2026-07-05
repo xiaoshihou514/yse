@@ -18,6 +18,8 @@ if [ -n "$NDK_DIR" ]; then
 fi
 
 cd mobile
+npx @tauri-apps/cli@^2 icon ../icon.png
+cp icons/32x32.png ../frontend/public/icon.png
 npx @tauri-apps/cli@^2 android init || true
 npm install
 npx @tauri-apps/cli@^2 android build --apk

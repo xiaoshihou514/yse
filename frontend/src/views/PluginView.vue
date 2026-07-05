@@ -7,11 +7,22 @@
         row-key="id"
         :loading="loading"
       >
+        <template #name="{ row }">
+          <span :data-label="'名称'">{{ row.name }}</span>
+        </template>
+        <template #id="{ row }">
+          <span :data-label="'ID'">{{ row.id }}</span>
+        </template>
+        <template #exec_path="{ row }">
+          <span :data-label="'路径'">{{ row.exec_path }}</span>
+        </template>
         <template #enabled="{ row }">
-          <t-switch
-            :value="row.enabled"
-            @change="(v: boolean) => handleToggle(row, v)"
-          />
+          <span :data-label="'启用'">
+            <t-switch
+              :value="row.enabled"
+              @change="(v: boolean) => handleToggle(row, v)"
+            />
+          </span>
         </template>
         <template #operation="{ row }">
           <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
@@ -132,8 +143,57 @@ onMounted(async () => {
   .plugin-page :deep(.t-table) {
     font-size: 12px;
   }
-  .plugin-page :deep(.t-table__td) {
-    padding: 6px 4px;
+  .plugin-page :deep(.t-table thead) {
+    display: none;
+  }
+  .plugin-page :deep(.t-table tbody tr) {
+    display: block;
+    margin-bottom: 12px;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--td-bg-color-container);
+  }
+  .plugin-page :deep(.t-table tbody td) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0 !important;
+    border: none !important;
+  }
+  .plugin-page :deep(.t-table tbody td > span) {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+  .plugin-page :deep(.t-table tbody td > span::before) {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--td-text-color-placeholder);
+    font-size: 12px;
+  }
+  .plugin-page :deep(.t-table tbody td:last-child > span::before) {
+    display: none;
+  }
+  .plugin-page :deep(.t-table tbody td:last-child) {
+    justify-content: flex-end;
+  }
+  .plugin-page :deep(.t-table tbody td:last-child > span) {
+    justify-content: flex-end;
+  }
+  .plugin-page :deep(.t-table__pagination) {
+    padding-top: 8px;
+  }
+  .plugin-page .t-card .t-space,
+  .plugin-page .t-card .t-space > .t-space-item {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  .plugin-page .t-card :deep(.t-space .t-input__wrap),
+  .plugin-page .t-card :deep(.t-space .t-button) {
+    width: 100%;
   }
 }
 </style>
