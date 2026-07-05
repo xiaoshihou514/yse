@@ -22,6 +22,16 @@ check:
 test:
     cargo test -p yse-core
 
+# ── 前端 ────────────────────────────────────────────────────────────────
+
+# 构建前端
+fe-build:
+    cd frontend && npm run build
+
+# 前端 TypeScript 类型检查
+fe-typecheck:
+    cd frontend && npx --package vue-tsc vue-tsc --noEmit
+
 # ── Tauri 桌面端 ────────────────────────────────────────────────────────
 
 # Tauri 开发模式 (启动 vite + tauri)

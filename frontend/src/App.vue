@@ -1,6 +1,6 @@
 <template>
   <t-layout class="app-layout">
-    <t-aside class="app-aside">
+    <t-aside v-if="!isMobile" class="app-aside">
       <div class="aside-logo">
         <img src="/icon.png" alt="YSE" class="logo-img" />
       </div>
@@ -29,6 +29,26 @@
     <t-content class="main-content">
       <router-view />
     </t-content>
+    <!-- Mobile bottom tab bar -->
+    <div v-if="isMobile" class="mobile-tab-bar">
+      <div
+        v-for="item in navItems"
+        :key="item.path"
+        :class="['tab-item', { active: currentRoute === item.path }]"
+        @click="navigate(item.path)"
+      >
+        <component :is="item.icon" class="tab-icon" />
+        <span class="tab-label">{{ item.label }}</span>
+      </div>
+      <div
+        :class="['tab-item']"
+        @click="toggleDark(!isDark)"
+      >
+        <template v-if="isDark"><mode-light-icon class="tab-icon" /></template>
+        <template v-else><mode-dark-icon class="tab-icon" /></template>
+        <span class="tab-label">{{ isDark ? '亮色' : '暗色' }}</span>
+      </div>
+    </div>
   </t-layout>
 </template>
 
@@ -36,6 +56,7 @@
 import { ref, computed, markRaw, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useYseStore } from "@/stores/yse";
+import { useIsMobile } from "@/composables/useIsMobile";
 import {
   ChatIcon, ExtensionIcon, SettingIcon, FileIcon, UserIcon,
   ModeLightIcon, ModeDarkIcon,
@@ -47,6 +68,7 @@ const store = useYseStore();
 
 const currentRoute = computed(() => route.path);
 const isDark = ref(document.documentElement.getAttribute("theme-mode") === "dark");
+const isMobile = useIsMobile();
 
 const navItems = [
   { path: "/", label: "聊天", icon: markRaw(ChatIcon) },
@@ -70,7 +92,6 @@ onMounted(async () => {
   await store.loadConfig();
   store.listenForLogs();
   store.listenForMessages();
-  // Auto-start plugins and IMAP polling on Tauri's permanent runtime
   await store.initializeApp();
 });
 </script>
@@ -100,4 +121,49 @@ onMounted(async () => {
 .nav-item:hover { background: var(--td-bg-color-secondarycontainer); color: var(--td-text-color-primary); }
 .nav-item.active { background: var(--td-brand-color-light); color: var(--td-brand-color); }
 .main-content { overflow-y: auto; background: var(--td-bg-color-page); }
+
+/* Mobile bottom tab bar */
+.mobile-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  height: 56px;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  background: var(--td-bg-color-container);
+  border-top: 1px solid var(--td-component-stroke);
+  z-index: 1000;
+}
+.tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--td-text-color-secondary);
+  transition: color 0.15s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-item.active {
+  color: var(--td-brand-color);
+}
+.tab-icon {
+  font-size: 22px;
+}
+.tab-label {
+  font-size: 10px;
+  line-height: 1;
+}
+
+@media (max-width: 767px) {
+  .main-content {
+    padding-bottom: 56px;
+  }
+}
 </style>

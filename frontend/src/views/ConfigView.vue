@@ -101,4 +101,18 @@ onMounted(async () => {
 });
 </script>
 
-<style scoped></style>
+<style scoped>
+@media (max-width: 767px) {
+  .config-page .t-card {
+    margin: 8px;
+  }
+  .config-page :deep(.t-form-item) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .config-page :deep(.t-form__label) {
+    width: auto !important;
+    padding-bottom: 4px;
+  }
+}
+</style>

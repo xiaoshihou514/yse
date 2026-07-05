@@ -125,4 +125,25 @@ onMounted(async () => {
   flex: 1;
   word-break: break-all;
 }
+
+@media (max-width: 767px) {
+  .log-page {
+    max-width: none;
+  }
+  .log-page .t-card {
+    margin: 8px;
+  }
+  .log-container {
+    max-height: none;
+    font-size: 12px;
+  }
+  .log-entry {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .log-time {
+    min-width: auto;
+    font-size: 11px;
+  }
+}
 </style>

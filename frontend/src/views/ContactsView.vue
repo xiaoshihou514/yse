@@ -123,3 +123,17 @@ onMounted(async () => {
   await store.loadConfig();
 });
 </script>
+
+<style scoped>
+@media (max-width: 767px) {
+  .contacts-page .t-card {
+    margin: 8px;
+  }
+  .contacts-page :deep(.t-table) {
+    font-size: 12px;
+  }
+  .contacts-page :deep(.t-table__td) {
+    padding: 6px 4px;
+  }
+}
+</style>

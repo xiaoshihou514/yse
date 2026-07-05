@@ -124,4 +124,16 @@ onMounted(async () => {
 });
 </script>
 
-<style scoped></style>
+<style scoped>
+@media (max-width: 767px) {
+  .plugin-page .t-card {
+    margin: 8px;
+  }
+  .plugin-page :deep(.t-table) {
+    font-size: 12px;
+  }
+  .plugin-page :deep(.t-table__td) {
+    padding: 6px 4px;
+  }
+}
+</style>

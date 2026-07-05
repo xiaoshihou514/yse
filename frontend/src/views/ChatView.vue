@@ -1,7 +1,7 @@
 <template>
   <div class="chat-shell">
     <!-- Contact list -->
-    <div class="contact-panel">
+    <div :class="['contact-panel', { 'contact-overlay': isMobile && selectedContact }]">
       <div class="panel-header">
         <span class="panel-title">消息</span>
       </div>
@@ -36,53 +36,55 @@
     </div>
 
     <!-- Chat area -->
-    <div class="chat-panel" v-if="selectedContact">
-      <div class="chat-topbar">
-        <span class="topbar-name">{{ contactLabel(selectedContact) }}</span>
-      </div>
-      <div class="message-area" ref="messagesContainer">
-        <div
-          v-for="msg in conversation"
-          :key="msg.id"
-          :class="['msg-row', msg.from === ownAddress ? 'row-self' : 'row-other']"
-        >
+    <div :class="['chat-panel', { 'chat-full': isMobile }]" v-if="selectedContact || !isMobile">
+      <template v-if="selectedContact">
+        <div class="chat-topbar">
+          <span v-if="isMobile" class="back-btn" @click="selectedContact = ''">←</span>
+          <span class="topbar-name">{{ contactLabel(selectedContact) }}</span>
+        </div>
+        <div class="message-area" ref="messagesContainer">
           <div
-            class="msg-bubble"
-            @contextmenu.prevent="onBubbleContext($event, msg)"
+            v-for="msg in conversation"
+            :key="msg.id"
+            :class="['msg-row', msg.from === ownAddress ? 'row-self' : 'row-other']"
           >
-            <div class="msg-text" v-if="msg.text">{{ msg.text }}</div>
-            <div class="msg-files" v-if="msg.files?.length">
-              <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary" size="small">
-                {{ f.name }} ({{ formatSize(f.size) }})
-              </t-link>
+            <div
+              class="msg-bubble"
+              @contextmenu.prevent="onBubbleContext($event, msg)"
+            >
+              <div class="msg-text" v-if="msg.text">{{ msg.text }}</div>
+              <div class="msg-files" v-if="msg.files?.length">
+                <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary" size="small">
+                  {{ f.name }} ({{ formatSize(f.size) }})
+                </t-link>
+              </div>
+              <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
             </div>
-            <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
           </div>
         </div>
-      </div>
-      <div class="input-area">
-        <textarea
-          ref="inputRef"
-          v-model="inputText"
-          placeholder="输入消息..."
-          rows="1"
-          class="chat-textarea"
-          @keydown="onInputKeydown"
-        ></textarea>
-        <div class="input-actions">
-          <span class="input-hint">Enter 发送</span>
-          <t-button
-            :disabled="!inputText.trim()"
-            size="small"
-            @click="handleSend"
-          >发送</t-button>
+        <div class="input-area">
+          <textarea
+            ref="inputRef"
+            v-model="inputText"
+            placeholder="输入消息..."
+            rows="1"
+            class="chat-textarea"
+            @keydown="onInputKeydown"
+          ></textarea>
+          <div class="input-actions">
+            <span class="input-hint">Enter 发送</span>
+            <t-button
+              :disabled="!inputText.trim()"
+              size="small"
+              @click="handleSend"
+            >发送</t-button>
+          </div>
         </div>
+      </template>
+      <!-- No conversation selected (desktop only) -->
+      <div class="chat-panel chat-empty" v-else>
+        <t-empty description="选择一个联系人开始聊天" />
       </div>
-    </div>
-
-    <!-- No conversation selected -->
-    <div class="chat-panel chat-empty" v-else>
-      <t-empty description="选择一个联系人开始聊天" />
     </div>
   <!-- Context menu -->
     <div
@@ -99,16 +101,16 @@
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
-
+import { useIsMobile } from "@/composables/useIsMobile";
 
 const store = useYseStore();
+const isMobile = useIsMobile();
 const inputText = ref("");
 const selectedContact = ref("");
 const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 
-// Context menu state
 const ctxMenu = ref<{ visible: boolean; x: number; y: number; text: string }>({
   visible: false, x: 0, y: 0, text: "",
 });
@@ -122,7 +124,6 @@ function copyCtxText() {
   ctxMenu.value.visible = false;
 }
 
-// Close context menu on click outside
 document.addEventListener("click", () => {
   if (ctxMenu.value.visible) ctxMenu.value.visible = false;
 });
@@ -130,7 +131,6 @@ document.addEventListener("click", () => {
 const ownAddress = computed(() => store.config?.own_address ?? "me@yse.org");
 const connected = computed(() => store.connected);
 
-// Build contact list from messages + mappings
 interface Contact {
   address: string;
   lastText: string;
@@ -138,7 +138,6 @@ interface Contact {
 }
 const contacts = computed<Contact[]>(() => {
   const map = new Map<string, Contact>();
-  // From messages
   for (const m of store.sortedMessages) {
     const addr = m.from === ownAddress.value ? m.to : m.from;
     if (addr === ownAddress.value) continue;
@@ -150,7 +149,6 @@ const contacts = computed<Contact[]>(() => {
       });
     }
   }
-  // From mappings (contacts without messages yet)
   for (const m of store.config?.plugin_mappings ?? []) {
     if (!map.has(m.virtual_addr)) {
       map.set(m.virtual_addr, {
@@ -209,7 +207,6 @@ function onInputKeydown(e: KeyboardEvent) {
     e.preventDefault();
     handleSend();
   }
-  // Auto-resize
   const el = inputRef.value;
   if (el) {
     el.style.height = "auto";
@@ -315,6 +312,11 @@ onMounted(async () => {
   border-top: 1px solid var(--td-component-stroke);
 }
 
+/* Mobile overlay */
+.contact-overlay {
+  display: none;
+}
+
 /* ---- Chat panel ---- */
 .chat-panel {
   flex: 1;
@@ -332,6 +334,16 @@ onMounted(async () => {
   font-weight: 600;
   border-bottom: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.back-btn {
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .message-area {
   flex: 1;
@@ -340,6 +352,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .msg-row {
   display: flex;
@@ -381,6 +394,7 @@ onMounted(async () => {
 }
 .input-area {
   padding: 8px 16px 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
 }
@@ -428,5 +442,28 @@ onMounted(async () => {
 }
 .ctx-item:hover {
   background: var(--td-bg-color-secondarycontainer);
+}
+
+/* Mobile responsive */
+@media (max-width: 767px) {
+  .contact-panel {
+    width: 100%;
+    min-width: 0;
+  }
+  .chat-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 56px;
+    z-index: 10;
+    background: var(--td-bg-color-page);
+  }
+  .chat-panel.chat-full {
+    display: flex;
+  }
+  .chat-full {
+    display: flex;
+  }
 }
 </style>
