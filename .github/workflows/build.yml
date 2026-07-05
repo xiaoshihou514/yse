@@ -89,12 +89,29 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: '34.0.0'
 
       - name: Build frontend
         working-directory: frontend
         run: |
           npm ci
           npm run build
+
+      - name: Ensure debug keystore exists
+        run: |
+          KEYSTORE=~/.android/debug.keystore
+          mkdir -p ~/.android
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "Generating debug keystore..."
+            keytool -genkey -v -keystore "$KEYSTORE" \
+              -alias androiddebugkey -storepass android -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          else
+            echo "Debug keystore already exists"
+          fi
 
       - name: Init Android project
         working-directory: mobile
@@ -119,45 +136,29 @@ jobs:
 
       - name: Sign APK with debug key
         run: |
-          # Locate Android SDK build-tools
-          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools"
-          TOOLS_DIR=$(ls -1d "$BUILD_TOOLS"/*/ 2>/dev/null | head -1)
-          if [ -n "$TOOLS_DIR" ]; then
-            echo "Using build-tools: $TOOLS_DIR"
-            export PATH="$TOOLS_DIR:$PATH"
-          else
-            # Fallback: try to find in PATH or common locations
-            echo "build-tools not found at $BUILD_TOOLS, searching PATH..."
-            which zipalign 2>/dev/null || true
-          fi
-
-          APK=$(find mobile/gen/android -name '*-universal-release-unsigned.apk' | head -1)
+          KEYSTORE=~/.android/debug.keystore
+          # Find APK: Tauri 2 produces a debug-signed APK; re-sign for CI consistency
+          APK=$(find mobile/gen/android -name '*.apk' ! -name '*-unsigned*' | head -1)
           if [ -z "$APK" ]; then
-            # Try broader pattern
             APK=$(find mobile/gen/android -name '*.apk' | head -1)
           fi
-          echo "Found unsigned APK: $APK"
+          echo "Found APK: $APK"
 
           if [ -z "$APK" ]; then
-            echo "ERROR: no APK found to sign"
+            echo "ERROR: no APK found"
             ls -la mobile/gen/android/app/build/outputs/apk/ 2>/dev/null || true
             exit 1
           fi
 
-          ALIGNED="${APK/-universal-release-unsigned/-universal-release}"
-          # zipalign may already have been run by Tauri; skip if fails
-          zipalign -f -v 4 "$APK" "$ALIGNED" 2>/dev/null || cp "$APK" "$ALIGNED"
-
-          KEYSTORE=~/.android/debug.keystore
-          if [ -f "$KEYSTORE" ]; then
-            echo "Signing with debug keystore..."
-            apksigner sign --ks "$KEYSTORE" \
-              --ks-key-alias androiddebugkey \
-              --ks-pass pass:android \
-              "$ALIGNED"
-          else
-            echo "Warning: debug keystore not found ($KEYSTORE), APK will be unsigned"
-          fi
+          # Re-sign the APK (zipalign + apksigner)
+          ALIGNED="${APK%.apk}-aligned.apk"
+          zipalign -f -v -p 4 "$APK" "$ALIGNED"
+          echo "Signing with debug keystore..."
+          apksigner sign --ks "$KEYSTORE" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            "$ALIGNED"
           mv -f "$ALIGNED" "mobile/yse-android-universal-release.apk"
 
       - uses: actions/upload-artifact@v7
