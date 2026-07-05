@@ -211,33 +211,22 @@ jobs:
         run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Upload to GitHub Release
-        shell: bash
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest Build (${{ steps.sha.outputs.short }})"
+          body: |
+            自动构建于 commit `${{ github.sha }}`
+
+            **分支:** ${{ github.ref_name }}
+            **Commit:** ${{ github.event.head_commit.message }}
+            **时间:** ${{ github.event.head_commit.timestamp }}
+          files: |
+            release-artifacts/**/*.apk
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.deb
+          prerelease: true
+          make_latest: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          NOTES_SHA: ${{ github.sha }}
-          NOTES_REF: ${{ github.ref_name }}
-          NOTES_MSG: ${{ github.event.head_commit.message }}
-          NOTES_TS: ${{ github.event.head_commit.timestamp }}
-        run: |
-          set -euo pipefail
-          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-
-          # Collect files into array (null-delimited for safety)
-          FILES=()
-          while IFS= read -r -d '' f; do
-            FILES+=("$f")
-          done < <(find release-artifacts -type f -print0)
-
-          echo "Uploading ${#FILES[@]} file(s):"
-          printf '  %s\n' "${FILES[@]}"
-
-          # Build release notes via printf (safe in YAML run: | block)
-          NOTES_FILE=$(mktemp)
-          printf "自动构建于 commit \\\`%s\\\`\n\n**分支:** %s\n**Commit:** %s\n**时间:** %s\n" \
-            "$NOTES_SHA" "$NOTES_REF" "$NOTES_MSG" "$NOTES_TS" > "$NOTES_FILE"
-
-          gh release create latest \
-            --title "Latest Build (${{ steps.sha.outputs.short }})" \
-            --notes-file "$NOTES_FILE" \
-            --prerelease \
-            "${FILES[@]}"
