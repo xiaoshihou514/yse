@@ -10,7 +10,14 @@
     "beforeBuildCommand": "[ -n \"$CI\" ] || (cd ../frontend && npm run build)"
   },
   "app": {
-    "windows": [],
+    "windows": [
+      {
+        "label": "main",
+        "title": "盐水鹅",
+        "resizable": false,
+        "fullscreen": false
+      }
+    ],
     "security": {
       "csp": null
     }
