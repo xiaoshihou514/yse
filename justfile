@@ -22,24 +22,6 @@ check:
 test:
     cargo test -p yse-core
 
-# ── 前端 ────────────────────────────────────────────────────────────────
-
-# 启动 Vite 开发服务器 (localhost:1420)
-fe-dev:
-    cd frontend && npm run dev
-
-# 构建前端
-fe-build:
-    cd frontend && npm run build
-
-# 前端 TypeScript 类型检查
-fe-typecheck:
-    cd frontend && npx --package vue-tsc vue-tsc --noEmit
-
-# 前端依赖安装
-fe-install:
-    cd frontend && npm install
-
 # ── Tauri 桌面端 ────────────────────────────────────────────────────────
 
 # Tauri 开发模式 (启动 vite + tauri)
@@ -49,10 +31,6 @@ dev:
 # 构建 AppImage
 build-appimage:
     cd desktop && {{ tauri }} build --bundles appimage
-
-# 构建 deb
-build-deb:
-    cd desktop && {{ tauri }} build --bundles deb
 
 # ── Tauri 移动端 ────────────────────────────────────────────────────────
 
@@ -73,30 +51,12 @@ plugin-echo:
 
 # ── Lint / 格式化 ───────────────────────────────────────────────────────
 
-# 格式化 Rust 代码
-fmt:
-    cargo fmt
-
 # Rust clippy 检查
 clippy:
     cargo clippy -- -D warnings
 
 # 前端 + Rust 全部检查
-check-all: fe-typecheck check
-
-# ── Git ─────────────────────────────────────────────────────────────────
-
-# 查看未提交改动
-diff:
-    git diff
-
-# 查看已暂存改动
-diff-staged:
-    git diff --cached --stat
-
-# 最近日志
-log:
-    git log --oneline -10
+check-all: fe-typecheck check clippy
 
 # ── 其他 ────────────────────────────────────────────────────────────────
 

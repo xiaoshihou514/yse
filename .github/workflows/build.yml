@@ -55,7 +55,6 @@ jobs:
           name: yse-linux-desktop-x86_64
           path: |
             target/release/bundle/appimage/*.AppImage
-            target/release/bundle/appimage/*.deb
 
   # ── Android APK ─────────────────────────────────────────────────────
   android:
@@ -91,7 +90,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           api-level: 34
-          build-tools: '34.0.0'
+          build-tools: "34.0.0"
 
       - name: Install frontend deps (for just android-build)
         working-directory: frontend
@@ -156,7 +155,6 @@ jobs:
           files: |
             release-artifacts/**/*.apk
             release-artifacts/**/*.AppImage
-            release-artifacts/**/*.deb
           prerelease: true
           make_latest: true
           generate_release_notes: false
