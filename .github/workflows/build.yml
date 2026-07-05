@@ -38,17 +38,17 @@ jobs:
           sudo apt-get install -y \
             libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev \
             librsvg2-dev libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev patchelf
+            libsoup-3.0-dev patchelf just
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
 
       - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+        run: just fe-build
 
-      - name: Build Tauri desktop
-        working-directory: desktop
-        run: npx @tauri-apps/cli@^2 build --bundles appimage
+      - name: Build desktop AppImage
+        run: just build-appimage
 
       - uses: actions/upload-artifact@v7
         with:
@@ -79,7 +79,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev patchelf
+            libsoup-3.0-dev patchelf just
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -93,81 +93,12 @@ jobs:
           api-level: 34
           build-tools: '34.0.0'
 
-      - name: Build frontend
+      - name: Install frontend deps (for just android-build)
         working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-
-      - name: Ensure debug keystore exists
-        run: |
-          KEYSTORE=~/.android/debug.keystore
-          mkdir -p ~/.android
-          if [ ! -f "$KEYSTORE" ]; then
-            echo "Generating debug keystore..."
-            keytool -genkey -v -keystore "$KEYSTORE" \
-              -alias androiddebugkey -storepass android -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-          else
-            echo "Debug keystore already exists"
-          fi
-
-      - name: Init Android project
-        working-directory: mobile
-        continue-on-error: true
-        run: npx @tauri-apps/cli@^2 android init
-
-      - name: Install npm deps for mobile
-        working-directory: mobile
-        run: npm install
-
-      - name: Set up NDK env for OpenSSL build
-        run: |
-          NDK_DIR=$(ls -1d "$ANDROID_SDK_ROOT/ndk/"*/ 2>/dev/null | head -1)
-          BIN_DIR="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          echo "TARGET_RANLIB=$BIN_DIR/llvm-ranlib" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_RANLIB=$BIN_DIR/llvm-ranlib" >> "$GITHUB_ENV"
-          echo "$BIN_DIR" >> "$GITHUB_PATH"
+        run: npm ci
 
       - name: Build Android APK
-        working-directory: mobile
-        run: npx @tauri-apps/cli@^2 android build --apk
-
-      - name: Sign APK with debug key
-        run: |
-          # Add build-tools to PATH
-          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools"
-          TOOLS_DIR=$(ls -1d "$BUILD_TOOLS"/*/ 2>/dev/null | head -1)
-          if [ -n "$TOOLS_DIR" ]; then
-            export PATH="$TOOLS_DIR:$PATH"
-            echo "Using build-tools: $TOOLS_DIR"
-          fi
-
-          KEYSTORE=~/.android/debug.keystore
-          # Find APK: Tauri 2 produces a debug-signed APK; re-sign for CI consistency
-          APK=$(find mobile/gen/android -name '*.apk' ! -name '*-unsigned*' | head -1)
-          if [ -z "$APK" ]; then
-            APK=$(find mobile/gen/android -name '*.apk' | head -1)
-          fi
-          echo "Found APK: $APK"
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: no APK found"
-            ls -la mobile/gen/android/app/build/outputs/apk/ 2>/dev/null || true
-            exit 1
-          fi
-
-          # Re-sign the APK (zipalign + apksigner)
-          ALIGNED="${APK%.apk}-aligned.apk"
-          zipalign -f -v -p 4 "$APK" "$ALIGNED"
-          echo "Signing with debug keystore..."
-          apksigner sign --ks "$KEYSTORE" \
-            --ks-key-alias androiddebugkey \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            "$ALIGNED"
-          mv -f "$ALIGNED" "mobile/yse-android-universal-release.apk"
+        run: just android-build
 
       - uses: actions/upload-artifact@v7
         with:
@@ -187,12 +118,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Install just
+        run: sudo apt-get update && sudo apt-get install -y just
       - run: cargo check -p yse-core
       - run: cargo test -p yse-core
       - working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+        run: npm ci
+      - run: just fe-build
 
   # ── Release: upload artifacts to GitHub Release ─────────────────────
   release:
