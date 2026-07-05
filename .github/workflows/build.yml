@@ -18,7 +18,7 @@ env:
 jobs:
   # ── Linux x86_64 desktop (AppImage) ──────────────────────────────────
   desktop:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
@@ -59,7 +59,7 @@ jobs:
 
   # ── Android APK ─────────────────────────────────────────────────────
   android:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
@@ -107,7 +107,7 @@ jobs:
 
   # ── Smoke: core tests ────────────────────────────────────────────────
   check:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -130,7 +130,7 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [desktop, android, check]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
