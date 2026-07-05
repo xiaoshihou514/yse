@@ -239,7 +239,25 @@ impl PluginManager {
         let map = self.plugins.lock().await;
         let mut count = 0;
         for (vaddr, pid) in mapping {
-            if vaddr == to_addr {
+            // Match exact, or if virtual address is a domain that contains the local part
+            let matched = if vaddr == to_addr {
+                true
+            } else if vaddr.contains('@') && to_addr.contains('@') {
+                // Both are full email addresses - check if domain matches and local part is prefix
+                let vdomain = vaddr.split('@').nth(1).unwrap_or("");
+                let tdomain = to_addr.split('@').nth(1).unwrap_or("");
+                if vdomain == tdomain {
+                    // Same domain - check if virtual local part is prefix of target
+                    let vlocal = vaddr.split('@').next().unwrap_or("");
+                    let tlocal = to_addr.split('@').next().unwrap_or("");
+                    tlocal.starts_with(vlocal)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if matched {
                 if let Some(plugin) = map.get(pid.as_str()) {
                     let _ = plugin
                         .send_message_notification(from_addr, to_addr, text, meta, files)

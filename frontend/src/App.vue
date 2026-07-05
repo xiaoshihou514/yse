@@ -33,8 +33,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, markRaw } from "vue";
+import { ref, computed, markRaw, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { useYseStore } from "@/stores/yse";
 import {
   ChatIcon, ExtensionIcon, SettingIcon, FileIcon, UserIcon,
   ModeLightIcon, ModeDarkIcon,
@@ -42,6 +43,7 @@ import {
 
 const router = useRouter();
 const route = useRoute();
+const store = useYseStore();
 
 const currentRoute = computed(() => route.path);
 const isDark = ref(document.documentElement.getAttribute("theme-mode") === "dark");
@@ -63,6 +65,14 @@ function toggleDark(v: boolean) {
   document.documentElement.setAttribute("theme-mode", v ? "dark" : "light");
   localStorage.setItem("yse-dark", String(v));
 }
+
+onMounted(async () => {
+  await store.loadConfig();
+  store.listenForLogs();
+  store.listenForMessages();
+  // Auto-start plugins and IMAP polling on Tauri's permanent runtime
+  await store.initializeApp();
+});
 </script>
 
 <style scoped>

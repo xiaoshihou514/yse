@@ -539,6 +539,7 @@ impl YseState {
                                     .iter()
                                     .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
                                     .collect();
+                                // Also try exact match on to_addr, and wildcard/fuzzy match for virtual addresses
                                 let n = pm
                                     .dispatch_message(
                                         &msg.to_addr,
@@ -627,7 +628,15 @@ pub async fn start_polling(
     state: State<'_, YseState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    state.log("info", "start_polling command called from frontend".into());
     state.start_polling_inner(app_handle).await
+}
+
+#[tauri::command]
+pub async fn auto_start_plugins(state: State<'_, YseState>) -> Result<(), String> {
+    state.auto_start_plugins().await;
+    state.log("info", "auto_start_plugins completed".into());
+    Ok(())
 }
 
 #[tauri::command]

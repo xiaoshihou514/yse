@@ -42,15 +42,24 @@ const levelFilter = ref<string | undefined>(undefined);
 const logContainer = ref<HTMLElement | null>(null);
 
 const levelOptions = [
+  { label: "ALL", value: "all" },
   { label: "DEBUG", value: "debug" },
   { label: "INFO", value: "info" },
   { label: "WARN", value: "warn" },
   { label: "ERROR", value: "error" },
 ];
 
+const levelPriority: Record<string, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
 const filteredLogs = computed(() => {
-  if (!levelFilter.value) return store.logs;
-  return store.logs.filter((l) => l.level === levelFilter.value);
+  if (!levelFilter.value || levelFilter.value === "all") return store.logs;
+  const minPriority = levelPriority[levelFilter.value] ?? 3;
+  return store.logs.filter((l) => (levelPriority[l.level] ?? 3) >= minPriority);
 });
 
 function formatTime(ts: number) {

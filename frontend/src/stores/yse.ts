@@ -79,6 +79,15 @@ export const useYseStore = defineStore("yse", () => {
     }
   }
 
+  async function initializeApp() {
+    // Auto-start plugins and IMAP polling on Tauri's permanent runtime.
+    // This is called from App.vue onMounted, after the Tauri app is fully
+    // initialized and the permanent tokio runtime is active. Spawned tasks
+    // (IMAP loop, plugin stdout readers) will NOT be cancelled.
+    await api.autoStartPlugins().catch((e) => console.error("autoStartPlugins failed:", e));
+    await startPolling();
+  }
+
   async function stopPolling() {
     try {
       await api.stopPolling();
@@ -140,6 +149,7 @@ export const useYseStore = defineStore("yse", () => {
     sendMessage,
     togglePlugin,
     startPolling,
+    initializeApp,
     stopPolling,
     listenForLogs,
     listenForMessages,

@@ -72,6 +72,10 @@ export async function saveConfig(config: YseConfig): Promise<void> {
   return invoke("save_config", { config });
 }
 
+export async function autoStartPlugins(): Promise<void> {
+  return invoke("auto_start_plugins");
+}
+
 export async function startPolling(): Promise<void> {
   return invoke("start_polling");
 }
