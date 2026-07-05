@@ -64,7 +64,7 @@ android-init:
 android-build:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd frontend && npm run build
+    (cd frontend && npm run build)
     mkdir -p ~/.android
     KEYSTORE=~/.android/debug.keystore
     if [ ! -f "$KEYSTORE" ]; then
