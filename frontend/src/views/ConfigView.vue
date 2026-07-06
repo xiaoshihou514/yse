@@ -126,7 +126,7 @@ const qrDataUrl = ref("");
 
 // QR import
 const qrImportVisible = ref(false);
-let html5QrCode: any = null;
+const scanning = ref(false);
 
 async function showExportQr() {
   qrExportVisible.value = true;
@@ -150,27 +150,25 @@ async function showImportQr() {
   qrImportVisible.value = true;
   await nextTick();
   try {
-    const { Html5Qrcode } = await import("html5-qrcode");
-    html5QrCode = new Html5Qrcode("qr-scanner-id");
-    await html5QrCode.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      (decodedText: string) => {
-        applyQrConfig(decodedText);
-      },
-      () => {},
-    );
+    scanning.value = true;
+    const { scan, Format } = await import("@tauri-apps/plugin-barcode-scanner");
+    const result = await scan({ windowed: true, formats: [Format.QRCode] });
+    applyQrConfig(result.content);
   } catch (e) {
-    await MessagePlugin.error(`启动摄像头失败: ${e}`);
+    // Tauri scanner unavailable — offer file upload fallback
+    await MessagePlugin.info("摄像头不可用，请选择二维码图片");
+    await uploadQrImage();
+  } finally {
+    scanning.value = false;
+    qrImportVisible.value = false;
   }
 }
 
 async function stopScanner() {
-  if (html5QrCode) {
-    try { await html5QrCode.stop(); } catch {}
-    try { await html5QrCode.clear(); } catch {}
-    html5QrCode = null;
-  }
+  try {
+    const { cancel } = await import("@tauri-apps/plugin-barcode-scanner");
+    await cancel();
+  } catch { /* ignore */ }
   qrImportVisible.value = false;
 }
 
@@ -384,6 +382,14 @@ onMounted(async () => {
   .config-page :deep(.t-form__label) {
     width: auto !important;
     padding-bottom: 4px;
+  }
+  .config-page :deep(.t-form-item:last-child .t-space) {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .config-page :deep(.t-form-item:last-child .t-space .t-button) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .log-container {
     max-height: none;

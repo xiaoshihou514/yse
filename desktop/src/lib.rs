@@ -23,9 +23,14 @@ pub fn run() {
     let state = YseState::new(db_path).expect("failed to initialize YSE application state");
     state.setup_plugin_handler();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+
+    builder
         .manage(state)
         .setup(|app| {
             let state = app.state::<YseState>();

@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tauri-apps/plugin-barcode-scanner": "^2.4.5",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "html5-qrcode": "^2.3.8",
     "pinia": "^2.2",

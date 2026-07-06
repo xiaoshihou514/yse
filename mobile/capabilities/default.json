@@ -3,6 +3,8 @@
   "description": "Default capability set",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel"
   ]
 }
