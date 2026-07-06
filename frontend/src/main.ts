@@ -8,8 +8,11 @@ import "highlight.js/styles/github-dark.min.css";
 import App from "./App.vue";
 import router from "./router";
 
-// Restore dark mode preference
-if (localStorage.getItem("yse-dark") === "true") {
+// Restore theme preference (default to auto)
+const theme = localStorage.getItem("yse-theme") || "auto";
+if (theme === "dark") {
+  document.documentElement.setAttribute("theme-mode", "dark");
+} else if (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
   document.documentElement.setAttribute("theme-mode", "dark");
 }
 

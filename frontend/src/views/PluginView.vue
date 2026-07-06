@@ -242,6 +242,11 @@ onMounted(async () => {
   line-height: 1;
 }
 
+@media (max-width: 767px) {
+  .fab {
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+}
 @media (min-width: 768px) {
   .plugin-page .t-card { margin: 16px; }
 }

@@ -22,7 +22,7 @@
         </t-form-item>
         <t-form-item label="我的显示名称">
           <t-input v-model="form.own_address" placeholder="你的名称 (用于发件地址)" />
-          <template #help>本机 hostname: {{ store.localHostname || '加载中...' }}</template>
+          <template #help>本机主机名: {{ store.localHostname || '加载中...' }}</template>
         </t-form-item>
         <t-form-item label="加密密码">
           <t-input v-model="form.crypto_password" type="password" placeholder="用于消息加密，更改后保存即可生效" />
@@ -71,10 +71,13 @@
     </t-dialog>
 
     <t-card title="界面" :bordered="false" style="margin-bottom: 20px">
-      <t-space align="center">
-        <span>深色模式</span>
-        <t-switch :value="isDark" @change="toggleDark" />
-      </t-space>
+      <t-form-item label="主题模式">
+        <t-radio-group :value="themeMode" @change="setTheme">
+          <t-radio-button value="light">浅色</t-radio-button>
+          <t-radio-button value="auto">跟随系统</t-radio-button>
+          <t-radio-button value="dark">深色</t-radio-button>
+        </t-radio-group>
+      </t-form-item>
     </t-card>
 
     <t-card title="运行日志" :bordered="false">
@@ -117,7 +120,56 @@ import { platform } from "@tauri-apps/plugin-os";
 
 const store = useYseStore();
 const saving = ref(false);
-const isDark = ref(document.documentElement.getAttribute("theme-mode") === "dark");
+
+function systemDark(): boolean {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function storedTheme(): string {
+  return localStorage.getItem("yse-theme") || "auto";
+}
+function applyTheme(theme: string) {
+  if (theme === "dark") {
+    document.documentElement.setAttribute("theme-mode", "dark");
+  } else if (theme === "light") {
+    document.documentElement.removeAttribute("theme-mode");
+  } else {
+    // auto
+    if (systemDark()) {
+      document.documentElement.setAttribute("theme-mode", "dark");
+    } else {
+      document.documentElement.removeAttribute("theme-mode");
+    }
+  }
+}
+const themeMode = ref(storedTheme());
+applyTheme(themeMode.value);
+
+let systemThemeListener: (() => void) | null = null;
+
+function setTheme(val: string) {
+  themeMode.value = val;
+  localStorage.setItem("yse-theme", val);
+  applyTheme(val);
+  // listen for system changes when in auto mode
+  if (val === "auto") {
+    listenSystemTheme();
+  } else {
+    unlistenSystemTheme();
+  }
+}
+
+function listenSystemTheme() {
+  unlistenSystemTheme();
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const handler = () => applyTheme("auto");
+  mq.addEventListener("change", handler);
+  systemThemeListener = () => mq.removeEventListener("change", handler);
+}
+
+function unlistenSystemTheme() {
+  systemThemeListener?.();
+  systemThemeListener = null;
+}
 const levelFilter = ref<string>("info");
 const logContainer = ref<HTMLElement | null>(null);
 
@@ -225,6 +277,7 @@ function applyQrConfig(json: string) {
 
 onUnmounted(() => {
   stopScanner();
+  unlistenSystemTheme();
 });
 
 const form = reactive({
@@ -265,12 +318,6 @@ function tagTheme(level: string) {
     case "info": return "primary";
     default: return "default";
   }
-}
-
-function toggleDark(v: boolean) {
-  isDark.value = v;
-  document.documentElement.setAttribute("theme-mode", v ? "dark" : "light");
-  localStorage.setItem("yse-dark", String(v));
 }
 
 async function refresh() {
@@ -327,6 +374,7 @@ onMounted(async () => {
   }
   await refresh();
   store.listenForLogs();
+  if (themeMode.value === "auto") listenSystemTheme();
 });
 </script>
 

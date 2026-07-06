@@ -25,7 +25,7 @@
 
         <t-input
           v-model="searchText"
-          placeholder="搜索名称或 hostname"
+          placeholder="搜索名称或主机名"
           size="small"
           clearable
           class="search-input"
