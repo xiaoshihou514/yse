@@ -42,13 +42,15 @@ npx @tauri-apps/cli@^2 android init
 #    icons into gen/android/app/src/main/res/mipmap-* directly
 npx @tauri-apps/cli@^2 icon ../icon.png
 # 3. patch Android adaptive icon background to dark (like desktop sidebar)
-mkdir -p icons/android/values
-cat > icons/android/values/ic_launcher_background.xml << 'XML'
+for dir in icons/android gen/android/app/src/main/res; do
+  mkdir -p "$dir/values"
+  cat > "$dir/values/ic_launcher_background.xml" << 'XML'
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#262626</color>
 </resources>
 XML
+done
 # 4. copy 32x32 for frontend/public
 cp -f icons/32x32.png ../frontend/public/icon.png
 

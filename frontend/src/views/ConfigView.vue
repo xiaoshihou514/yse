@@ -155,7 +155,7 @@ async function showImportQr() {
     scanning.value = true;
     const { scan, Format, requestPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
     await requestPermissions();
-    const result = await scan({ windowed: true, formats: [Format.QRCode] });
+    const result = await scan({ formats: [Format.QRCode] });
     applyQrConfig(result.content);
   } catch (e) {
     await MessagePlugin.info("摄像头不可用，请选择二维码图片");
