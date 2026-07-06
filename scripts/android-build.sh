@@ -41,7 +41,12 @@ npx @tauri-apps/cli@^2 android init
 # 2. generate icons — detects existing Android project and places
 #    icons into gen/android/app/src/main/res/mipmap-* directly
 npx @tauri-apps/cli@^2 icon ../icon.png
-# 3. copy 32x32 for frontend/public
+# 3. patch Android adaptive icon background to dark (like desktop sidebar)
+echo '<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#262626</color>
+</resources>' > icons/android/values/ic_launcher_background.xml
+# 4. copy 32x32 for frontend/public
 cp -f icons/32x32.png ../frontend/public/icon.png
 
 npm install

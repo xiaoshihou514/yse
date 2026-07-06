@@ -385,7 +385,7 @@ onMounted(async () => {
   .config-page .t-card {
     margin: 8px;
   }
-  .config-page :deep(.t-form-item) {
+  .config-page :deep(.t-form__item) {
     flex-direction: column;
     align-items: stretch;
   }
@@ -393,18 +393,21 @@ onMounted(async () => {
     width: auto !important;
     padding-bottom: 4px;
   }
-  .config-page :deep(.t-form-item:last-child) {
+  .config-page :deep(.t-form__item:last-child) {
     overflow: hidden;
     max-width: 100%;
   }
-  .config-page :deep(.t-form-item:last-child .t-space),
-  .config-page :deep(.t-form-item:last-child .t-space .t-space-item) {
-    display: flex;
+  .config-page :deep(.t-form__item:last-child .t-space) {
+    display: flex !important;
     flex-wrap: wrap;
     gap: 6px;
     width: 100%;
   }
-  .config-page :deep(.t-form-item:last-child .t-space .t-button) {
+  .config-page :deep(.t-form__item:last-child .t-space .t-space-item) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .config-page :deep(.t-form__item:last-child .t-space .t-button) {
     flex: 1 1 auto;
     min-width: 0;
   }
