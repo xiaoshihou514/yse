@@ -20,8 +20,9 @@
         <t-form-item label="邮箱密码/授权码" name="email_password">
           <t-input v-model="form.email_password" type="password" />
         </t-form-item>
-        <t-form-item label="我的虚拟地址">
-          <t-input v-model="form.own_address" placeholder="me@yse.org" />
+        <t-form-item label="我的显示名称">
+          <t-input v-model="form.own_address" placeholder="你的名称 (用于发件地址)" />
+          <template #help>本机 hostname: {{ store.localHostname || '加载中...' }}</template>
         </t-form-item>
         <t-form-item label="加密密码">
           <t-input v-model="form.crypto_password" type="password" placeholder="用于消息加密，更改后保存即可生效" />

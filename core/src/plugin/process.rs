@@ -27,6 +27,16 @@ impl ManagedPlugin {
         args: &[String],
         handler: Option<PluginRequestHandler>,
     ) -> Result<Self, String> {
+        Self::spawn_with_exit_handler(id, exec_path, args, handler, None)
+    }
+
+    pub fn spawn_with_exit_handler(
+        id: String,
+        exec_path: &str,
+        args: &[String],
+        handler: Option<PluginRequestHandler>,
+        on_exit: Option<Box<dyn FnOnce(String) + Send>>,
+    ) -> Result<Self, String> {
         let mut cmd = TokioCommand::new(exec_path);
         cmd.args(args)
             .stdin(Stdio::piped())
@@ -54,6 +64,7 @@ impl ManagedPlugin {
         // Spawn stdout reader task that routes plugin requests
         let id_clone = id.clone();
         let handler_id = id.clone();
+        let exit_cb = on_exit;
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
@@ -114,6 +125,9 @@ impl ManagedPlugin {
                 });
             }
             warn!(plugin = %my_id, "stdout closed");
+            if let Some(cb) = exit_cb {
+                cb(my_id);
+            }
         });
 
         Ok(plugin)

@@ -53,6 +53,15 @@ impl SqliteStorage {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS contact_hashes (
+                recipient TEXT PRIMARY KEY,
+                local_hash TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS hidden_addresses (
+                address TEXT PRIMARY KEY
+            );
             ",
         )
         .map_err(|e| StoreError::Db(e.to_string()))?;
@@ -231,6 +240,104 @@ impl Storage for SqliteStorage {
         )
         .map_err(|e| StoreError::Db(e.to_string()))?;
         Ok(())
+    }
+
+    async fn save_contact_hash(
+        &self,
+        recipient: &str,
+        local_hash: &str,
+    ) -> Result<(), StoreError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO contact_hashes (recipient, local_hash) VALUES (?1, ?2)",
+            rusqlite::params![recipient, local_hash],
+        )
+        .map_err(|e| StoreError::Db(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn get_contact_hashes(&self) -> Result<Vec<(String, String)>, StoreError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let mut stmt = conn
+            .prepare("SELECT recipient, local_hash FROM contact_hashes")
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| StoreError::Db(e.to_string()))?);
+        }
+        Ok(out)
+    }
+
+    async fn set_hidden(&self, addr: &str, hidden: bool) -> Result<(), StoreError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        if hidden {
+            conn.execute(
+                "INSERT OR IGNORE INTO hidden_addresses (address) VALUES (?1)",
+                rusqlite::params![addr],
+            )
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        } else {
+            conn.execute(
+                "DELETE FROM hidden_addresses WHERE address = ?1",
+                rusqlite::params![addr],
+            )
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    async fn get_hidden_addresses(&self) -> Result<Vec<String>, StoreError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let mut stmt = conn
+            .prepare("SELECT address FROM hidden_addresses")
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| StoreError::Db(e.to_string()))?);
+        }
+        Ok(out)
+    }
+
+    async fn get_unique_addresses(&self) -> Result<Vec<String>, StoreError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT addr FROM (
+                    SELECT from_addr AS addr FROM messages
+                    UNION
+                    SELECT to_addr AS addr FROM messages
+                )",
+            )
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| StoreError::Db(e.to_string()))?);
+        }
+        Ok(out)
     }
 }
 

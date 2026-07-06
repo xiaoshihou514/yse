@@ -59,6 +59,13 @@ pub fn run() {
             commands::start_plugin,
             commands::stop_plugin,
             commands::list_running_plugins,
+            commands::list_processes,
+            commands::list_sessions,
+            commands::get_hostname,
+            commands::toggle_hide_conversation,
+            commands::get_hidden_addresses,
+            commands::get_contact_hashes,
+            commands::get_known_hostnames,
             commands::get_logs,
             commands::test_email,
         ])

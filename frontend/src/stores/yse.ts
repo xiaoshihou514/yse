@@ -1,23 +1,26 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { Message, PluginConfig, YseConfig, LogEntry } from "@/api/commands";
+import type { Message, PluginConfig, YseConfig, LogEntry, ProcessInfo, SessionInfo } from "@/api/commands";
 import * as api from "@/api/commands";
 
 export const useYseStore = defineStore("yse", () => {
-  // --- State ---
   const messages = ref<Message[]>([]);
   const plugins = ref<PluginConfig[]>([]);
   const config = ref<YseConfig | null>(null);
   const logs = ref<LogEntry[]>([]);
   const connected = ref(false);
   const polling = ref(false);
+  const hostnames = ref<string[]>([]);
+  const selectedHostname = ref("");
+  const hiddenAddresses = ref<Set<string>>(new Set());
+  const processes = ref<ProcessInfo[]>([]);
+  const sessions = ref<SessionInfo[]>([]);
+  const localHostname = ref("");
 
-  // --- Getters ---
   const sortedMessages = computed(() =>
     [...messages.value].sort((a, b) => a.timestamp - b.timestamp),
   );
 
-  // --- Actions ---
   async function loadMessages() {
     try {
       messages.value = await api.getMessages(100);
@@ -80,12 +83,15 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function initializeApp() {
-    // Auto-start plugins and IMAP polling on Tauri's permanent runtime.
-    // This is called from App.vue onMounted, after the Tauri app is fully
-    // initialized and the permanent tokio runtime is active. Spawned tasks
-    // (IMAP loop, plugin stdout readers) will NOT be cancelled.
+    // Load configs and contact hashes, but don't auto-start plugins.
+    // Plugins are started on demand by SessionRegistry when messages arrive.
     await api.autoStartPlugins().catch((e) => console.error("autoStartPlugins failed:", e));
     await startPolling();
+    await loadHostnames();
+    await loadHiddenAddresses();
+    await loadLocalHostname();
+    await loadProcesses();
+    await loadSessions();
   }
 
   async function stopPolling() {
@@ -98,19 +104,83 @@ export const useYseStore = defineStore("yse", () => {
     }
   }
 
+  async function loadHostnames() {
+    try {
+      hostnames.value = await api.getKnownHostnames();
+    } catch (e) {
+      console.error("loadHostnames failed:", e);
+    }
+  }
+
+  async function loadHiddenAddresses() {
+    try {
+      const addrs = await api.getHiddenAddresses();
+      hiddenAddresses.value = new Set(addrs);
+    } catch (e) {
+      console.error("loadHiddenAddresses failed:", e);
+    }
+  }
+
+  async function loadLocalHostname() {
+    try {
+      localHostname.value = await api.getHostname();
+    } catch (e) {
+      console.error("loadLocalHostname failed:", e);
+    }
+  }
+
+  async function loadProcesses() {
+    try {
+      processes.value = await api.listProcesses();
+    } catch (e) {
+      console.error("loadProcesses failed:", e);
+    }
+  }
+
+  async function loadSessions() {
+    try {
+      sessions.value = await api.listSessions();
+    } catch (e) {
+      console.error("loadSessions failed:", e);
+    }
+  }
+
+  async function toggleHide(address: string) {
+    const isHidden = hiddenAddresses.value.has(address);
+    await api.toggleHideConversation(address, !isHidden);
+    if (isHidden) {
+      hiddenAddresses.value.delete(address);
+    } else {
+      hiddenAddresses.value.add(address);
+    }
+    // Force reactivity
+    hiddenAddresses.value = new Set(hiddenAddresses.value);
+  }
+
+  /** Incrementally update hostnames from a new message */
+  function ingestHostnamesFromMessage(msg: Message) {
+    const extract = (addr: string) => {
+      const idx = addr.lastIndexOf("@");
+      return idx >= 0 ? addr.slice(idx + 1) : null;
+    };
+    for (const addr of [msg.from, msg.to]) {
+      const h = extract(addr);
+      if (h && !hostnames.value.includes(h)) {
+        hostnames.value.push(h);
+      }
+    }
+  }
+
   let unlistenLogs: (() => void) | null = null;
   let unlistenMessages: (() => void) | null = null;
   let messageReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function listenForLogs() {
-    // Clean up previous listener
     if (unlistenLogs) unlistenLogs();
-
     try {
       const { listen } = await import("@tauri-apps/api/event");
       unlistenLogs = await listen<LogEntry>("log-entry", (event) => {
         logs.value.push(event.payload);
-        // Keep last 500 entries
         if (logs.value.length > 500) {
           logs.value = logs.value.slice(logs.value.length - 500);
         }
@@ -124,7 +194,9 @@ export const useYseStore = defineStore("yse", () => {
     if (unlistenMessages) unlistenMessages();
     try {
       const { listen } = await import("@tauri-apps/api/event");
-      unlistenMessages = await listen("new-message", () => {
+      unlistenMessages = await listen<Message>("new-message", (event) => {
+        // Incremental hostname update
+        ingestHostnamesFromMessage(event.payload);
         if (messageReloadTimer) clearTimeout(messageReloadTimer);
         messageReloadTimer = setTimeout(loadMessages, 500);
       });
@@ -134,24 +206,13 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   return {
-    messages,
-    plugins,
-    config,
-    logs,
-    connected,
-    polling,
+    messages, plugins, config, logs, connected, polling,
+    hostnames, selectedHostname, hiddenAddresses, processes, sessions, localHostname,
     sortedMessages,
-    loadMessages,
-    loadPlugins,
-    loadConfig,
-    saveConfigAndApply,
-    loadLogs,
-    sendMessage,
-    togglePlugin,
-    startPolling,
-    initializeApp,
-    stopPolling,
-    listenForLogs,
-    listenForMessages,
+    loadMessages, loadPlugins, loadConfig, saveConfigAndApply, loadLogs,
+    sendMessage, togglePlugin, startPolling, initializeApp, stopPolling,
+    listenForLogs, listenForMessages,
+    loadHostnames, loadHiddenAddresses, loadLocalHostname,
+    loadProcesses, loadSessions, toggleHide,
   };
 });

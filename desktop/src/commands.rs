@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, State};
 use tokio::sync::RwLock;
@@ -10,10 +11,13 @@ use yse_core::{
         parser::parse_incoming,
         smtp::{SmtpConfig, SmtpSender},
     },
-    event::{CoreEvent, EventSender},
+    event::{CoreEvent, EventSender    },
+    identity,
     message::Message,
-    plugin::process::PluginManager,
-    router::Router,
+    plugin::{
+        process_manager::{PluginProcessManager, ProcessInfo},
+        session::SessionRegistry,
+    },
     store::{sqlite::SqliteStorage, PluginConfig, Storage},
 };
 
@@ -66,9 +70,8 @@ pub struct YseState {
     pub crypto_key: Arc<RwLock<Option<chacha20poly1305::Key>>>,
     pub sender: Arc<RwLock<Option<SmtpSender>>>,
     pub poller_running: Arc<std::sync::atomic::AtomicBool>,
-    pub plugin_manager: Arc<PluginManager>,
-    #[allow(dead_code)]
-    pub router: Arc<Router>,
+    pub process_manager: Arc<PluginProcessManager>,
+    pub session_registry: Arc<SessionRegistry>,
     pub log_buffer: Arc<std::sync::Mutex<Vec<LogEntry>>>,
     pub event_tx: EventSender,
     pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
@@ -79,8 +82,8 @@ impl YseState {
         let store: Arc<dyn Storage> =
             Arc::new(SqliteStorage::open(db_path).map_err(|e| e.to_string())?);
         let (event_tx, _) = yse_core::event::event_channel();
-        let plugin_manager = Arc::new(PluginManager::new());
-        let router = Arc::new(Router::new(plugin_manager.clone()));
+        let process_manager = Arc::new(PluginProcessManager::new());
+        let session_registry = Arc::new(SessionRegistry::new("me"));
 
         Ok(Self {
             store,
@@ -88,8 +91,8 @@ impl YseState {
             crypto_key: Arc::new(RwLock::new(None)),
             sender: Arc::new(RwLock::new(None)),
             poller_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            plugin_manager,
-            router,
+            process_manager,
+            session_registry,
             log_buffer: Arc::new(std::sync::Mutex::new(Vec::new())),
             event_tx,
             app_handle: Arc::new(std::sync::Mutex::new(None)),
@@ -101,9 +104,19 @@ impl YseState {
         if let Ok(Some(json)) = self.store.get_config_value("config").await {
             if let Ok(cfg) = serde_json::from_str::<YseConfig>(&json) {
                 let password = cfg.crypto_password.clone();
+                let own_name = cfg.own_address.clone();
                 let mut w = self.config.write().await;
                 *w = cfg;
                 drop(w);
+
+                self.session_registry.set_local_name(&own_name);
+
+                // Load contact hashes into session registry
+                if let Ok(hashes) = self.store.get_contact_hashes().await {
+                    let map: HashMap<String, String> = hashes.into_iter().collect();
+                    self.session_registry.set_contact_hashes(map);
+                }
+
                 if !password.is_empty() {
                     let key = derive_key(&password).map_err(|e| e.to_string()).ok();
                     if let Some(k) = key {
@@ -277,7 +290,7 @@ impl YseState {
             }
         });
 
-        self.plugin_manager.set_request_handler(handler);
+        self.process_manager.set_request_handler(handler);
     }
 
     pub fn log(&self, level: &str, message: String) {
@@ -321,50 +334,35 @@ pub async fn send_message(
 ) -> Result<(), String> {
     let key = state.crypto_key.read().await;
     let key = key.as_ref().ok_or("crypto key not set")?;
-    let own_addr = state.config.read().await.own_address.clone();
-    let msg = Message::new(own_addr, to.clone(), Some(text));
 
-    // Dispatch to plugins first (independent of SMTP availability)
-    let (email_username, dispatch_count) = {
-        let cfg = state.config.read().await;
-        let mappings: Vec<(String, String)> = cfg
-            .plugin_mappings
-            .iter()
-            .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
-            .collect();
-        let email = cfg.email_username.clone();
-        let n = state
-            .plugin_manager
-            .dispatch_message(
-                &msg.to_addr,
-                &msg.from_addr,
-                msg.text.as_deref(),
-                msg.meta.as_ref(),
-                msg.files.as_ref(),
-                &mappings,
-            )
-            .await;
-        (email, n)
-    };
+    let email_username = state.config.read().await.email_username.clone();
 
-    if dispatch_count > 0 {
-        state.log(
-            "info",
-            format!(
-                "dispatched to {} plugin(s) for {}",
-                dispatch_count, msg.to_addr
-            ),
-        );
-    } else {
-        state.log("debug", format!("no running plugin for {}", msg.to_addr));
-    }
+    // Format sender address using session registry (name#hash@hostname)
+    let from_addr = state.session_registry.format_sender_address(&to);
 
-    // Save message regardless of SMTP
+    let msg = Message::new(from_addr, to.clone(), Some(text));
+
+    // Save message
     state
         .store
         .save_message(&msg)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Route to local plugin if addressed to this machine
+    let plugin_configs = state.store.list_plugins().await.unwrap_or_default();
+    let _ = state
+        .session_registry
+        .route(
+            &msg.to_addr,
+            &msg.from_addr,
+            msg.text.as_deref(),
+            msg.meta.as_ref(),
+            msg.files.as_ref(),
+            &plugin_configs,
+            &state.process_manager,
+        )
+        .await;
 
     // Send via SMTP (best-effort for external delivery)
     if let Some(sender) = state.sender.read().await.as_ref() {
@@ -421,7 +419,7 @@ impl YseState {
     pub async fn start_polling_inner(&self, app_handle: tauri::AppHandle) -> Result<(), String> {
         use tauri::Emitter;
 
-        let (imap_cfg, key, store, own_addr, plugin_manager, yse_cfg) = {
+        let (imap_cfg, key, store, own_addr, session_registry, process_manager, yse_cfg) = {
             let cfg = self.config.read().await;
             let imap = ImapConfig {
                 server: cfg.email_imap_server.clone(),
@@ -441,7 +439,8 @@ impl YseState {
                 key,
                 self.store.clone(),
                 self.config.read().await.own_address.clone(),
-                self.plugin_manager.clone(),
+                self.session_registry.clone(),
+                self.process_manager.clone(),
                 self.config.clone(),
             )
         };
@@ -524,37 +523,33 @@ impl YseState {
                         let store = store.clone();
                         let handle = app_handle.clone();
                         let own = own_addr.clone();
-                        let pm = plugin_manager.clone();
-                        let cfg = yse_cfg.clone();
+                        let sr = session_registry.clone();
+                        let pm = process_manager.clone();
+                        let _cfg = yse_cfg.clone();
 
                         tokio::spawn(async move {
                             let _ = store.save_message(&msg).await;
 
                             let already = store.is_processed(&msg.id).await.unwrap_or(false);
                             if !already {
-                                let mappings: Vec<(String, String)> = cfg
-                                    .read()
-                                    .await
-                                    .plugin_mappings
-                                    .iter()
-                                    .map(|m| (m.virtual_addr.clone(), m.plugin_id.clone()))
-                                    .collect();
-                                // Also try exact match on to_addr, and wildcard/fuzzy match for virtual addresses
-                                let n = pm
-                                    .dispatch_message(
+                                let plugin_configs = store.list_plugins().await.unwrap_or_default();
+                                // Route via session registry (starts plugin if needed)
+                                let dispatched = sr
+                                    .route(
                                         &msg.to_addr,
                                         &msg.from_addr,
                                         msg.text.as_deref(),
                                         msg.meta.as_ref(),
                                         msg.files.as_ref(),
-                                        &mappings,
+                                        &plugin_configs,
+                                        &pm,
                                     )
                                     .await;
                                 let _ = store.mark_processed(&msg.id).await;
-                                let log_msg = if n > 0 {
-                                    format!("dispatched msg {} to {} plugin(s)", msg.id, n)
+                                let log_msg = if dispatched {
+                                    format!("session-routed msg {} via session registry", msg.id)
                                 } else {
-                                    format!("msg {}: no running plugin for {}", msg.id, msg.to_addr)
+                                    format!("msg {}: not routed locally (hostname mismatch or no plugin)", msg.id)
                                 };
                                 let log = LogEntry {
                                     level: "info".into(),
@@ -596,30 +591,18 @@ impl YseState {
         Ok(())
     }
 
-    /// Auto-start all enabled plugins from DB (called during app setup).
+    /// Load plugin configs into memory (no auto-start).
+    /// Plugins are started on demand by SessionRegistry when messages arrive.
     pub async fn auto_start_plugins(&self) {
         let plugins = match self.store.list_plugins().await {
             Ok(p) => p,
             Err(_) => return,
         };
-        for p in &plugins {
-            if p.enabled {
-                match self
-                    .plugin_manager
-                    .start_plugin(&p.id, &p.exec_path, &p.args)
-                    .await
-                {
-                    Ok(_) => self.log(
-                        "info",
-                        format!("auto-started plugin: {} ({})", p.name, p.id),
-                    ),
-                    Err(e) => self.log(
-                        "warn",
-                        format!("auto-start plugin {} failed: {}", p.name, e),
-                    ),
-                }
-            }
-        }
+        let count = plugins.iter().filter(|p| p.enabled).count();
+        self.log(
+            "info",
+            format!("loaded {} enabled plugin config(s), no auto-start", count),
+        );
     }
 }
 
@@ -676,33 +659,11 @@ pub async fn add_plugin(
         .save_plugin(&pc)
         .await
         .map_err(|e| e.to_string())?;
-    state
-        .plugin_manager
-        .start_plugin(&id, &exec_path, &[])
-        .await?;
 
-    // Auto-create a contact mapping
-    let vaddr = if name.contains('@') {
-        name.clone()
-    } else {
-        format!("{}@yse.org", name)
-    };
-    {
-        let mut cfg = state.config.write().await;
-        if !cfg.plugin_mappings.iter().any(|m| m.virtual_addr == vaddr) {
-            cfg.plugin_mappings.push(yse_core::config::PluginMapping {
-                virtual_addr: vaddr.clone(),
-                plugin_id: id.clone(),
-            });
-            // Persist to DB
-            let json = serde_json::to_string(&*cfg).map_err(|e| e.to_string())?;
-            state
-                .store
-                .set_config_value("config", &json)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-    }
+    state
+        .process_manager
+        .start(&id, &name, &exec_path, &[])
+        .await?;
 
     state.log("info", format!("plugin added: {}", id));
     Ok(())
@@ -710,7 +671,7 @@ pub async fn add_plugin(
 
 #[tauri::command]
 pub async fn remove_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
-    let _ = state.plugin_manager.stop_plugin(&id).await;
+    let _ = state.process_manager.stop(&id).await;
     state
         .store
         .delete_plugin(&id)
@@ -737,11 +698,11 @@ pub async fn toggle_plugin(
             .find(|p| p.id == id)
             .ok_or("plugin not found")?;
         state
-            .plugin_manager
-            .start_plugin(&id, &p.exec_path, &p.args)
+            .process_manager
+            .start(&id, &p.name, &p.exec_path, &p.args)
             .await?;
     } else {
-        state.plugin_manager.stop_plugin(&id).await?;
+        state.process_manager.stop(&id).await?;
     }
     state
         .store
@@ -770,8 +731,8 @@ pub async fn start_plugin(state: State<'_, YseState>, id: String) -> Result<(), 
         .find(|p| p.id == id)
         .ok_or("plugin not found")?;
     state
-        .plugin_manager
-        .start_plugin(&id, &p.exec_path, &p.args)
+        .process_manager
+        .start(&id, &p.name, &p.exec_path, &p.args)
         .await?;
     state.log("info", format!("plugin started: {}", id));
     Ok(())
@@ -779,7 +740,7 @@ pub async fn start_plugin(state: State<'_, YseState>, id: String) -> Result<(), 
 
 #[tauri::command]
 pub async fn stop_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
-    match state.plugin_manager.stop_plugin(&id).await {
+    match state.process_manager.stop(&id).await {
         Ok(_) => state.log("info", format!("plugin stopped: {}", id)),
         Err(_) => state.log("info", format!("plugin {} not running, skipping", id)),
     }
@@ -788,7 +749,76 @@ pub async fn stop_plugin(state: State<'_, YseState>, id: String) -> Result<(), S
 
 #[tauri::command]
 pub async fn list_running_plugins(state: State<'_, YseState>) -> Result<Vec<String>, String> {
-    Ok(state.plugin_manager.list_running().await)
+    Ok(state.process_manager.running_ids().await)
+}
+
+#[tauri::command]
+pub async fn list_processes(state: State<'_, YseState>) -> Result<Vec<ProcessInfo>, String> {
+    Ok(state.process_manager.list_all().await)
+}
+
+#[tauri::command]
+pub async fn list_sessions(state: State<'_, YseState>) -> Result<Vec<yse_core::plugin::session::Session>, String> {
+    Ok(state.session_registry.list_sessions().await)
+}
+
+#[tauri::command]
+pub async fn get_hostname() -> Result<String, String> {
+    Ok(identity::local_hostname())
+}
+
+#[tauri::command]
+pub async fn toggle_hide_conversation(
+    state: State<'_, YseState>,
+    address: String,
+    hidden: bool,
+) -> Result<(), String> {
+    state
+        .store
+        .set_hidden(&address, hidden)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_hidden_addresses(state: State<'_, YseState>) -> Result<Vec<String>, String> {
+    state
+        .store
+        .get_hidden_addresses()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_contact_hashes(
+    state: State<'_, YseState>,
+) -> Result<Vec<(String, String)>, String> {
+    state
+        .store
+        .get_contact_hashes()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_known_hostnames(state: State<'_, YseState>) -> Result<Vec<String>, String> {
+    let addrs = state
+        .store
+        .get_unique_addresses()
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut hostnames: Vec<String> = addrs
+        .iter()
+        .filter_map(|a| identity::extract_hostname(a).map(|h| h.to_string()))
+        .collect();
+    hostnames.sort();
+    hostnames.dedup();
+    // Always include local hostname
+    let local = identity::local_hostname();
+    if !hostnames.contains(&local) {
+        hostnames.push(local);
+    }
+    Ok(hostnames)
 }
 
 #[tauri::command]

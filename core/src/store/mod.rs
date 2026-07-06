@@ -12,23 +12,28 @@ pub enum StoreError {
 
 #[async_trait]
 pub trait Storage: Send + Sync {
-    /// Save a message (dedup by id internally).
     async fn save_message(&self, msg: &Message) -> Result<(), StoreError>;
-    /// List messages matching filter.
     async fn list_messages(&self, limit: u32, offset: u32) -> Result<Vec<Message>, StoreError>;
-    /// Check if a message id was already processed.
     async fn is_processed(&self, msg_id: &str) -> Result<bool, StoreError>;
-    /// Mark message as processed.
     async fn mark_processed(&self, msg_id: &str) -> Result<(), StoreError>;
 
-    // Plugin config
     async fn list_plugins(&self) -> Result<Vec<PluginConfig>, StoreError>;
     async fn save_plugin(&self, plugin: &PluginConfig) -> Result<(), StoreError>;
     async fn delete_plugin(&self, id: &str) -> Result<(), StoreError>;
 
-    // App config key-value
     async fn get_config_value(&self, key: &str) -> Result<Option<String>, StoreError>;
     async fn set_config_value(&self, key: &str, value: &str) -> Result<(), StoreError>;
+
+    // Contact hashes (persistent per-recipient sender hash)
+    async fn save_contact_hash(&self, recipient: &str, local_hash: &str) -> Result<(), StoreError>;
+    async fn get_contact_hashes(&self) -> Result<Vec<(String, String)>, StoreError>;
+
+    // Hidden conversations
+    async fn set_hidden(&self, addr: &str, hidden: bool) -> Result<(), StoreError>;
+    async fn get_hidden_addresses(&self) -> Result<Vec<String>, StoreError>;
+
+    // Get all unique addresses from message history
+    async fn get_unique_addresses(&self) -> Result<Vec<String>, StoreError>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -10,6 +10,23 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 
 // --- Types shared with Rust core -----------------------------------------
 
+export interface ProcessInfo {
+  id: string;
+  name: string;
+  exec_path: string;
+  args: string[];
+  state: string;
+  start_time: number | null;
+  restart_count: number;
+  last_exit: string | null;
+}
+
+export interface SessionInfo {
+  hash: string;
+  plugin_id: string;
+  name: string;
+}
+
 export interface Message {
   protocol: string;
   from: string;
@@ -102,4 +119,32 @@ export async function getLogs(limit = 100): Promise<LogEntry[]> {
 
 export async function testEmail(server: string, port: number, username: string, password: string): Promise<string> {
   return invoke("test_email", { server, port, username, password });
+}
+
+export async function listProcesses(): Promise<ProcessInfo[]> {
+  return invoke("list_processes");
+}
+
+export async function listSessions(): Promise<SessionInfo[]> {
+  return invoke("list_sessions");
+}
+
+export async function getHostname(): Promise<string> {
+  return invoke("get_hostname");
+}
+
+export async function toggleHideConversation(address: string, hidden: boolean): Promise<void> {
+  return invoke("toggle_hide_conversation", { address, hidden });
+}
+
+export async function getHiddenAddresses(): Promise<string[]> {
+  return invoke("get_hidden_addresses");
+}
+
+export async function getContactHashes(): Promise<[string, string][]> {
+  return invoke("get_contact_hashes");
+}
+
+export async function getKnownHostnames(): Promise<string[]> {
+  return invoke("get_known_hostnames");
 }

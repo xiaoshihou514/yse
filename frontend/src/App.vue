@@ -65,6 +65,8 @@ onMounted(async () => {
   store.listenForLogs();
   store.listenForMessages();
   await store.initializeApp();
+  await store.loadProcesses();
+  await store.loadSessions();
 });
 </script>
 
