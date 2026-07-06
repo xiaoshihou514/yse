@@ -114,11 +114,6 @@ function procTag(state: string | undefined): "success" | "warning" | "danger" | 
   return "default";
 }
 
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  return d.toLocaleString("zh-CN");
-}
-
 async function handleDelete(row: PluginConfig) {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
