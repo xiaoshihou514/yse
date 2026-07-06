@@ -98,10 +98,6 @@ jobs:
 
       - name: Build Android APK
         run: just android-build
-        env:
-          YSE_KEYSTORE_BASE64: ${{ secrets.YSE_KEYSTORE_BASE64 }}
-          YSE_KEY_PASSWORD: ${{ secrets.YSE_KEY_PASSWORD }}
-          YSE_KEY_ALIAS: ${{ secrets.YSE_KEY_ALIAS }}
 
       - uses: actions/upload-artifact@v7
         with:

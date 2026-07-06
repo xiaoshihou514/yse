@@ -2,19 +2,25 @@
 set -euo pipefail
 
 # ── Signing configuration ──────────────────────────────────────────
-# Priority: env vars > ~/.android/yse-upload-keystore.jks
-# In CI: set YSE_KEYSTORE_BASE64 + YSE_KEY_PASSWORD + YSE_KEY_ALIAS
-# Locally: create ~/.android/yse-upload-keystore.jks once and set
-#   YSE_KEY_PASSWORD (or store password in KEYSTORE_PASSWORD env).
-KEYSTORE="${YSE_KEYSTORE:-$HOME/.android/yse-upload-keystore.jks}"
-KEY_PASSWORD="${YSE_KEY_PASSWORD:-}"
+# Keystore is stored in the repo at mobile/yse-keystore.jks so that
+# the same key is used for every build (enables app upgrades).
+# Generate once on first run — commit the result.
+KEYSTORE="$(dirname "$0")/../mobile/yse-keystore.jks"
+KEYSTORE_PASSWORD="$(dirname "$0")/../mobile/keystore.password"
 KEY_ALIAS="${YSE_KEY_ALIAS:-upload}"
 
-# CI mode: decode base64 keystore from secret
-if [ -n "${YSE_KEYSTORE_BASE64:-}" ]; then
-    KEYSTORE=$(mktemp)
-    base64 -d <<< "$YSE_KEYSTORE_BASE64" > "$KEYSTORE"
+if [ ! -f "$KEYSTORE" ]; then
+    echo "Generating new keystore at ${KEYSTORE} ..."
+    PASSWORD="${YSE_KEY_PASSWORD:-yse-android-sign}"
+    echo "$PASSWORD" > "$KEYSTORE_PASSWORD"
+    keytool -genkey -v -keystore "$KEYSTORE" \
+        -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+        -storepass "$PASSWORD" -keypass "$PASSWORD" \
+        -dname "CN=YSE,O=YSE,C=CN"
+    echo "Keystore created. Commit ${KEYSTORE} and ${KEYSTORE_PASSWORD} to repo."
 fi
+
+KEY_PASSWORD=$(cat "$KEYSTORE_PASSWORD")
 
 # ── NDK setup ──────────────────────────────────────────────────────
 NDK_DIR=$(ls -1d "${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}/ndk/"*/ 2>/dev/null | head -1)
@@ -49,7 +55,6 @@ if [ -n "$TOOLS_DIR" ]; then export PATH="$TOOLS_DIR:$PATH"; fi
 
 APK=$(find mobile/gen/android -name '*-unsigned.apk' | head -1)
 if [ -z "$APK" ]; then
-    # fallback: signed APK
     APK=$(find mobile/gen/android -name '*.apk' ! -name '*-unsigned*' | head -1)
 fi
 if [ -z "$APK" ]; then echo "ERROR: no APK found"; exit 1; fi
@@ -57,20 +62,8 @@ if [ -z "$APK" ]; then echo "ERROR: no APK found"; exit 1; fi
 ALIGNED="${APK%.apk}-aligned.apk"
 zipalign -f -v -p 4 "$APK" "$ALIGNED"
 
-if [ -f "$KEYSTORE" ] && [ -n "$KEY_PASSWORD" ]; then
-    apksigner sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" \
-        --ks-pass pass:"$KEY_PASSWORD" --key-pass pass:"$KEY_PASSWORD" "$ALIGNED"
-    echo "APK signed with alias '${KEY_ALIAS}'"
-elif [ -f "$KEYSTORE" ] && [ -z "$KEY_PASSWORD" ]; then
-    echo "WARNING: keystore found at ${KEYSTORE} but YSE_KEY_PASSWORD is not set"
-    echo "APK will NOT be properly signed — upgrade will fail!"
-else
-    echo "WARNING: no keystore found, APK left unsigned"
-    echo "To fix locally:"
-    echo "  1. keytool -genkey -v -keystore ~/.android/yse-upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload"
-    echo "  2. export YSE_KEY_PASSWORD=your-password"
-    echo "  3. run this script again"
-    echo "In CI: set YSE_KEYSTORE_BASE64, YSE_KEY_PASSWORD, YSE_KEY_ALIAS secrets"
-fi
+apksigner sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" \
+    --ks-pass pass:"$KEY_PASSWORD" --key-pass pass:"$KEY_PASSWORD" "$ALIGNED"
+echo "APK signed with alias '${KEY_ALIAS}' from repo keystore"
 
 mv -f "$ALIGNED" "mobile/yse-android-universal-release.apk"
