@@ -316,6 +316,19 @@ impl Storage for SqliteStorage {
         Ok(out)
     }
 
+    async fn delete_messages_for_address(&self, addr: &str) -> Result<(), StoreError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM messages WHERE from_addr = ?1 OR to_addr = ?1",
+            rusqlite::params![addr],
+        )
+        .map_err(|e| StoreError::Db(e.to_string()))?;
+        Ok(())
+    }
+
     async fn get_unique_addresses(&self) -> Result<Vec<String>, StoreError> {
         let conn = self
             .conn

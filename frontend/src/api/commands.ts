@@ -148,3 +148,7 @@ export async function getContactHashes(): Promise<[string, string][]> {
 export async function getKnownHostnames(): Promise<string[]> {
   return invoke("get_known_hostnames");
 }
+
+export async function deleteConversation(address: string): Promise<void> {
+  return invoke("delete_conversation", { address });
+}

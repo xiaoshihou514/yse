@@ -70,6 +70,7 @@ pub fn run() {
             commands::get_hostname,
             commands::toggle_hide_conversation,
             commands::get_hidden_addresses,
+            commands::delete_conversation,
             commands::get_contact_hashes,
             commands::get_known_hostnames,
             commands::get_logs,

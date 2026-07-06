@@ -785,6 +785,18 @@ pub async fn toggle_hide_conversation(
 }
 
 #[tauri::command]
+pub async fn delete_conversation(
+    state: State<'_, YseState>,
+    address: String,
+) -> Result<(), String> {
+    state
+        .store
+        .delete_messages_for_address(&address)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_hidden_addresses(state: State<'_, YseState>) -> Result<Vec<String>, String> {
     state
         .store

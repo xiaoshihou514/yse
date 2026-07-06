@@ -151,6 +151,13 @@ export const useYseStore = defineStore("yse", () => {
     }
   }
 
+  async function deleteConversation(address: string) {
+    await api.deleteConversation(address);
+    messages.value = messages.value.filter(
+      (m) => m.from !== address && m.to !== address,
+    );
+  }
+
   async function toggleHide(address: string) {
     const isHidden = hiddenAddresses.value.has(address);
     await api.toggleHideConversation(address, !isHidden);
@@ -220,6 +227,6 @@ export const useYseStore = defineStore("yse", () => {
     togglePlugin, startPolling, initializeApp, stopPolling,
     listenForLogs, listenForMessages,
     loadHostnames, loadHiddenAddresses, loadLocalHostname,
-    loadProcesses, loadSessions, toggleHide,
+    loadProcesses, loadSessions, toggleHide, deleteConversation,
   };
 });

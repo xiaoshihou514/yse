@@ -34,6 +34,9 @@ pub trait Storage: Send + Sync {
 
     // Get all unique addresses from message history
     async fn get_unique_addresses(&self) -> Result<Vec<String>, StoreError>;
+
+    /// Delete all messages to/from a given address.
+    async fn delete_messages_for_address(&self, addr: &str) -> Result<(), StoreError>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

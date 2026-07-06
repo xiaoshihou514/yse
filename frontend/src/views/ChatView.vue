@@ -38,6 +38,9 @@
             :class="['contact-item', { active: selectedContact === c.address, hidden: c.hidden }]"
             @click="selectContact(c.address)"
             @contextmenu.prevent="onContactContext($event, c)"
+            @touchstart.passive="onTouchStart($event, c)"
+            @touchend="onTouchEnd"
+            @touchmove="onTouchMove"
           >
             <t-avatar size="40px">{{ initial(c.address) }}</t-avatar>
             <div class="contact-info">
@@ -60,6 +63,9 @@
                 :class="['contact-item', 'hidden-item', { active: selectedContact === c.address }]"
                 @click="selectContact(c.address)"
                 @contextmenu.prevent="onContactContext($event, c)"
+                @touchstart.passive="onTouchStart($event, c)"
+                @touchend="onTouchEnd"
+                @touchmove="onTouchMove"
               >
                 <t-avatar size="40px">{{ initial(c.address) }}</t-avatar>
                 <div class="contact-info">
@@ -128,9 +134,11 @@
       class="context-menu"
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
     >
-      <div class="ctx-item" @click="copyCtxText">复制</div>
+      <div class="ctx-item" @click="copyCtxText">{{ ctxContact ? '复制地址' : '复制' }}</div>
       <div class="ctx-sep"></div>
       <div class="ctx-item" @click="toggleCtxHide">{{ ctxContact?.hidden ? '取消隐藏' : '隐藏对话' }}</div>
+      <div v-if="ctxContact" class="ctx-sep"></div>
+      <div v-if="ctxContact" class="ctx-item ctx-danger" @click="deleteCtxConversation">删除对话</div>
     </div>
   </div>
 </template>
@@ -213,7 +221,18 @@ function onContactContext(e: MouseEvent, c: { address: string; hidden: boolean }
 }
 
 function copyCtxText() {
-  if (ctxMenu.value.text) navigator.clipboard.writeText(ctxMenu.value.text);
+  if (ctxContact.value) {
+    navigator.clipboard.writeText(ctxContact.value.address);
+  } else if (ctxMenu.value.text) {
+    navigator.clipboard.writeText(ctxMenu.value.text);
+  }
+  ctxMenu.value.visible = false;
+}
+
+async function deleteCtxConversation() {
+  if (ctxContact.value) {
+    await store.deleteConversation(ctxContact.value.address);
+  }
   ctxMenu.value.visible = false;
 }
 
@@ -222,6 +241,42 @@ async function toggleCtxHide() {
     await store.toggleHide(ctxContact.value.address);
   }
   ctxMenu.value.visible = false;
+}
+
+// ---- Long press for mobile ----
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let longPressContact: { address: string; hidden: boolean } | null = null;
+let touchStartY = 0;
+
+function onTouchStart(e: TouchEvent, c: { address: string; hidden: boolean }) {
+  longPressContact = c;
+  touchStartY = e.touches[0].clientY;
+  longPressTimer = setTimeout(() => {
+    if (longPressContact) {
+      const touch = e.changedTouches?.[0] ?? e.touches[0];
+      onContactContext(
+        { clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => {} } as MouseEvent,
+        longPressContact,
+      );
+    }
+    longPressTimer = null;
+  }, 500);
+}
+
+function onTouchEnd() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  longPressContact = null;
+}
+
+function onTouchMove(e: TouchEvent) {
+  if (longPressTimer && Math.abs(e.touches[0].clientY - touchStartY) > 10) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressContact = null;
+  }
 }
 
 document.addEventListener("click", () => {
@@ -568,6 +623,8 @@ onMounted(async () => {
 }
 .ctx-item { padding: 6px 16px; font-size: 14px; cursor: pointer; }
 .ctx-item:hover { background: var(--td-bg-color-secondarycontainer); }
+.ctx-danger { color: var(--td-error-color); }
+.ctx-danger:hover { background: var(--td-error-color-light, rgba(255,77,79,0.08)); }
 .ctx-sep { height: 1px; background: var(--td-component-stroke); margin: 4px 8px; }
 
 /* Mobile */
