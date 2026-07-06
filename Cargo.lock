@@ -5474,6 +5474,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-plugin-barcode-scanner",
  "tokio",
  "tracing",
  "yse-core",

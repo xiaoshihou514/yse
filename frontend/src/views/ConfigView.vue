@@ -151,11 +151,11 @@ async function showImportQr() {
   await nextTick();
   try {
     scanning.value = true;
-    const { scan, Format } = await import("@tauri-apps/plugin-barcode-scanner");
+    const { scan, Format, requestPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
+    await requestPermissions();
     const result = await scan({ windowed: true, formats: [Format.QRCode] });
     applyQrConfig(result.content);
   } catch (e) {
-    // Tauri scanner unavailable — offer file upload fallback
     await MessagePlugin.info("摄像头不可用，请选择二维码图片");
     await uploadQrImage();
   } finally {
@@ -383,9 +383,11 @@ onMounted(async () => {
     width: auto !important;
     padding-bottom: 4px;
   }
-  .config-page :deep(.t-form-item:last-child .t-space) {
+  .config-page :deep(.t-form-item:last-child .t-space),
+  .config-page :deep(.t-form-item:last-child .t-space .t-space-item) {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
+    width: 100%;
   }
   .config-page :deep(.t-form-item:last-child .t-space .t-button) {
     flex: 1 1 auto;
