@@ -61,8 +61,18 @@
       width="400px"
     >
       <div class="qr-center">
-        <div id="qr-scanner-id" class="scanner-box"></div>
-        <p class="qr-hint">将二维码对准摄像头</p>
+        <div class="scanner-wrapper">
+          <div id="qr-scanner-id" class="scanner-box">
+            <div class="scanner-frame">
+              <div class="frame-corner tl"></div>
+              <div class="frame-corner tr"></div>
+              <div class="frame-corner bl"></div>
+              <div class="frame-corner br"></div>
+            </div>
+            <div class="scanner-line"></div>
+          </div>
+        </div>
+        <p class="qr-hint">将二维码置于框内</p>
         <t-space style="margin-top: 12px">
           <t-button size="small" @click="stopScanner">取消</t-button>
           <t-button size="small" variant="outline" @click="uploadQrImage">上传二维码图片</t-button>
@@ -207,7 +217,7 @@ async function showImportQr() {
     scanning.value = true;
     const { scan, Format, requestPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
     await requestPermissions();
-    const result = await scan({ formats: [Format.QRCode] });
+    const result = await scan({ formats: [Format.QRCode], windowed: true });
     applyQrConfig(result.content);
   } catch (e) {
     await MessagePlugin.info("摄像头不可用，请选择二维码图片");
@@ -400,8 +410,37 @@ onMounted(async () => {
 .qr-hint {
   font-size: 13px; color: var(--td-text-color-placeholder); text-align: center;
 }
+.scanner-wrapper {
+  width: 280px; height: 280px; border-radius: 8px;
+  overflow: hidden; position: relative;
+  background: var(--td-bg-color-component);
+}
 .scanner-box {
-  width: 280px; height: 280px; overflow: hidden; border-radius: 8px;
+  width: 100%; height: 100%; position: relative;
+}
+.scanner-frame {
+  position: absolute; inset: 0; z-index: 2;
+  pointer-events: none;
+}
+.frame-corner {
+  position: absolute; width: 28px; height: 28px;
+  border-color: var(--td-brand-color);
+  border-style: solid;
+}
+.frame-corner.tl { top: 12px; left: 12px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+.frame-corner.tr { top: 12px; right: 12px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+.frame-corner.bl { bottom: 12px; left: 12px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+.frame-corner.br { bottom: 12px; right: 12px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+.scanner-line {
+  position: absolute; left: 12px; right: 12px; height: 2px;
+  background: var(--td-brand-color); z-index: 3;
+  animation: scanLine 2s ease-in-out infinite;
+  border-radius: 1px; opacity: 0.7;
+}
+@keyframes scanLine {
+  0% { top: 16px; }
+  50% { top: calc(100% - 18px); }
+  100% { top: 16px; }
 }
 .log-container {
   max-height: 600px;
@@ -458,6 +497,10 @@ onMounted(async () => {
   .config-page :deep(.t-form__item:last-child .t-space .t-button) {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  .scanner-wrapper {
+    width: calc(100vw - 64px); height: calc(100vw - 64px);
+    max-width: 300px; max-height: 300px;
   }
   .log-container {
     max-height: none;
