@@ -5,16 +5,6 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app_data_dir = dirs_next::data_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("yse");
-
-    std::fs::create_dir_all(&app_data_dir).ok();
-
-    let db_path = app_data_dir.join("yse.db");
-
-    let state = AppState::new(db_path).expect("failed to initialize YSE application state");
-
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_os::init());
 
@@ -22,16 +12,27 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
 
     builder
-        .manage(state)
         .setup(|app| {
-            let state = app.state::<AppState>();
-            let handle = app.handle().clone();
-            *state.app_handle.lock().unwrap() = Some(handle.clone());
+            // Use Tauri's path API (works on Android, unlike dirs_next)
+            let app_dir = app.path().app_data_dir().unwrap_or_else(|_| {
+                // Fallback for environments where path resolver is unavailable
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+            });
+            std::fs::create_dir_all(&app_dir).ok();
+            let db_path = app_dir.join("yse.db");
+            eprintln!("yse: using app_dir={:?} db_path={:?}", app_dir, db_path);
+
+            let state = AppState::new(&db_path)
+                .expect("yse mobile: AppState::new failed");
+            *state.app_handle.lock().unwrap() = Some(app.handle().clone());
+
             if let Ok(rt) = tokio::runtime::Runtime::new() {
                 rt.block_on(async {
                     state.core.load_config().await;
                 });
             }
+
+            app.manage(state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

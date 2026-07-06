@@ -16,7 +16,6 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-dirs-next = "2.0"
 
 # 交叉编译时使用 vendored OpenSSL 避免链接系统 OpenSSL
 openssl = { version = "0.10", features = ["vendored"] }
