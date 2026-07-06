@@ -18,6 +18,7 @@ if [ -n "$NDK_DIR" ]; then
 fi
 
 cd mobile
+rm -rf icons/android
 npx @tauri-apps/cli@^2 icon ../icon.png
 cp icons/32x32.png ../frontend/public/icon.png
 npx @tauri-apps/cli@^2 android init || true
