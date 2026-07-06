@@ -11,7 +11,7 @@
           <span :data-label="'地址'">{{ displayAddress(row) }}</span>
         </template>
         <template #plugin_id="{ row }">
-          <span :data-label="'绑定插件'">{{ pluginName(row.plugin_id) || row.plugin_id }}</span>
+          <span :data-label="'绑定插件'">{{ pluginName(row.plugin_id) || '—' }}</span>
         </template>
         <template #operation="{ row }">
           <t-popconfirm content="确定删除此联系人？" @confirm="handleDelete(row)">
@@ -39,7 +39,7 @@
         <t-button @click="handleAdd">添加联系人</t-button>
       </t-space>
       <div class="form-hint">
-        地址格式：<code>{{ newName || '名称' }}#<自动哈希>@<本机 hostname></code>
+        地址将自动以 <code>{{ newName || '名称' }}@{{ store.localHostname || '本机' }}</code> 格式保存
       </div>
     </t-card>
   </div>
@@ -80,7 +80,7 @@ const displayMappings = computed(() =>
 
 const pluginOptions = computed(() =>
   store.plugins.map((p) => ({
-    label: `${p.name || p.id} (${p.id})`,
+    label: p.name || p.id,
     value: p.id,
   })),
 );

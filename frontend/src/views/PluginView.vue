@@ -10,24 +10,8 @@
         <template #name="{ row }">
           <span :data-label="'名称'">{{ row.name }}</span>
         </template>
-        <template #id="{ row }">
-          <span :data-label="'ID'">{{ row.id }}</span>
-        </template>
         <template #exec_path="{ row }">
-          <span :data-label="'路径'">{{ row.exec_path }}</span>
-        </template>
-        <template #status="{ row }">
-          <span :data-label="'状态'">
-            {{ statusFor(row.id) }}
-          </span>
-        </template>
-        <template #enabled="{ row }">
-          <span :data-label="'启用'">
-            <t-switch
-              :value="row.enabled"
-              @change="(v: boolean) => handleToggle(row, v)"
-            />
-          </span>
+          <span :data-label="'路径'" class="path-cell">{{ row.exec_path }}</span>
         </template>
         <template #operation="{ row }">
           <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
@@ -46,7 +30,7 @@
       </t-space>
     </t-card>
 
-    <t-card title="运行状态" :bordered="false" style="margin-top: 20px">
+    <t-card title="运行实例" :bordered="false" style="margin-top: 20px">
       <div v-if="store.processes.length" class="process-list">
         <div v-for="p in store.processes" :key="p.id" class="process-item">
           <div class="proc-header">
@@ -64,7 +48,7 @@
           </div>
         </div>
       </div>
-      <t-empty v-else description="暂无运行中的插件" />
+      <t-empty v-else description="暂无运行中的插件实例" />
     </t-card>
   </div>
 </template>
@@ -73,6 +57,7 @@
 import { ref, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
+import * as api from "@/api/commands";
 import type { PluginConfig } from "@/api/commands";
 
 const store = useYseStore();
@@ -82,18 +67,9 @@ const newExec = ref("");
 
 const columns = [
   { colKey: "name", title: "名称" },
-  { colKey: "id", title: "ID" },
   { colKey: "exec_path", title: "路径" },
-  { colKey: "status", title: "状态" },
-  { colKey: "enabled", title: "启用" },
   { colKey: "operation", title: "操作" },
 ];
-
-function statusFor(id: string): string {
-  const p = store.processes.find((pr) => pr.id === id);
-  if (!p) return "Stopped";
-  return p.state;
-}
 
 function tagTheme(state: string): "success" | "warning" | "danger" | "default" {
   if (state === "Running") return "success";
@@ -107,20 +83,10 @@ function formatTime(ts: number): string {
   return d.toLocaleString("zh-CN");
 }
 
-async function handleToggle(row: PluginConfig, enabled: boolean) {
-  try {
-    await store.togglePlugin(row.id, enabled);
-    await store.loadProcesses();
-    await MessagePlugin.success(`${enabled ? "已启动" : "已停止"} ${row.name}`);
-  } catch (e) {
-    await MessagePlugin.error(`操作失败: ${e}`);
-  }
-}
-
 async function handleDelete(row: PluginConfig) {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await store.togglePlugin(row.id, false);
+    await api.stopPlugin(row.id).catch(() => {});
     await invoke("remove_plugin", { id: row.id });
     await store.loadPlugins();
     await store.loadProcesses();
@@ -169,6 +135,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.path-cell {
+  max-width: 240px;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
 .process-list { display: flex; flex-direction: column; gap: 8px; }
 .process-item {
   padding: 10px 12px;

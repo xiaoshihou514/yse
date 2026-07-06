@@ -31,10 +31,44 @@
           <t-space>
             <t-button theme="primary" type="submit" :loading="saving">保存</t-button>
             <t-button theme="default" @click="handleTest">测试连接</t-button>
+            <t-button theme="default" variant="outline" @click="showExportQr">导出二维码</t-button>
+            <t-button theme="default" variant="outline" @click="showImportQr">扫码导入</t-button>
           </t-space>
         </t-form-item>
       </t-form>
     </t-card>
+
+    <!-- QR export dialog -->
+    <t-dialog
+      v-model:visible="qrExportVisible"
+      header="导出配置"
+      :footer="false"
+      width="360px"
+    >
+      <div class="qr-center">
+        <img v-if="qrDataUrl" :src="qrDataUrl" alt="配置二维码" class="qr-img" />
+        <p v-else>生成中...</p>
+        <p class="qr-hint">用另一台设备的 YSE 扫描此二维码以导入配置</p>
+      </div>
+    </t-dialog>
+
+    <!-- QR import dialog -->
+    <t-dialog
+      v-model:visible="qrImportVisible"
+      header="扫码导入"
+      :footer="false"
+      :close-on-overlay-click="false"
+      width="400px"
+    >
+      <div class="qr-center">
+        <div id="qr-scanner-id" class="scanner-box"></div>
+        <p class="qr-hint">将二维码对准摄像头</p>
+        <t-space style="margin-top: 12px">
+          <t-button size="small" @click="stopScanner">取消</t-button>
+          <t-button size="small" variant="outline" @click="uploadQrImage">上传二维码图片</t-button>
+        </t-space>
+      </div>
+    </t-dialog>
 
     <t-card title="界面" :bordered="false" style="margin-bottom: 20px">
       <t-space align="center">
@@ -75,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick, watch } from "vue";
+import { ref, reactive, computed, onMounted, nextTick, watch, onUnmounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import * as api from "@/api/commands";
@@ -85,6 +119,105 @@ const saving = ref(false);
 const isDark = ref(document.documentElement.getAttribute("theme-mode") === "dark");
 const levelFilter = ref<string>("info");
 const logContainer = ref<HTMLElement | null>(null);
+
+// QR export
+const qrExportVisible = ref(false);
+const qrDataUrl = ref("");
+
+// QR import
+const qrImportVisible = ref(false);
+let html5QrCode: any = null;
+
+async function showExportQr() {
+  qrExportVisible.value = true;
+  qrDataUrl.value = "";
+  await nextTick();
+  try {
+    const QRCode = (await import("qrcode")).default;
+    const data = JSON.stringify({ ...form, plugin_mappings: store.config?.plugin_mappings ?? [] });
+    qrDataUrl.value = await QRCode.toDataURL(data, {
+      width: 280,
+      margin: 2,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+  } catch (e) {
+    await MessagePlugin.error(`生成二维码失败: ${e}`);
+    qrExportVisible.value = false;
+  }
+}
+
+async function showImportQr() {
+  qrImportVisible.value = true;
+  await nextTick();
+  try {
+    const { Html5Qrcode } = await import("html5-qrcode");
+    html5QrCode = new Html5Qrcode("qr-scanner-id");
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      (decodedText: string) => {
+        applyQrConfig(decodedText);
+      },
+      () => {},
+    );
+  } catch (e) {
+    await MessagePlugin.error(`启动摄像头失败: ${e}`);
+  }
+}
+
+async function stopScanner() {
+  if (html5QrCode) {
+    try { await html5QrCode.stop(); } catch {}
+    try { await html5QrCode.clear(); } catch {}
+    html5QrCode = null;
+  }
+  qrImportVisible.value = false;
+}
+
+async function uploadQrImage() {
+  try {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const { Html5Qrcode } = await import("html5-qrcode");
+      const tempCode = new Html5Qrcode("qr-scanner-id");
+      try {
+        const result = await tempCode.scanFile(file, false);
+        applyQrConfig(result);
+      } finally {
+        try { await tempCode.clear(); } catch {}
+      }
+    };
+    input.click();
+  } catch (e) {
+    await MessagePlugin.error(`解析图片失败: ${e}`);
+  }
+}
+
+function applyQrConfig(json: string) {
+  try {
+    const cfg = JSON.parse(json);
+    if (cfg.email_imap_server != null) form.email_imap_server = cfg.email_imap_server;
+    if (cfg.email_imap_port != null) form.email_imap_port = cfg.email_imap_port;
+    if (cfg.email_smtp_server != null) form.email_smtp_server = cfg.email_smtp_server;
+    if (cfg.email_smtp_port != null) form.email_smtp_port = cfg.email_smtp_port;
+    if (cfg.email_username) form.email_username = cfg.email_username;
+    if (cfg.email_password) form.email_password = cfg.email_password;
+    if (cfg.own_address) form.own_address = cfg.own_address;
+    if (cfg.crypto_password) form.crypto_password = cfg.crypto_password;
+    stopScanner();
+    MessagePlugin.success("配置已从二维码导入，点击保存以生效");
+  } catch (e) {
+    MessagePlugin.error(`解析配置失败: ${e}`);
+  }
+}
+
+onUnmounted(() => {
+  stopScanner();
+});
 
 const form = reactive({
   email_imap_server: "",
@@ -192,6 +325,26 @@ onMounted(async () => {
 <style scoped>
 .config-page {
   max-width: 1000px;
+}
+.config-page :deep(.t-form__label) {
+  text-align: left;
+}
+.config-page :deep(.t-form-item__help) {
+  text-align: left;
+}
+.qr-center {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.qr-img {
+  width: 240px; height: 240px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 8px; padding: 8px;
+}
+.qr-hint {
+  font-size: 13px; color: var(--td-text-color-placeholder); text-align: center;
+}
+.scanner-box {
+  width: 280px; height: 280px; overflow: hidden; border-radius: 8px;
 }
 .log-container {
   max-height: 600px;
