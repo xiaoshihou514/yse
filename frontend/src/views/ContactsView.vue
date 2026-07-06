@@ -30,6 +30,15 @@
           @keydown.enter="handleAdd"
         />
         <t-select
+          v-model="newHostname"
+          placeholder="目标 hostname"
+          style="width: 160px"
+          filterable
+          allow-create
+          :options="hostnameOptions"
+          @keydown.enter="handleAdd"
+        />
+        <t-select
           v-model="newPlugin"
           placeholder="绑定插件 (可选)"
           style="width: 200px"
@@ -39,7 +48,7 @@
         <t-button @click="handleAdd">添加联系人</t-button>
       </t-space>
       <div class="form-hint">
-        地址将自动以 <code>{{ newName || '名称' }}@{{ store.localHostname || '本机' }}</code> 格式保存
+        地址格式：<code>{{ newName || '名称' }}@{{ newHostname || 'hostname' }}</code>
       </div>
     </t-card>
   </div>
@@ -67,6 +76,7 @@ function parseAddress(addr: string) {
 
 const store = useYseStore();
 const newName = ref("");
+const newHostname = ref("");
 const newPlugin = ref("");
 
 const mappings = computed(() => store.config?.plugin_mappings ?? []);
@@ -76,6 +86,10 @@ const displayMappings = computed(() =>
     ...m,
     _parsed: parseAddress(m.virtual_addr),
   })),
+);
+
+const hostnameOptions = computed(() =>
+  store.hostnames.map((h) => ({ label: h, value: h })),
 );
 
 const pluginOptions = computed(() =>
@@ -111,8 +125,11 @@ async function handleAdd() {
     await MessagePlugin.warning("请输入名称");
     return;
   }
+  let hostname = newHostname.value.trim();
+  if (!hostname) {
+    hostname = store.localHostname || (await api.getHostname());
+  }
   const hash = generateHash();
-  const hostname = store.localHostname || (await api.getHostname());
   const vaddr = `${name}#${hash}@${hostname}`;
 
   if (!store.config) return;
@@ -129,6 +146,7 @@ async function handleAdd() {
     await api.saveConfig(cfg);
     await store.loadConfig();
     newName.value = "";
+    newHostname.value = "";
     newPlugin.value = "";
     await MessagePlugin.success("联系人已添加");
   } catch (e) {
@@ -155,6 +173,9 @@ onMounted(async () => {
   await store.loadPlugins();
   await store.loadConfig();
   await store.loadLocalHostname();
+  if (!newHostname.value && store.localHostname) {
+    newHostname.value = store.localHostname;
+  }
 });
 </script>
 
@@ -202,6 +223,9 @@ onMounted(async () => {
   }
   .contacts-page .t-card :deep(.t-space .t-input__wrap),
   .contacts-page .t-card :deep(.t-space .t-select__wrap),
-  .contacts-page .t-card :deep(.t-space .t-button) { width: 100%; }
+  .contacts-page .t-card :deep(.t-space .t-button) {
+    width: 100%;
+  }
 }
+
 </style>

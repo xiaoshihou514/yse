@@ -17,7 +17,7 @@
         <t-form-item label="邮箱地址" name="email_username">
           <t-input v-model="form.email_username" placeholder="user@qq.com" />
         </t-form-item>
-        <t-form-item label="邮箱密码/授权码" name="email_password">
+        <t-form-item label="IMAP授权码" name="email_password">
           <t-input v-model="form.email_password" type="password" />
         </t-form-item>
         <t-form-item label="我的显示名称">
@@ -328,6 +328,7 @@ onMounted(async () => {
 }
 .config-page :deep(.t-form__label) {
   text-align: left;
+  padding-right: 16px;
 }
 .config-page :deep(.t-form-item__help) {
   text-align: left;
