@@ -215,14 +215,24 @@ async function showImportQr() {
   await nextTick();
   try {
     scanning.value = true;
-    const { scan, Format, requestPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
-    await requestPermissions();
-    // On mobile (Android): hides dialog before native full-screen scanner
-    if (isMobilePlatform) qrImportVisible.value = false;
-    const result = await scan({ formats: [Format.QRCode] });
+    const { scan, Format, requestPermissions, checkPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
+    const perm = await checkPermissions();
+    if (perm !== "granted") {
+      const result = await requestPermissions();
+      if (result !== "granted") {
+        await MessagePlugin.warning("摄像头权限被拒绝，请手动授予权限后重试");
+        qrImportVisible.value = false;
+        return;
+      }
+    }
+    // On Android: native full-screen scanner has its own viewfinder,
+    // dialog naturally goes behind it — no need to close.
+    const result = await scan({ formats: [Format.QRCode], cameraDirection: "back" });
     applyQrConfig(result.content);
   } catch (e) {
-    await MessagePlugin.info("摄像头不可用，请选择二维码图片");
+    const msg = String(e);
+    console.error("QR scan failed:", msg);
+    await MessagePlugin.info(`扫码未成功: ${msg}，请选择二维码图片`);
     await uploadQrImage();
   } finally {
     scanning.value = false;

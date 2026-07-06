@@ -11,7 +11,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 yse-core = { path = "../core" }
-yse-desktop = { path = "../desktop" }
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true
