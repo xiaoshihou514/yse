@@ -331,6 +331,7 @@ pub async fn send_message(
     to: String,
     text: String,
     _files: Option<Vec<String>>,
+    meta: Option<serde_json::Value>,
 ) -> Result<(), String> {
     let key = state.crypto_key.read().await;
     let key = key.as_ref().ok_or("crypto key not set")?;
@@ -340,7 +341,10 @@ pub async fn send_message(
     // Format sender address using session registry (name#hash@hostname)
     let from_addr = state.session_registry.format_sender_address(&to);
 
-    let msg = Message::new(from_addr, to.clone(), Some(text));
+    let msg = match meta {
+        Some(m) => Message::new(from_addr, to.clone(), Some(text)).with_meta(m),
+        None => Message::new(from_addr, to.clone(), Some(text)),
+    };
 
     // Save message
     state

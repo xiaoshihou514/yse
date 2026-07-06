@@ -53,6 +53,11 @@ impl Message {
         }
     }
 
+    pub fn with_meta(mut self, meta: serde_json::Value) -> Self {
+        self.meta = Some(meta);
+        self
+    }
+
     pub fn to_json(&self) -> Result<Vec<u8>, MessageError> {
         serde_json::to_vec(self).map_err(|e| MessageError::Serialize(e.to_string()))
     }

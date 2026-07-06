@@ -58,9 +58,15 @@ export const useYseStore = defineStore("yse", () => {
     }
   }
 
-  async function sendMessage(to: string, text: string) {
-    await api.sendMessage(to, text);
+  async function sendMessage(to: string, text: string, meta?: Record<string, unknown>) {
+    await api.sendMessage(to, text, undefined, meta);
     await loadMessages();
+  }
+
+  async function handlePluginResponse(to: string, componentId: string, value: string) {
+    await sendMessage(to, `[${componentId}] ${value}`, {
+      plugin: { response: { component_id: componentId, value } },
+    });
   }
 
   async function togglePlugin(id: string, enable: boolean) {
@@ -210,7 +216,8 @@ export const useYseStore = defineStore("yse", () => {
     hostnames, selectedHostname, hiddenAddresses, processes, sessions, localHostname,
     sortedMessages,
     loadMessages, loadPlugins, loadConfig, saveConfigAndApply, loadLogs,
-    sendMessage, togglePlugin, startPolling, initializeApp, stopPolling,
+    sendMessage, handlePluginResponse,
+    togglePlugin, startPolling, initializeApp, stopPolling,
     listenForLogs, listenForMessages,
     loadHostnames, loadHiddenAddresses, loadLocalHostname,
     loadProcesses, loadSessions, toggleHide,

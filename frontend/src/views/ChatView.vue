@@ -86,7 +86,12 @@
               :class="['msg-row', msg.from === ownAddress ? 'row-self' : 'row-other']"
             >
               <div class="msg-bubble" @contextmenu.prevent="onBubbleContext($event, msg)">
-                <div class="msg-text" v-if="msg.text">{{ msg.text }}</div>
+                <div class="msg-text" v-if="msg.text" v-html="renderMarkdown(msg.text)"></div>
+                <PluginComponent
+                  v-if="(msg.meta as PluginMeta)?.plugin?.component"
+                  :comp="(msg.meta as PluginMeta)!.plugin!.component!"
+                  @respond="(value: string) => handleComponentResponse(msg, value)"
+                />
                 <div class="msg-files" v-if="msg.files?.length">
                   <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary" size="small">
                     {{ f.name }} ({{ formatSize(f.size) }})
@@ -133,8 +138,36 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
+import MarkdownIt from "markdown-it";
+import hljs from "highlight.js";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
+import PluginComponent from "@/components/PluginComponent.vue";
+import type { PluginMeta } from "@/types/plugin";
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function highlightCode(str: string, lang: string): string {
+  if (lang && hljs.getLanguage(lang)) {
+    try {
+      return `<pre class="hljs"><code>${hljs.highlight(str, { language: lang, ignoreIllegals: true }).value}</code></pre>`;
+    } catch { /* fall through */ }
+  }
+  return `<pre class="hljs"><code>${escapeHtml(str)}</code></pre>`;
+}
+
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: true,
+  highlight: highlightCode,
+});
+
+function renderMarkdown(text: string): string {
+  return md.render(text);
+}
 
 function parseAddress(addr: string) {
   const at = addr.lastIndexOf("@");
@@ -333,6 +366,12 @@ async function handleSend() {
   }
 }
 
+async function handleComponentResponse(msg: { from: string; to: string }, value: string) {
+  const contact = msg.from === ownAddress.value ? msg.to : msg.from;
+  await store.handlePluginResponse(contact, "", value);
+  await scrollToBottom();
+}
+
 async function scrollToBottom() {
   await nextTick();
   if (messagesContainer.value) {
@@ -489,7 +528,18 @@ onMounted(async () => {
   background: var(--td-bg-color-secondarycontainer);
   border-bottom-left-radius: 4px;
 }
-.msg-text { font-size: 14px; line-height: 1.45; }
+.msg-text { font-size: 14px; line-height: 1.6; }
+.msg-text :deep(pre) { margin: 6px 0; padding: 8px 10px; border-radius: 6px; overflow-x: auto; font-size: 13px; background: var(--td-bg-color-component); }
+.msg-text :deep(code) { font-family: ui-monospace, monospace; font-size: 0.9em; }
+.msg-text :deep(p) { margin: 4px 0; }
+.msg-text :deep(ul), .msg-text :deep(ol) { margin: 4px 0; padding-left: 20px; }
+.msg-text :deep(table) { border-collapse: collapse; margin: 6px 0; font-size: 13px; width: 100%; }
+.msg-text :deep(th), .msg-text :deep(td) { border: 1px solid var(--td-component-stroke); padding: 4px 8px; text-align: left; }
+.msg-text :deep(th) { background: var(--td-bg-color-secondarycontainer); font-weight: 600; }
+.msg-text :deep(blockquote) { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--td-brand-color); color: var(--td-text-color-placeholder); }
+.msg-text :deep(a) { color: var(--td-brand-color); text-decoration: underline; }
+.msg-text :deep(img) { max-width: 100%; border-radius: 6px; }
+.msg-text :deep(input[type="checkbox"]) { margin-right: 4px; }
 .msg-files { margin-top: 4px; }
 .msg-time { font-size: 11px; margin-top: 4px; opacity: 0.65; text-align: right; }
 .input-area {

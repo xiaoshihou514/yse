@@ -73,8 +73,8 @@ export interface LogEntry {
 
 // --- Tauri commands -------------------------------------------------------
 
-export async function sendMessage(to: string, text: string, files?: string[]): Promise<void> {
-  return invoke("send_message", { to, text, files });
+export async function sendMessage(to: string, text: string, files?: string[], meta?: Record<string, unknown>): Promise<void> {
+  return invoke("send_message", { to, text, files, meta });
 }
 
 export async function getMessages(limit = 50, offset = 0): Promise<Message[]> {
