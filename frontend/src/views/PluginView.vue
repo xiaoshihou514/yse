@@ -1,6 +1,7 @@
 <template>
   <div class="plugin-page">
-    <t-card title="插件管理" :bordered="false">
+    <!-- Desktop: table -->
+    <t-card v-if="!isMobile" title="插件管理" :bordered="false">
       <t-table
         :data="store.plugins"
         :columns="columns"
@@ -8,10 +9,10 @@
         :loading="loading"
       >
         <template #name="{ row }">
-          <span :data-label="'名称'">{{ row.name }}</span>
+          <span>{{ row.name }}</span>
         </template>
         <template #exec_path="{ row }">
-          <span :data-label="'路径'" class="path-cell">{{ row.exec_path }}</span>
+          <span class="path-cell">{{ row.exec_path }}</span>
         </template>
         <template #operation="{ row }">
           <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
@@ -19,9 +20,7 @@
           </t-popconfirm>
         </template>
       </t-table>
-
       <t-divider />
-
       <t-space>
         <t-input v-model="newName" placeholder="插件名称" />
         <t-input v-model="newExec" placeholder="可执行文件路径" style="width: 300px" />
@@ -30,26 +29,56 @@
       </t-space>
     </t-card>
 
-    <t-card title="运行实例" :bordered="false" style="margin-top: 20px">
-      <div v-if="store.processes.length" class="process-list">
-        <div v-for="p in store.processes" :key="p.id" class="process-item">
-          <div class="proc-header">
-            <span class="proc-name">{{ p.name || p.id }}</span>
+    <!-- Mobile: card list -->
+    <template v-else>
+      <div class="mobile-header">
+        <h2 class="mobile-title">插件管理</h2>
+      </div>
+      <div class="plugin-cards">
+        <div v-for="plugin in store.plugins" :key="plugin.id" class="plugin-card">
+          <div class="card-top">
+            <div class="card-info">
+              <span class="card-name">{{ plugin.name }}</span>
+              <span class="card-path">{{ plugin.exec_path }}</span>
+            </div>
             <t-tag
-              :theme="tagTheme(p.state)"
+              :theme="procTag(procState(plugin.id))"
               size="small"
               variant="light"
-            >{{ p.state }}</t-tag>
+            >{{ procState(plugin.id) || '未启动' }}</t-tag>
           </div>
-          <div class="proc-meta">
-            <span v-if="p.start_time">启动于 {{ formatTime(p.start_time) }}</span>
-            <span v-if="p.restart_count > 0">重启 {{ p.restart_count }} 次</span>
-            <span v-if="p.last_exit">最后退出: {{ p.last_exit }}</span>
+          <div class="card-actions">
+            <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(plugin)">
+              <t-button theme="danger" variant="text" size="small">删除</t-button>
+            </t-popconfirm>
           </div>
         </div>
+        <t-empty v-if="!store.plugins.length" description="暂无插件" />
       </div>
-      <t-empty v-else description="暂无运行中的插件实例" />
-    </t-card>
+
+      <!-- FAB -->
+      <t-button class="fab" shape="circle" size="large" @click="showAdd = true">
+        <template #icon><span class="fab-icon">+</span></template>
+      </t-button>
+
+      <!-- Add dialog -->
+      <t-dialog v-model:visible="showAdd" header="添加插件" :footer="false" width="360px" :close-on-overlay-click="true">
+        <t-form>
+          <t-form-item label="名称">
+            <t-input v-model="newName" placeholder="如 echo-bot" />
+          </t-form-item>
+          <t-form-item label="执行路径">
+            <t-input v-model="newExec" placeholder="/usr/local/bin/echo-bot" />
+            <template #help>
+              <t-button size="small" variant="outline" @click="pickFile">选择文件</t-button>
+            </template>
+          </t-form-item>
+          <t-form-item>
+            <t-button block @click="handleAdd">添加</t-button>
+          </t-form-item>
+        </t-form>
+      </t-dialog>
+    </template>
   </div>
 </template>
 
@@ -57,13 +86,16 @@
 import { ref, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
+import { useIsMobile } from "@/composables/useIsMobile";
 import * as api from "@/api/commands";
 import type { PluginConfig } from "@/api/commands";
 
+const isMobile = useIsMobile();
 const store = useYseStore();
 const loading = ref(false);
 const newName = ref("");
 const newExec = ref("");
+const showAdd = ref(false);
 
 const columns = [
   { colKey: "name", title: "名称" },
@@ -71,7 +103,11 @@ const columns = [
   { colKey: "operation", title: "操作" },
 ];
 
-function tagTheme(state: string): "success" | "warning" | "danger" | "default" {
+function procState(pluginId: string): string | undefined {
+  return store.processes.find((p) => p.id === pluginId)?.state;
+}
+
+function procTag(state: string | undefined): "success" | "warning" | "danger" | "default" {
   if (state === "Running") return "success";
   if (state === "Starting" || state === "Stopping") return "warning";
   if (state?.startsWith("Crashed")) return "danger";
@@ -109,6 +145,7 @@ async function handleAdd() {
     });
     newName.value = "";
     newExec.value = "";
+    showAdd.value = false;
     await store.loadPlugins();
     await store.loadConfig();
     await store.loadProcesses();
@@ -143,52 +180,74 @@ onMounted(async () => {
   white-space: nowrap;
   vertical-align: middle;
 }
-.process-list { display: flex; flex-direction: column; gap: 8px; }
-.process-item {
-  padding: 10px 12px;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 8px;
-  background: var(--td-bg-color-container);
+
+.mobile-header {
+  padding: 16px 16px 0;
 }
-.proc-header {
-  display: flex; align-items: center; gap: 8px;
-}
-.proc-name { font-size: 14px; font-weight: 500; }
-.proc-meta {
-  font-size: 12px; color: var(--td-text-color-placeholder);
-  margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap;
+.mobile-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
 }
 
-@media (max-width: 767px) {
-  .plugin-page .t-card { margin: 8px; }
-  .plugin-page :deep(.t-table) { font-size: 12px; }
-  .plugin-page :deep(.t-table thead) { display: none; }
-  .plugin-page :deep(.t-table tbody tr) {
-    display: block; margin-bottom: 12px;
-    border: 1px solid var(--td-component-stroke);
-    border-radius: 8px; padding: 12px;
-    background: var(--td-bg-color-container);
-  }
-  .plugin-page :deep(.t-table tbody td) {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 6px 0 !important; border: none !important;
-  }
-  .plugin-page :deep(.t-table tbody td > span) {
-    display: flex; justify-content: space-between; align-items: center; width: 100%;
-  }
-  .plugin-page :deep(.t-table tbody td > span::before) {
-    content: attr(data-label); font-weight: 600;
-    color: var(--td-text-color-placeholder); font-size: 12px;
-  }
-  .plugin-page :deep(.t-table tbody td:last-child > span::before) { display: none; }
-  .plugin-page :deep(.t-table tbody td:last-child) { justify-content: flex-end; }
-  .plugin-page :deep(.t-table tbody td:last-child > span) { justify-content: flex-end; }
-  .plugin-page :deep(.t-table__pagination) { padding-top: 8px; }
-  .plugin-page .t-card .t-space,
-  .plugin-page .t-card .t-space > .t-space-item {
-    display: flex; flex-direction: column; width: 100%;
-  }
-  .plugin-page .t-card :deep(.t-space .t-input__wrap),
-  .plugin-page .t-card :deep(.t-space .t-button) { width: 100%; }
+.plugin-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 80px;
+}
+.plugin-card {
+  background: var(--td-bg-color-container);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.card-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.card-path {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fab {
+  position: fixed;
+  bottom: 64px;
+  right: 16px;
+  z-index: 900;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.fab-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+@media (min-width: 768px) {
+  .plugin-page .t-card { margin: 16px; }
 }
 </style>

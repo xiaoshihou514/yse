@@ -1,6 +1,7 @@
 <template>
   <div class="contacts-page">
-    <t-card title="联系人管理" :bordered="false">
+    <!-- Desktop: table -->
+    <t-card v-if="!isMobile" title="联系人管理" :bordered="false">
       <t-table
         :data="displayMappings"
         :columns="columns"
@@ -8,10 +9,10 @@
         size="small"
       >
         <template #virtual_addr="{ row }">
-          <span :data-label="'地址'">{{ displayAddress(row) }}</span>
+          <span>{{ displayAddress(row) }}</span>
         </template>
         <template #plugin_id="{ row }">
-          <span :data-label="'绑定插件'">{{ pluginName(row.plugin_id) || '—' }}</span>
+          <span>{{ pluginName(row.plugin_id) || '—' }}</span>
         </template>
         <template #operation="{ row }">
           <t-popconfirm content="确定删除此联系人？" @confirm="handleDelete(row)">
@@ -19,38 +20,62 @@
           </t-popconfirm>
         </template>
       </t-table>
-
       <t-divider />
-
       <t-space>
-        <t-input
-          v-model="newName"
-          placeholder="名称 (如 echo-bot)"
-          style="width: 200px"
-          @keydown.enter="handleAdd"
-        />
-        <t-select
-          v-model="newHostname"
-          placeholder="目标 hostname"
-          style="width: 160px"
-          filterable
-          allow-create
-          :options="hostnameOptions"
-          @keydown.enter="handleAdd"
-        />
-        <t-select
-          v-model="newPlugin"
-          placeholder="绑定插件 (可选)"
-          style="width: 200px"
-          :options="pluginOptions"
-          clearable
-        />
+        <t-input v-model="newName" placeholder="名称" style="width: 200px" @keydown.enter="handleAdd" />
+        <t-select v-model="newHostname" placeholder="目标 hostname" style="width: 160px" filterable allow-create :options="hostnameOptions" @keydown.enter="handleAdd" />
+        <t-select v-model="newPlugin" placeholder="绑定插件 (可选)" style="width: 200px" :options="pluginOptions" clearable />
         <t-button @click="handleAdd">添加联系人</t-button>
       </t-space>
-      <div class="form-hint">
-        地址格式：<code>{{ newName || '名称' }}@{{ newHostname || 'hostname' }}</code>
-      </div>
+      <div class="form-hint">地址格式：<code>{{ newName || '名称' }}@{{ newHostname || 'hostname' }}</code></div>
     </t-card>
+
+    <!-- Mobile: card list -->
+    <template v-else>
+      <div class="mobile-header">
+        <h2 class="mobile-title">联系人管理</h2>
+      </div>
+      <div class="contact-cards">
+        <div v-for="m in displayMappings" :key="m.virtual_addr" class="contact-card">
+          <div class="card-top">
+            <div class="card-info">
+              <span class="card-addr">{{ displayAddress(m) }}</span>
+              <span v-if="m.plugin_id" class="card-plugin">绑定: {{ pluginName(m.plugin_id) }}</span>
+            </div>
+          </div>
+          <div class="card-actions">
+            <t-popconfirm content="确定删除此联系人？" @confirm="handleDelete(m)">
+              <t-button theme="danger" variant="text" size="small">删除</t-button>
+            </t-popconfirm>
+          </div>
+        </div>
+        <t-empty v-if="!displayMappings.length" description="暂无联系人" />
+      </div>
+
+      <t-button class="fab" shape="circle" size="large" @click="showAdd = true">
+        <template #icon><span class="fab-icon">+</span></template>
+      </t-button>
+
+      <t-dialog v-model:visible="showAdd" header="添加联系人" :footer="false" width="360px" :close-on-overlay-click="true">
+        <t-form>
+          <t-form-item label="名称">
+            <t-input v-model="newName" placeholder="如 echo-bot" />
+          </t-form-item>
+          <t-form-item label="Hostname">
+            <t-select v-model="newHostname" placeholder="目标 hostname" filterable allow-create :options="hostnameOptions" />
+          </t-form-item>
+          <t-form-item label="绑定插件">
+            <t-select v-model="newPlugin" placeholder="可选" :options="pluginOptions" clearable />
+          </t-form-item>
+          <t-form-item>
+            <div class="addr-preview">地址: <code>{{ newName || '名称' }}#8位随机码@{{ newHostname || 'hostname' }}</code></div>
+          </t-form-item>
+          <t-form-item>
+            <t-button block @click="handleAdd">添加</t-button>
+          </t-form-item>
+        </t-form>
+      </t-dialog>
+    </template>
   </div>
 </template>
 
@@ -58,7 +83,15 @@
 import { ref, computed, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
+import { useIsMobile } from "@/composables/useIsMobile";
 import * as api from "@/api/commands";
+
+const isMobile = useIsMobile();
+const store = useYseStore();
+const newName = ref("");
+const newHostname = ref("");
+const newPlugin = ref("");
+const showAdd = ref(false);
 
 function parseAddress(addr: string) {
   const at = addr.lastIndexOf("@");
@@ -73,11 +106,6 @@ function parseAddress(addr: string) {
     hostname,
   };
 }
-
-const store = useYseStore();
-const newName = ref("");
-const newHostname = ref("");
-const newPlugin = ref("");
 
 const mappings = computed(() => store.config?.plugin_mappings ?? []);
 
@@ -148,6 +176,7 @@ async function handleAdd() {
     newName.value = "";
     newHostname.value = "";
     newPlugin.value = "";
+    showAdd.value = false;
     await MessagePlugin.success("联系人已添加");
   } catch (e) {
     await MessagePlugin.error(`添加失败: ${e}`);
@@ -185,47 +214,83 @@ onMounted(async () => {
   color: var(--td-text-color-placeholder);
   margin-top: 8px;
 }
-.form-hint code {
+.form-hint code,
+.addr-preview code {
   background: var(--td-bg-color-secondarycontainer);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
 }
-
-@media (max-width: 767px) {
-  .contacts-page .t-card { margin: 8px; }
-  .contacts-page :deep(.t-table) { font-size: 12px; }
-  .contacts-page :deep(.t-table thead) { display: none; }
-  .contacts-page :deep(.t-table tbody tr) {
-    display: block; margin-bottom: 12px;
-    border: 1px solid var(--td-component-stroke);
-    border-radius: 8px; padding: 12px;
-    background: var(--td-bg-color-container);
-  }
-  .contacts-page :deep(.t-table tbody td) {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 6px 0 !important; border: none !important;
-  }
-  .contacts-page :deep(.t-table tbody td > span) {
-    display: flex; justify-content: space-between; align-items: center; width: 100%;
-  }
-  .contacts-page :deep(.t-table tbody td > span::before) {
-    content: attr(data-label); font-weight: 600;
-    color: var(--td-text-color-placeholder); font-size: 12px;
-  }
-  .contacts-page :deep(.t-table tbody td:last-child > span::before) { display: none; }
-  .contacts-page :deep(.t-table tbody td:last-child) { justify-content: flex-end; }
-  .contacts-page :deep(.t-table tbody td:last-child > span) { justify-content: flex-end; }
-  .contacts-page :deep(.t-table__pagination) { padding-top: 8px; }
-  .contacts-page .t-card .t-space,
-  .contacts-page .t-card .t-space > .t-space-item {
-    display: flex; flex-direction: column; width: 100%;
-  }
-  .contacts-page .t-card :deep(.t-space .t-input__wrap),
-  .contacts-page .t-card :deep(.t-space .t-select__wrap),
-  .contacts-page .t-card :deep(.t-space .t-button) {
-    width: 100%;
-  }
+.addr-preview {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  line-height: 1.6;
 }
 
+.mobile-header {
+  padding: 16px 16px 0;
+}
+.mobile-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.contact-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 80px;
+}
+.contact-card {
+  background: var(--td-bg-color-container);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.card-addr {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.card-plugin {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+.card-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fab {
+  position: fixed;
+  bottom: 64px;
+  right: 16px;
+  z-index: 900;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.fab-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+@media (min-width: 768px) {
+  .contacts-page .t-card { margin: 16px; }
+}
 </style>
