@@ -1,4 +1,4 @@
-mod commands;
+pub mod commands;
 
 use commands::YseState;
 use tauri::Manager;
