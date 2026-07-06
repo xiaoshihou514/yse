@@ -32,7 +32,7 @@
             <t-button theme="primary" type="submit" :loading="saving">保存</t-button>
             <t-button theme="default" @click="handleTest">测试连接</t-button>
             <t-button theme="default" variant="outline" @click="showExportQr">导出二维码</t-button>
-            <t-button theme="default" variant="outline" @click="showImportQr">扫码导入</t-button>
+            <t-button theme="default" variant="outline" @click="handleImportQr">{{ isMobilePlatform ? '扫码导入' : '导入配置' }}</t-button>
           </t-space>
         </t-form-item>
       </t-form>
@@ -113,6 +113,7 @@ import { ref, reactive, computed, onMounted, nextTick, watch, onUnmounted } from
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import * as api from "@/api/commands";
+import { platform } from "@tauri-apps/plugin-os";
 
 const store = useYseStore();
 const saving = ref(false);
@@ -127,6 +128,7 @@ const qrDataUrl = ref("");
 // QR import
 const qrImportVisible = ref(false);
 const scanning = ref(false);
+const isMobilePlatform = platform() === "android";
 
 async function showExportQr() {
   qrExportVisible.value = true;
@@ -170,6 +172,14 @@ async function stopScanner() {
     await cancel();
   } catch { /* ignore */ }
   qrImportVisible.value = false;
+}
+
+async function handleImportQr() {
+  if (isMobilePlatform) {
+    await showImportQr();
+  } else {
+    await uploadQrImage();
+  }
 }
 
 async function uploadQrImage() {
@@ -383,8 +393,13 @@ onMounted(async () => {
     width: auto !important;
     padding-bottom: 4px;
   }
+  .config-page :deep(.t-form-item:last-child) {
+    overflow: hidden;
+    max-width: 100%;
+  }
   .config-page :deep(.t-form-item:last-child .t-space),
   .config-page :deep(.t-form-item:last-child .t-space .t-space-item) {
+    display: flex;
     flex-wrap: wrap;
     gap: 6px;
     width: 100%;
