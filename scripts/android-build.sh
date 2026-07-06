@@ -42,13 +42,21 @@ npx @tauri-apps/cli@^2 android init
 #    icons into gen/android/app/src/main/res/mipmap-* directly
 npx @tauri-apps/cli@^2 icon ../icon.png
 # 3. patch Android adaptive icon background to dark (like desktop sidebar)
+#    tauri icon does not create ic_launcher_round.xml, causing white round icon
 for dir in icons/android gen/android/app/src/main/res; do
-  mkdir -p "$dir/values"
+  mkdir -p "$dir/values" "$dir/mipmap-anydpi-v26"
   cat > "$dir/values/ic_launcher_background.xml" << 'XML'
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#262626</color>
 </resources>
+XML
+  cat > "$dir/mipmap-anydpi-v26/ic_launcher_round.xml" << 'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+  <background android:drawable="@color/ic_launcher_background"/>
+</adaptive-icon>
 XML
 done
 # 4. copy 32x32 for frontend/public
