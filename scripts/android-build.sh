@@ -127,8 +127,21 @@ cat > gen/android/app/src/main/res/values/colors.xml << 'XMLCOLR'
     <color name="surface_dark">#1A1A18</color>
     <color name="on_surface">#1A1A18</color>
     <color name="on_surface_dark">#E8E5E0</color>
+    <color name="splash_bg">#262626</color>
 </resources>
 XMLCOLR
+
+# 7. patch themes.xml — set splash screen background color
+for theme_dir in gen/android/app/src/main/res/values gen/android/app/src/main/res/values-night; do
+  cat > "$theme_dir/themes.xml" << 'XMLTHM'
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.yse_mobile" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/splash_bg</item>
+    </style>
+</resources>
+XMLTHM
+done
 
 npm install
 npx @tauri-apps/cli@^2 android build --apk --target aarch64

@@ -16,9 +16,7 @@
         </template>
         <template #operation="{ row }">
           <div class="row-actions">
-            <t-button size="small" variant="text" @click="showPluginQr(row)" title="分享名片">
-              <template #icon><QrcodeIcon /></template>
-            </t-button>
+            <t-button size="small" variant="outline" @click="showPluginQr(row)">QR</t-button>
             <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
               <t-button theme="danger" variant="text" title="删除">
                 <template #icon><DeleteIcon /></template>
@@ -55,7 +53,7 @@
             >{{ procState(plugin.id) || '未启动' }}</t-tag>
           </div>
           <div class="card-actions">
-            <t-button size="small" variant="text" @click="showPluginQr(plugin)" title="分享名片">
+            <t-button size="small" variant="outline" @click="showPluginQr(plugin)" title="分享名片">
               <template #icon><QrcodeIcon /></template>
             </t-button>
             <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(plugin)">
@@ -91,15 +89,19 @@
         </t-form>
       </t-dialog>
 
-      <!-- Per-plugin QR dialog -->
-      <t-dialog v-model:visible="showPluginQrDialog" :header="'分享名片 — ' + (qrPlugin?.name ?? '')" :footer="false" width="360px">
-        <div class="qr-center">
-          <img v-if="pluginQrUrl" :src="pluginQrUrl" alt="插件联系人二维码" class="qr-img" />
-          <p v-else>生成中...</p>
-          <p class="qr-hint">让对方扫描此二维码即可添加该插件的联系人</p>
-          <p v-if="qrPlugin" class="qr-addr">地址: {{ qrPluginAddr }}</p>
+      <!-- Per-plugin QR overlay (plain div, not t-dialog — t-dialog has issues on Android) -->
+      <div v-if="showPluginQrDialog" class="qr-overlay" @click="showPluginQrDialog = false">
+        <div class="qr-card" @click.stop>
+          <div class="qr-card-header">{{ qrPlugin?.name ?? '' }}</div>
+          <div class="qr-center">
+            <img v-if="pluginQrUrl" :src="pluginQrUrl" alt="二维码" class="qr-img" />
+            <p v-else>生成中...</p>
+            <p class="qr-hint">让对方扫描即可添加联系人</p>
+            <p v-if="qrPluginAddr" class="qr-addr">{{ qrPluginAddr }}</p>
+          </div>
+          <t-button size="small" style="margin-top:12px" @click="showPluginQrDialog = false">关闭</t-button>
         </div>
-      </t-dialog>
+      </div>
     </template>
   </div>
 </template>
@@ -189,28 +191,25 @@ async function showPluginQr(plugin: PluginConfig) {
   qrPlugin.value = plugin;
   qrPluginAddr.value = "";
   pluginQrUrl.value = "";
+  // Open dialog immediately — must happen synchronously
   showPluginQrDialog.value = true;
-  console.log("[PluginView] showPluginQr called for", plugin.name);
-  // Generate QR in the background; dialog shows "生成中..." immediately
-  (async () => {
-    try {
-      const QRCode = (await import("qrcode")).default;
-      const own = store.config?.own_address ?? "";
-      const at = own.lastIndexOf("@");
-      const myHostname = at >= 0 ? own.slice(at + 1) : (store.localHostname || "localhost");
-      const addr = `${plugin.name}#00000000@${myHostname}`;
-      qrPluginAddr.value = addr;
-      const data = JSON.stringify({ name: plugin.name, hostname: myHostname });
-      pluginQrUrl.value = await QRCode.toDataURL(data, {
-        width: 280,
-        margin: 2,
-        color: { dark: "#000000", light: "#ffffff" },
-      });
-      console.log("[PluginView] QR generated for", plugin.name);
-    } catch (e) {
-      console.error("[PluginView] QR generation failed:", e);
-    }
-  })();
+  // Generate QR in background
+  try {
+    const QRCode = (await import("qrcode")).default;
+    const own = store.config?.own_address ?? "";
+    const at = own.lastIndexOf("@");
+    const myHostname = at >= 0 ? own.slice(at + 1) : (store.localHostname || "localhost");
+    const addr = `${plugin.name}#00000000@${myHostname}`;
+    qrPluginAddr.value = addr;
+    const data = JSON.stringify({ name: plugin.name, hostname: myHostname });
+    pluginQrUrl.value = await QRCode.toDataURL(data, {
+      width: 280,
+      margin: 2,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+  } catch (e) {
+    console.error("[PluginView] QR gen failed:", e);
+  }
 }
 
 onMounted(async () => {
@@ -309,6 +308,22 @@ onMounted(async () => {
   color: var(--td-text-color-placeholder);
   word-break: break-all;
   text-align: center;
+}
+.qr-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px;
+}
+.qr-card {
+  background: var(--td-bg-color-container);
+  border-radius: 12px; padding: 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  max-width: 320px; width: 100%;
+}
+.qr-card-header {
+  font-size: 16px; font-weight: 600;
+  color: var(--td-text-color-primary);
 }
 
 .fab {
