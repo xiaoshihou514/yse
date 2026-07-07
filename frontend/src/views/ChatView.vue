@@ -314,6 +314,19 @@ const contacts = computed<Contact[]>(() => {
       });
     }
   }
+  // Include contacts from plugin_mappings that have no messages yet
+  for (const m of store.config?.plugin_mappings ?? []) {
+    const addr = m.virtual_addr;
+    if (!map.has(addr)) {
+      map.set(addr, {
+        address: addr,
+        lastText: "",
+        lastTime: 0,
+        hostname: hostnameFromAddr(addr),
+        hidden: store.hiddenAddresses.has(addr),
+      });
+    }
+  }
   return Array.from(map.values()).sort((a, b) => b.lastTime - a.lastTime);
 });
 

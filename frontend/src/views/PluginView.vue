@@ -3,7 +3,7 @@
     <!-- Desktop: table -->
     <t-card v-if="!isMobile" title="插件管理" :bordered="false">
       <template #actions>
-        <t-button size="small" variant="outline" @click="showQr = true">导出配置</t-button>
+        <t-button size="small" variant="outline" @click="showContactQr = true">分享名片</t-button>
       </template>
       <t-table
         :data="store.plugins"
@@ -36,6 +36,7 @@
     <template v-else>
       <div class="mobile-header">
         <h2 class="mobile-title">插件管理</h2>
+        <t-button size="small" variant="outline" @click="showContactQr = true">分享名片</t-button>
       </div>
       <div class="plugin-cards">
         <div v-for="plugin in store.plugins" :key="plugin.id" class="plugin-card">
@@ -82,12 +83,12 @@
         </t-form>
       </t-dialog>
 
-      <!-- QR export dialog -->
-      <t-dialog v-model:visible="showQr" header="导出插件配置" :footer="false" width="360px">
+      <!-- Contact QR dialog -->
+      <t-dialog v-model:visible="showContactQr" header="分享联系人" :footer="false" width="360px">
         <div class="qr-center">
-          <img v-if="qrDataUrl" :src="qrDataUrl" alt="插件配置二维码" class="qr-img" />
+          <img v-if="contactQrUrl" :src="contactQrUrl" alt="联系人二维码" class="qr-img" />
           <p v-else>生成中...</p>
-          <p class="qr-hint">用另一台设备的盐水鹅扫描此二维码以导入插件配置</p>
+          <p class="qr-hint">让对方扫描此二维码即可自动添加你为联系人</p>
         </div>
       </t-dialog>
     </template>
@@ -95,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from "vue";
+import { ref, watch, nextTick, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
@@ -108,8 +109,8 @@ const loading = ref(false);
 const newName = ref("");
 const newExec = ref("");
 const showAdd = ref(false);
-const showQr = ref(false);
-const qrDataUrl = ref("");
+const showContactQr = ref(false);
+const contactQrUrl = ref("");
 
 const columns = [
   { colKey: "name", title: "名称" },
@@ -171,6 +172,28 @@ async function pickFile() {
     if (selected) newExec.value = selected;
   } catch { /* not in tauri */ }
 }
+
+watch(showContactQr, async (v) => {
+  if (!v) return;
+  contactQrUrl.value = "";
+  await nextTick();
+  try {
+    const QRCode = (await import("qrcode")).default;
+    const own = store.config?.own_address ?? "";
+    const at = own.lastIndexOf("@");
+    const name = at >= 0 ? own.slice(0, at).split("#")[0] : own;
+    const hostname = at >= 0 ? own.slice(at + 1) : store.localHostname;
+    const data = JSON.stringify({ name, hostname });
+    contactQrUrl.value = await QRCode.toDataURL(data, {
+      width: 280,
+      margin: 2,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+  } catch (e) {
+    await MessagePlugin.error(`生成二维码失败: ${e}`);
+    showContactQr.value = false;
+  }
+});
 
 onMounted(async () => {
   loading.value = true;
