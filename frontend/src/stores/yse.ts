@@ -2,6 +2,38 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import type { Message, PluginConfig, YseConfig, LogEntry, ProcessInfo, SessionInfo } from "@/api/commands";
 import * as api from "@/api/commands";
+import { platform } from "@tauri-apps/plugin-os";
+
+function generateId(): string {
+  return Math.random().toString(16).slice(2, 10);
+}
+
+function deviceModel(): string {
+  // Android WebView userAgent typically contains the device model:
+  //   "Mozilla/5.0 (Linux; Android 14; 24069RA21C Build/...; wv)"
+  const m = navigator.userAgent.match(/Android\s+\d+(?:\.\d+)*;\s*([^;)]+)/);
+  return m ? m[1].trim() : "";
+}
+
+function resolveHostname(backendHostname: string): string {
+  const h = backendHostname || localStorage.getItem("yse-hostname") || "";
+  // On Android the kernel hostname is always "localhost" — use device model
+  // or a persistent generated identifier instead.
+  if (h && h !== "localhost") return h;
+  const stored = localStorage.getItem("yse-hostname");
+  if (stored) return stored;
+  const p = platform();
+  const model = deviceModel();
+  if (model) {
+    const safe = model.replace(/\s+/g, "-");
+    localStorage.setItem("yse-hostname", safe);
+    return safe;
+  }
+  const suffix = generateId();
+  const name = `${p}-${suffix}`;
+  localStorage.setItem("yse-hostname", name);
+  return name;
+}
 
 export const useYseStore = defineStore("yse", () => {
   const messages = ref<Message[]>([]);
@@ -129,8 +161,10 @@ export const useYseStore = defineStore("yse", () => {
 
   async function loadLocalHostname() {
     try {
-      localHostname.value = await api.getHostname();
+      const backend = await api.getHostname();
+      localHostname.value = resolveHostname(backend);
     } catch (e) {
+      localHostname.value = resolveHostname("");
       console.error("loadLocalHostname failed:", e);
     }
   }

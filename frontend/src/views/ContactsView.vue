@@ -24,7 +24,7 @@
       <t-space>
         <t-input v-model="newName" placeholder="名称" style="width: 200px" @keydown.enter="handleAdd" />
         <t-select v-model="newHostname" placeholder="目标主机" style="width: 160px" filterable allow-create :options="hostnameOptions" @keydown.enter="handleAdd" />
-        <t-select v-model="newPlugin" placeholder="绑定插件 (可选)" style="width: 200px" :options="pluginOptions" clearable />
+        <t-select v-model="newPlugin" placeholder="绑定插件 (可选)" style="width: 200px" filterable allow-create :options="pluginOptions" clearable />
         <t-button @click="handleAdd">添加联系人</t-button>
       </t-space>
       <div class="form-hint">地址格式：<code>{{ newName || '名称' }}@{{ newHostname || '主机名' }}</code></div>
@@ -65,7 +65,7 @@
             <t-select v-model="newHostname" placeholder="目标主机" filterable allow-create :options="hostnameOptions" />
           </t-form-item>
           <t-form-item label="绑定插件">
-            <t-select v-model="newPlugin" placeholder="可选" :options="pluginOptions" clearable />
+            <t-select v-model="newPlugin" placeholder="可选" filterable allow-create :options="pluginOptions" clearable />
           </t-form-item>
           <t-form-item>
               <div class="addr-preview">地址: <code>{{ newName || '名称' }}#8位随机码@{{ newHostname || '主机名' }}</code></div>

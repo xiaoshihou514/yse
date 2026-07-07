@@ -112,6 +112,10 @@ done
 # 4. copy 32x32 for frontend/public
 cp -f icons/32x32.png ../frontend/public/icon.png
 
+# 5. ensure ML Kit barcode model is bundled (not via Play Services dynamic module)
+#    Xiaomi devices may lack Google Play Services dynamite module for barcode scanning.
+sed -i '/^dependencies {/a\    implementation("com.google.mlkit:barcode-scanning:17.0.0")' gen/android/app/build.gradle.kts
+
 npm install
 npx @tauri-apps/cli@^2 android build --apk --target aarch64
 cd ..
