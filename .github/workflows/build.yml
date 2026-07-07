@@ -44,9 +44,6 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Build frontend
-        run: just fe-build
-
       - name: Build desktop AppImage
         run: just build-appimage
 
