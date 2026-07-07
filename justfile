@@ -62,6 +62,10 @@ android-build:
 plugin-echo:
     cd plugins/echo-bot && cargo build
 
+# 编译 opencode-bot 插件
+plugin-opencode:
+    cd plugins/opencode-bot && npm install && npm run build
+
 # ── Lint / 格式化 ───────────────────────────────────────────────────────
 
 # Rust clippy 检查

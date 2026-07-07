@@ -94,7 +94,14 @@ Key source:
 ### Plugin system
 - Child process JSON-RPC over stdin/stdout. Plugin sends: `send`, `log`.
   Core sends: `message`, `config`, `shutdown`.
-- Plugins **outside** workspace — compile with `cd plugins/echo-bot && cargo build`.
+- Plugins **outside** workspace.
+  - `echo-bot`: Rust — `cd plugins/echo-bot && cargo build`
+  - `opencode-bot`: TypeScript — `cd plugins/opencode-bot && npm install && npm run build`
+- `opencode-bot` connects to local OpenCode server at port 4096 via `@opencode-ai/sdk/v2`.
+  Supports `/sessions` (list select), `/new`, `/select`, `/info`, `/abort`, `/undo`, `/redo`,
+  `/tui-connect`, `/tui-detach`, `/project`, `/dir`, `/help`.
+  Plain text messages go directly to the current session via `session.prompt()`.
+  List selection uses YSE's `PluginListSelect` component (`meta.plugin.component`).
 
 ## Mobile (Android)
 
