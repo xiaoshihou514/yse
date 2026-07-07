@@ -102,6 +102,9 @@ Key source:
   `/tui-connect`, `/tui-detach`, `/project`, `/dir`, `/help`.
   Plain text messages go directly to the current session via `session.prompt()`.
   List selection uses YSE's `PluginListSelect` component (`meta.plugin.component`).
+- `file-tree`: Rust — `cd plugins/file-tree && cargo build`
+  Commands: `cd`, `ls`, `tree`, `pwd`, `cat`, `stat`, `find`, `size`.
+  Per-user CWD tracked server-side.
 
 ## Mobile (Android)
 

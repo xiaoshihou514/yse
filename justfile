@@ -66,6 +66,10 @@ plugin-echo:
 plugin-opencode:
     cd plugins/opencode-bot && npm install && npm run build
 
+# 编译 file-tree 插件
+plugin-file-tree:
+    cd plugins/file-tree && cargo build
+
 # ── Lint / 格式化 ───────────────────────────────────────────────────────
 
 # Rust clippy 检查
