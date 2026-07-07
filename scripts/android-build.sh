@@ -45,30 +45,48 @@ if [ -f "$PROPS" ]; then
   sed -i 's|services\.gradle\.org/distributions|mirrors.cloud.tencent.com/gradle|' "$PROPS"
 fi
 
-# 1b. replace google()/mavenCentral()/gradlePluginPortal() with Aliyun mirrors
+# 1b. add Aliyun Maven mirrors globally via Gradle init script
 #     (direct connection to repo.maven.apache.org has SSL issues in China)
-python3 -c "
-import os, re
-
-REPLACE = {
-    r'google\(\)': r'maven { setUrl(\"' + chr(34) + 'https://maven.aliyun.com/repository/google' + chr(34) + ') }',
-    r'mavenCentral\(\)': r'maven { setUrl(\"' + chr(34) + 'https://maven.aliyun.com/repository/public' + chr(34) + ') }',
-    r'gradlePluginPortal\(\)': r'maven { setUrl(\"' + chr(34) + 'https://maven.aliyun.com/repository/gradle-plugin' + chr(34) + ') }',
+#     This covers kotlin-dsl plugin's implicit repositories too.
+mkdir -p ~/.gradle
+cat > ~/.gradle/init.gradle << 'GRADLE'
+allprojects {
+    buildscript {
+        repositories {
+            maven { url 'https://maven.aliyun.com/repository/public' }
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        }
+    }
+    repositories {
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+    }
 }
 
-for root, dirs, files in os.walk('gen/android'):
-    for f in files:
-        if f not in ('build.gradle.kts', 'settings.gradle.kts'):
-            continue
-        path = os.path.join(root, f)
-        with open(path) as fh:
-            s = fh.read()
-        for pat, repl in REPLACE.items():
-            s = re.sub(pat, repl, s)
-        with open(path, 'w') as fh:
-            fh.write(s)
-        print(f'patched: {path}')
-"
+settingsEvaluated { settings ->
+    settings.pluginManagement {
+        repositories {
+            maven { url 'https://maven.aliyun.com/repository/public' }
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        }
+    }
+    settings.dependencyResolutionManagement {
+        repositories {
+            maven { url 'https://maven.aliyun.com/repository/public' }
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        }
+    }
+}
+GRADLE
+
+# 1c. fix broken URLs from previous patches (remove double-quote artifacts)
+for f in $(find gen/android -name '*.kts' -o -name '*.gradle' 2>/dev/null); do
+  sed -i 's|maven { setUrl(""https://maven.aliyun|maven { url = uri("https://maven.aliyun|g; s|maven { setUrl("https://maven.aliyun|maven { url = uri("https://maven.aliyun|g' "$f"
+done
 
 # 2. generate icons — detects existing Android project and places
 #    icons into gen/android/app/src/main/res/mipmap-* directly
