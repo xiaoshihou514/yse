@@ -230,17 +230,6 @@ function applyQrConfig(json: string) {
   }
 }
 
-watch(() => route.query.scanResult, (val) => {
-  if (val) {
-    applyQrConfig(val as string);
-    router.replace({ query: {} });
-  }
-}, { immediate: true });
-
-onUnmounted(() => {
-  unlistenSystemTheme();
-});
-
 const form = reactive({
   email_imap_server: "",
   email_imap_port: 993,
@@ -250,6 +239,17 @@ const form = reactive({
   email_password: "",
   own_address: "me",
   crypto_password: "",
+});
+
+watch(() => route.query.scanResult, (val) => {
+  if (val) {
+    applyQrConfig(val as string);
+    router.replace({ query: {} });
+  }
+}, { immediate: true });
+
+onUnmounted(() => {
+  unlistenSystemTheme();
 });
 
 const levelOptions = [

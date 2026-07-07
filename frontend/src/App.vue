@@ -110,7 +110,7 @@ onMounted(async () => {
   await nextTick();
   setupTitlebar();
   await store.loadConfig();
-  const hasCfg = !!store.config?.email_imap_server;
+  const hasCfg = !!store.config?.email_username;
   setConfigState(hasCfg);
   if (!hasCfg && appRouter.currentRoute.value.name !== "welcome") {
     appRouter.replace("/welcome");

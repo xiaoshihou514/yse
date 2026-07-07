@@ -144,11 +144,36 @@ for theme_dir in gen/android/app/src/main/res/values gen/android/app/src/main/re
 XMLTHM
 done
 
-# 8. patch AndroidManifest.xml — windowSoftInputMode must be on <activity> for WebView
-#    ref: https://github.com/tauri-apps/tauri/issues/7868
-MANIFEST="gen/android/app/src/main/AndroidManifest.xml"
-if [ -f "$MANIFEST" ] && ! grep -q windowSoftInputMode "$MANIFEST"; then
-  sed -i '/android:launchMode="singleTask"/a\            android:windowSoftInputMode="adjustResize"' "$MANIFEST"
+# 8. patch MainActivity.kt — enableEdgeToEdge + IME inset padding for keyboard
+#    ref: https://github.com/tauri-apps/tauri/issues/7868#issuecomment-2795059208
+MAIN_ACTIVITY="gen/android/app/src/main/java/org/yse/app/MainActivity.kt"
+if [ -f "$MAIN_ACTIVITY" ] && ! grep -q 'setOnApplyWindowInsetsListener' "$MAIN_ACTIVITY"; then
+  cat > "$MAIN_ACTIVITY" << 'KOTLIN'
+package org.yse.app
+
+import android.os.Bundle
+import android.view.View
+import androidx.activity.enableEdgeToEdge
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+
+class MainActivity : TauriActivity() {
+  override fun onCreate(savedInstanceState: Bundle?) {
+    enableEdgeToEdge()
+    super.onCreate(savedInstanceState)
+    val rootView: View = findViewById(android.R.id.content)
+    ViewCompat.setOnApplyWindowInsetsListener(rootView) { v, insets ->
+        val imeHeight = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        if (imeHeight > 0) {
+            v.setPadding(0, 0, 0, imeHeight)
+        } else {
+            v.setPadding(0, 0, 0, 0)
+        }
+        insets
+    }
+  }
+}
+KOTLIN
 fi
 
 npm install
