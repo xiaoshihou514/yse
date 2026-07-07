@@ -213,25 +213,39 @@ async function showExportQr() {
 async function showImportQr() {
   qrImportVisible.value = true;
   await nextTick();
+  scanning.value = true;
+  let mod: any = null;
   try {
-    scanning.value = true;
-    const { scan, Format, requestPermissions, checkPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
-    const perm = await checkPermissions();
+    mod = await import("@tauri-apps/plugin-barcode-scanner");
+    console.log("[QR] module loaded");
+  } catch (e) {
+    console.error("[QR] import failed:", e);
+    await MessagePlugin.error(`扫码模块加载失败: ${e}`);
+    await uploadQrImage();
+    scanning.value = false;
+    qrImportVisible.value = false;
+    return;
+  }
+  try {
+    const perm = await mod.checkPermissions();
+    console.log("[QR] checkPermissions:", perm);
     if (perm !== "granted") {
-      const result = await requestPermissions();
+      const result = await mod.requestPermissions();
+      console.log("[QR] requestPermissions result:", result);
       if (result !== "granted") {
-        await MessagePlugin.warning("摄像头权限被拒绝，请手动授予权限后重试");
+        await MessagePlugin.warning("摄像头权限被拒绝");
         qrImportVisible.value = false;
+        scanning.value = false;
         return;
       }
     }
-    // On Android: native full-screen scanner has its own viewfinder,
-    // dialog naturally goes behind it — no need to close.
-    const result = await scan({ formats: [Format.QRCode], cameraDirection: "back" });
+    console.log("[QR] starting scan...");
+    const result = await mod.scan({ formats: [mod.Format.QRCode], cameraDirection: "back" });
+    console.log("[QR] scan result:", result);
     applyQrConfig(result.content);
   } catch (e) {
     const msg = String(e);
-    console.error("QR scan failed:", msg);
+    console.error("[QR] scan failed:", msg);
     await MessagePlugin.info(`扫码未成功: ${msg}，请选择二维码图片`);
     await uploadQrImage();
   } finally {
