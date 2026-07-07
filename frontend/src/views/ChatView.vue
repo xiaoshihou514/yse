@@ -111,7 +111,7 @@
               :key="msg.id"
               :class="[
                 'msg-row',
-                msg.from === ownAddress ? 'row-self' : 'row-other',
+                 nameFromAddr(msg.from) === ownAddress ? 'row-self' : 'row-other',
               ]"
             >
               <div
@@ -412,6 +412,11 @@ document.addEventListener("click", () => {
   if (ctxMenu.value.visible) ctxMenu.value.visible = false;
 });
 
+function nameFromAddr(addr: string): string {
+  const hashIdx = addr.indexOf("#");
+  return hashIdx >= 0 ? addr.slice(0, hashIdx) : addr;
+}
+
 const ownAddress = computed(() => store.config?.own_address ?? "me");
 const connected = computed(() => store.connected);
 
@@ -426,8 +431,8 @@ interface Contact {
 const contacts = computed<Contact[]>(() => {
   const map = new Map<string, Contact>();
   for (const m of store.sortedMessages) {
-    const addr = m.from === ownAddress.value ? m.to : m.from;
-    if (addr === ownAddress.value) continue;
+    const addr = nameFromAddr(m.from) === ownAddress.value ? m.to : m.from;
+    if (nameFromAddr(addr) === ownAddress.value) continue;
     if (!map.has(addr) || m.timestamp > map.get(addr)!.lastTime) {
       map.set(addr, {
         address: addr,
@@ -498,8 +503,8 @@ const conversation = computed(() => {
   if (!addr) return [];
   const real = store.sortedMessages.filter(
     (m) =>
-      (m.from === addr && m.to === ownAddress.value) ||
-      (m.from === ownAddress.value && m.to === addr),
+      (m.from === addr && nameFromAddr(m.to) === ownAddress.value) ||
+      (nameFromAddr(m.from) === ownAddress.value && m.to === addr),
   );
   const pending = store.pendingMessages
     .filter(
@@ -623,7 +628,7 @@ async function handleComponentResponse(
   msg: { from: string; to: string },
   value: string,
 ) {
-  const contact = msg.from === ownAddress.value ? msg.to : msg.from;
+  const contact = nameFromAddr(msg.from) === ownAddress.value ? msg.to : msg.from;
   await store.handlePluginResponse(contact, "", value);
   await scrollToBottom();
 }

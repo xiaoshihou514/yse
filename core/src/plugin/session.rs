@@ -86,6 +86,7 @@ impl SessionRegistry {
     }
 
     /// Route a message to the right plugin, starting one if needed.
+    #[allow(clippy::too_many_arguments)]
     pub async fn route(
         &self,
         to_addr: &str,

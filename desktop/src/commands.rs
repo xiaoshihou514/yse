@@ -578,7 +578,7 @@ impl YseState {
                                         if let Some(ref k) = *ck_guard {
                                             if let Err(e) = send_plugin_error_reply(
                                                 &msg.from_addr, &reply_text,
-                                                &*snd, k, &cfg,
+                                                &snd, k, &cfg,
                                             ).await {
                                                 warn!("send_plugin_error_reply failed: {}", e);
                                             }
@@ -612,7 +612,10 @@ impl YseState {
                             };
                             let _ = handle.emit("log-entry", &entry);
 
-                            if msg.to_addr == own || msg.from_addr == own {
+                            if msg.to_addr == own || msg.from_addr == own
+                                || msg.to_addr.starts_with(&format!("{}#", own))
+                                || msg.from_addr.starts_with(&format!("{}#", own))
+                            {
                                 let _ = handle.emit("new-message", &msg);
                             }
                         });
