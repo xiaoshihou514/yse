@@ -663,7 +663,7 @@ onMounted(async () => {
   background: var(--td-bg-color-secondarycontainer);
   border-bottom-left-radius: 4px;
 }
-.msg-text { font-size: 14px; line-height: 1.6; }
+.msg-text { font-size: 15px; line-height: 1.6; }
 .msg-text :deep(pre) { margin: 6px 0; padding: 8px 10px; border-radius: 6px; overflow-x: auto; font-size: 13px; background: var(--td-bg-color-component); }
 .msg-text :deep(code) { font-family: ui-monospace, monospace; font-size: 0.9em; }
 .msg-text :deep(p) { margin: 4px 0; }
@@ -688,16 +688,20 @@ onMounted(async () => {
 @keyframes spin { to { transform: rotate(360deg); } }
 .input-area {
   display: flex; align-items: flex-end; gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
 }
 .chat-textarea {
-  flex: 1; border: none; resize: none; outline: none;
-  font-family: inherit; font-size: 14px; line-height: 1.5;
-  padding: 6px 0; background: transparent; color: var(--td-text-color-primary);
-  min-height: 22px; max-height: 120px;
+  flex: 1; resize: none; outline: none;
+  font-family: inherit; font-size: 15px; line-height: 1.5;
+  padding: 8px 12px; color: var(--td-text-color-primary);
+  min-height: 38px; max-height: 120px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 8px;
+  background: var(--td-bg-color-secondarycontainer);
 }
+.chat-textarea:focus { border-color: var(--td-brand-color); }
 .chat-textarea::placeholder { color: var(--td-text-color-placeholder); }
 
 .context-menu {
@@ -721,6 +725,6 @@ onMounted(async () => {
   padding-top: env(safe-area-inset-top, 0);
   background: var(--td-bg-color-page);
 }
-  .message-area { padding-bottom: 56px; }
+  .message-area { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
 }
 </style>
