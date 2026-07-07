@@ -113,7 +113,7 @@ done
 cp -f icons/32x32.png ../frontend/public/icon.png
 
 npm install
-npx @tauri-apps/cli@^2 android build --apk
+npx @tauri-apps/cli@^2 android build --apk --target aarch64
 cd ..
 
 # ── find & sign APK ────────────────────────────────────────────────
