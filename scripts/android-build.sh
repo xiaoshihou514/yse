@@ -138,6 +138,7 @@ for theme_dir in gen/android/app/src/main/res/values gen/android/app/src/main/re
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.yse_mobile" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/splash_bg</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
     </style>
 </resources>
 XMLTHM

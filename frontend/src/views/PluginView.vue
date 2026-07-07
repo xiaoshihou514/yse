@@ -194,17 +194,13 @@ async function showPluginQr(plugin: PluginConfig) {
   qrPlugin.value = plugin;
   qrPluginAddr.value = "";
   pluginQrUrl.value = "";
-  // Open dialog immediately — must happen synchronously
   showPluginQrDialog.value = true;
-  // Generate QR in background
   try {
     const QRCode = (await import("qrcode")).default;
-    const own = store.config?.own_address ?? "";
-    const at = own.lastIndexOf("@");
-    const myHostname = at >= 0 ? own.slice(at + 1) : (store.localHostname || "localhost");
-    const addr = `${plugin.name}#00000000@${myHostname}`;
+    const hostname = store.localHostname || "localhost";
+    const addr = `${plugin.name}#00000000@${hostname}`;
     qrPluginAddr.value = addr;
-    const data = JSON.stringify({ name: plugin.name, hostname: myHostname });
+    const data = JSON.stringify({ name: plugin.name, hostname });
     pluginQrUrl.value = await QRCode.toDataURL(data, {
       width: 280,
       margin: 2,
@@ -212,7 +208,6 @@ async function showPluginQr(plugin: PluginConfig) {
     });
   } catch (e) {
     console.error("[PluginView] QR gen failed:", e);
-    MessagePlugin.error(`生成二维码失败: ${e}`);
   }
 }
 

@@ -53,25 +53,21 @@
     </t-dialog>
 
     <!-- QR import dialog -->
-    <!-- QR scanner overlay (windowed mode — webview transparent, camera shows through) -->
+    <!-- QR scanner — windowed mode, camera preview via transparent scanner-box -->
     <div v-if="qrImportVisible" class="qr-scanner-overlay">
-      <div class="scanner-wrapper">
-        <div id="qr-scanner-id" class="scanner-box">
-          <div class="scanner-frame">
-            <div class="frame-corner tl"></div>
-            <div class="frame-corner tr"></div>
-            <div class="frame-corner bl"></div>
-            <div class="frame-corner br"></div>
-          </div>
-          <div class="scanner-line"></div>
+      <div class="scanner-box-wrap" id="qr-scanner-id">
+        <div class="scanner-frame">
+          <div class="frame-corner tl"></div>
+          <div class="frame-corner tr"></div>
+          <div class="frame-corner bl"></div>
+          <div class="frame-corner br"></div>
         </div>
-        <p class="qr-hint">将二维码置于框内</p>
+        <div class="scanner-line"></div>
       </div>
+      <p class="qr-hint-scanner">将二维码置于框内</p>
       <div class="qr-scanner-footer">
-        <t-space>
-          <t-button size="small" @click="stopScanner">取消</t-button>
-          <t-button size="small" variant="outline" @click="uploadQrImage">上传图片</t-button>
-        </t-space>
+        <t-button size="small" @click="stopScanner">取消</t-button>
+        <t-button size="small" variant="outline" @click="uploadQrImage">上传图片</t-button>
       </div>
     </div>
 
@@ -433,22 +429,35 @@ onMounted(async () => {
 }
 .qr-scanner-overlay {
   position: fixed; inset: 0; z-index: 9999;
-  display: flex; flex-direction: column; align-items: center;
-  background: rgba(0,0,0,0.5);
+  /* No background — camera shows through completely.
+     Dark area around the scanner box is created by box-shadow below. */
+  background: transparent;
+  pointer-events: none;
+}
+.scanner-box-wrap {
+  position: fixed; left: 50%; top: 25vh;
+  width: 280px; height: 280px;
+  transform: translateX(-50%);
+  border-radius: 12px;
+  background: transparent !important;
+  /* Dark overlay around the camera area — camera shows through the box */
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
+  pointer-events: auto;
 }
 .qr-scanner-footer {
   position: fixed; bottom: 40px; left: 0; right: 0;
   display: flex; justify-content: center;
-  z-index: 10000;
+  gap: 12px;
+  z-index: 10001;
+  pointer-events: auto;
 }
-.scanner-wrapper {
-  width: 280px; height: 280px; border-radius: 8px;
-  overflow: hidden; position: relative;
-  margin-top: 25vh;
-  background: transparent;
-}
-.scanner-box {
-  width: 100%; height: 100%; position: relative;
+.qr-hint-scanner {
+  position: fixed; top: calc(25vh + 290px); left: 0; right: 0;
+  text-align: center;
+  color: #fff;
+  font-size: 14px;
+  z-index: 10001;
+  pointer-events: none;
 }
 .scanner-frame {
   position: absolute; inset: 0; z-index: 2;
@@ -531,9 +540,12 @@ onMounted(async () => {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .scanner-wrapper {
+  .scanner-box-wrap {
     width: calc(100vw - 64px); height: calc(100vw - 64px);
     max-width: 300px; max-height: 300px;
+  }
+  .qr-hint-scanner {
+    top: calc(25vh + 10px);
   }
   .log-container {
     max-height: none;

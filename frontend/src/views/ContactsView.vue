@@ -82,19 +82,17 @@
       </t-dialog>
 
       <!-- Contact QR scanner overlay -->
-      <div v-if="contactScanVisible" class="qr-scanner-overlay">
-        <div class="scanner-wrapper">
-          <div id="contact-scanner-id" class="scanner-box">
-            <div class="scanner-frame">
-              <div class="frame-corner tl"></div>
-              <div class="frame-corner tr"></div>
-              <div class="frame-corner bl"></div>
-              <div class="frame-corner br"></div>
-            </div>
-            <div class="scanner-line"></div>
+      <div v-if="contactScanVisible" class="contact-scanner-overlay">
+        <div id="contact-scanner-id" class="scanner-box-wrap">
+          <div class="scanner-frame">
+            <div class="frame-corner tl"></div>
+            <div class="frame-corner tr"></div>
+            <div class="frame-corner bl"></div>
+            <div class="frame-corner br"></div>
           </div>
-          <p class="qr-hint">扫描对方的名片二维码</p>
+          <div class="scanner-line"></div>
         </div>
+        <p class="qr-hint-scanner">扫描对方的名片二维码</p>
         <div class="qr-scanner-footer">
           <t-button size="small" @click="stopContactScan">取消</t-button>
         </div>
@@ -372,25 +370,20 @@ onMounted(async () => {
   line-height: 1;
 }
 
-/* Scanner overlay — shares styles with ConfigView's scanner */
-.qr-scanner-overlay {
+/* Scanner overlay */
+.contact-scanner-overlay {
   position: fixed; inset: 0; z-index: 9999;
-  display: flex; flex-direction: column; align-items: center;
-  background: rgba(0,0,0,0.5);
-}
-.qr-scanner-footer {
-  position: fixed; bottom: 40px; left: 0; right: 0;
-  display: flex; justify-content: center;
-  z-index: 10000;
-}
-.scanner-wrapper {
-  width: 280px; height: 280px; border-radius: 8px;
-  overflow: hidden; position: relative;
-  margin-top: 25vh;
   background: transparent;
+  pointer-events: none;
 }
-.scanner-box {
-  width: 100%; height: 100%; position: relative;
+.scanner-box-wrap {
+  position: fixed; left: 50%; top: 25vh;
+  width: 280px; height: 280px;
+  transform: translateX(-50%);
+  border-radius: 12px;
+  background: transparent !important;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
+  pointer-events: auto;
 }
 .scanner-frame {
   position: absolute; inset: 0; z-index: 2;
@@ -408,22 +401,34 @@ onMounted(async () => {
 .scanner-line {
   position: absolute; top: 0; left: 10%; right: 10%; height: 2px;
   background: var(--td-brand-color); z-index: 3; border-radius: 1px;
-  animation: scanMove 2s ease-in-out infinite;
+  opacity: 0.7;
+  animation: scanLine 2s ease-in-out infinite;
 }
-@keyframes scanMove { 0%, 100% { top: 10%; } 50% { top: 88%; } }
-.qr-hint {
-  font-size: 13px; color: #fff; text-align: center;
-  margin-top: 16px;
+@keyframes scanLine {
+  0% { top: 16px; }
+  50% { top: calc(100% - 18px); }
+  100% { top: 16px; }
+}
+.qr-hint-scanner {
+  position: fixed; top: calc(25vh + 290px); left: 0; right: 0;
+  text-align: center; color: #fff; font-size: 14px;
+  z-index: 10001; pointer-events: none;
+}
+.qr-scanner-footer {
+  position: fixed; bottom: 40px; left: 0; right: 0;
+  display: flex; justify-content: center;
+  z-index: 10001; pointer-events: auto;
 }
 
 @media (max-width: 767px) {
   .fab {
     bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
-  .scanner-wrapper {
+  .scanner-box-wrap {
     width: calc(100vw - 64px); height: calc(100vw - 64px);
     max-width: 300px; max-height: 300px;
   }
+  .qr-hint-scanner { top: calc(25vh + 10px); }
 }
 @media (min-width: 768px) {
   .contacts-page .t-card { margin: 16px; }
