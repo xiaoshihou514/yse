@@ -2,6 +2,9 @@
   <div class="plugin-page">
     <!-- Desktop: table -->
     <t-card v-if="!isMobile" title="插件管理" :bordered="false">
+      <template #actions>
+        <t-button size="small" variant="outline" @click="showQr = true">导出配置</t-button>
+      </template>
       <t-table
         :data="store.plugins"
         :columns="columns"
@@ -78,12 +81,21 @@
           </t-form-item>
         </t-form>
       </t-dialog>
+
+      <!-- QR export dialog -->
+      <t-dialog v-model:visible="showQr" header="导出插件配置" :footer="false" width="360px">
+        <div class="qr-center">
+          <img v-if="qrDataUrl" :src="qrDataUrl" alt="插件配置二维码" class="qr-img" />
+          <p v-else>生成中...</p>
+          <p class="qr-hint">用另一台设备的盐水鹅扫描此二维码以导入插件配置</p>
+        </div>
+      </t-dialog>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, nextTick, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
@@ -96,6 +108,8 @@ const loading = ref(false);
 const newName = ref("");
 const newExec = ref("");
 const showAdd = ref(false);
+const showQr = ref(false);
+const qrDataUrl = ref("");
 
 const columns = [
   { colKey: "name", title: "名称" },

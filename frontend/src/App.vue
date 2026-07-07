@@ -149,6 +149,7 @@ onMounted(async () => {
 
 @media (max-width: 767px) {
   .main-content {
+    padding-top: env(safe-area-inset-top, 24px);
     padding-bottom: 56px;
   }
 }

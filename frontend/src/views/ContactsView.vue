@@ -27,7 +27,7 @@
         <t-select v-model="newPlugin" placeholder="绑定插件 (可选)" style="width: 200px" filterable allow-create :options="pluginOptions" clearable />
         <t-button @click="handleAdd">添加联系人</t-button>
       </t-space>
-      <div class="form-hint">地址格式：<code>{{ newName || '名称' }}@{{ newHostname || '主机名' }}</code></div>
+      <div class="form-hint">地址格式：<code>{{ newName || '名称' }}#8位随机码@{{ newHostname || '主机名' }}</code></div>
     </t-card>
 
     <!-- Mobile: card list -->
@@ -62,10 +62,12 @@
             <t-input v-model="newName" placeholder="如 echo-bot" />
           </t-form-item>
           <t-form-item label="主机名">
-            <t-select v-model="newHostname" placeholder="目标主机" filterable allow-create :options="hostnameOptions" />
+            <t-input v-model="newHostname" placeholder="目标主机" />
+            <template #help>已知主机: {{ store.hostnames.join(', ') || '无' }}</template>
           </t-form-item>
           <t-form-item label="绑定插件">
-            <t-select v-model="newPlugin" placeholder="可选" filterable allow-create :options="pluginOptions" clearable />
+            <t-input v-model="newPlugin" placeholder="可选" />
+            <template #help>已知插件: {{ store.plugins.map(p => p.name).join(', ') || '无' }}</template>
           </t-form-item>
           <t-form-item>
               <div class="addr-preview">地址: <code>{{ newName || '名称' }}#8位随机码@{{ newHostname || '主机名' }}</code></div>

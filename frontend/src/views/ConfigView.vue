@@ -494,6 +494,7 @@ onMounted(async () => {
 @media (max-width: 767px) {
   .config-page {
     max-width: none;
+    padding-bottom: 64px;
   }
   .config-page .t-card {
     margin: 8px;
