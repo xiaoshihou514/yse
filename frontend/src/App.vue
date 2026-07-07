@@ -2,7 +2,7 @@
   <t-layout class="app-layout">
     <t-aside v-if="!isMobile" class="app-aside">
       <div class="aside-logo">
-        <img src="/icon.png" alt="YSE" class="logo-img" />
+        <img src="/icon.png" alt="盐水鹅" class="logo-img" />
       </div>
       <div class="aside-nav">
         <div

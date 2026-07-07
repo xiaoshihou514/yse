@@ -48,7 +48,7 @@
       <div class="qr-center">
         <img v-if="qrDataUrl" :src="qrDataUrl" alt="配置二维码" class="qr-img" />
         <p v-else>生成中...</p>
-        <p class="qr-hint">用另一台设备的 YSE 扫描此二维码以导入配置</p>
+        <p class="qr-hint">用另一台设备的盐水鹅扫描此二维码以导入配置</p>
       </div>
     </t-dialog>
 

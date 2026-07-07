@@ -3,9 +3,12 @@
 *.db-journal
 node_modules
 dist
+.vite
+
 frontend/node_modules
 frontend/dist
 frontend/node_modules/.vite
-.vite
+
 mobile/gen/
-mobile/icons
+mobile/icons/
+mobile/*.apk

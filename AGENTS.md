@@ -1,4 +1,4 @@
-# YSE (盐水鹅)
+# 盐水鹅
 
 Email-mediated chat + plugin automation system. Tauri 2 desktop (Linux AppImage/deb) + Android (APK via Tauri mobile).
 

@@ -16,7 +16,7 @@ if [ ! -f "$KEYSTORE" ]; then
     keytool -genkey -v -keystore "$KEYSTORE" \
         -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
         -storepass "$PASSWORD" -keypass "$PASSWORD" \
-        -dname "CN=YSE,O=YSE,C=CN"
+        -dname "CN=盐水鹅,O=盐水鹅,C=CN"
     echo "Keystore created. Commit ${KEYSTORE} and ${KEYSTORE_PASSWORD} to repo."
 fi
 

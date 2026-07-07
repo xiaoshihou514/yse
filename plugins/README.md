@@ -1,8 +1,8 @@
-# YSE 插件开发指南
+# 盐水鹅 插件开发指南
 
 ## 概述
 
-YSE 插件是独立的子进程，通过 stdin/stdout JSON-RPC 行协议与 Core 通信。
+盐水鹅 插件是独立的子进程，通过 stdin/stdout JSON-RPC 行协议与 Core 通信。
 
 ## 通信协议
 
