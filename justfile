@@ -56,10 +56,6 @@ android-init:
 android-build:
     bash scripts/android-build.sh
 
-# Android 开发模式 (热更新，需保持 USB 连接)
-android-dev:
-    cd mobile && npx @tauri-apps/cli@^2 android dev --target aarch64
-
 # ── 插件 ────────────────────────────────────────────────────────────────
 
 # 编译 echo-bot 插件

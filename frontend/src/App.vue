@@ -38,6 +38,7 @@ import { computed, markRaw, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { trace, debug, info, warn, error } from "@tauri-apps/plugin-log";
 import {
   ChatIcon, ExtensionIcon, SettingIcon, UserIcon,
 } from "tdesign-icons-vue-next";
@@ -60,7 +61,20 @@ function navigate(val: string) {
   router.push(val);
 }
 
+function forwardConsole(fnName: "log" | "debug" | "info" | "warn" | "error", logger: (message: string) => Promise<void>) {
+  const original = console[fnName];
+  console[fnName] = (message: unknown) => {
+    original(message);
+    logger(String(message));
+  };
+}
+
 onMounted(async () => {
+  forwardConsole("log", trace);
+  forwardConsole("debug", debug);
+  forwardConsole("info", info);
+  forwardConsole("warn", warn);
+  forwardConsole("error", error);
   await store.loadConfig();
   store.listenForLogs();
   store.listenForMessages();
