@@ -42,8 +42,9 @@ fe-dev:
     cd frontend && npm run dev
 
 # Tauri 开发模式 (需先启动 fe-dev)
+# beforeDevCommand 从 workspace root 运行，所以 --prefix frontend
 dev:
-    cd desktop && cargo tauri dev
+    cargo tauri dev
 
 # 构建 AppImage
 build-appimage:
