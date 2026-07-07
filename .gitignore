@@ -12,3 +12,6 @@ frontend/node_modules/.vite
 mobile/gen/
 mobile/icons/
 mobile/*.apk
+
+# Plugin build artifacts
+plugins/*/target/

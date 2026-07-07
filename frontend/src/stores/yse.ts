@@ -35,8 +35,19 @@ function resolveHostname(backendHostname: string): string {
   return name;
 }
 
+export interface PendingMessage {
+  id: string;
+  from: string;
+  to: string;
+  text: string;
+  timestamp: number;
+  status: "sending" | "sent" | "failed";
+  error?: string;
+}
+
 export const useYseStore = defineStore("yse", () => {
   const messages = ref<Message[]>([]);
+  const pendingMessages = ref<PendingMessage[]>([]);
   const plugins = ref<PluginConfig[]>([]);
   const config = ref<YseConfig | null>(null);
   const logs = ref<LogEntry[]>([]);
@@ -91,14 +102,55 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function sendMessage(to: string, text: string, meta?: Record<string, unknown>) {
-    await api.sendMessage(to, text, undefined, meta);
-    await loadMessages();
+    const own = config.value?.own_address ?? "";
+    const pending: PendingMessage = {
+      id: "pending_" + generateId(),
+      from: own,
+      to,
+      text,
+      timestamp: Date.now(),
+      status: "sending",
+    };
+    pendingMessages.value.push(pending);
+    try {
+      await api.sendMessage(to, text, undefined, meta);
+      (pending as any).status = "sent";
+      // Refresh real messages after a short delay to pick up the server-side copy
+      setTimeout(loadMessages, 300);
+    } catch (e) {
+      (pending as any).status = "failed";
+      (pending as any).error = String(e);
+    }
+    // Remove from pending after a short delay if sent
+    if ((pending as any).status === "sent") {
+      setTimeout(() => {
+        pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
+      }, 1000);
+    }
   }
 
   async function handlePluginResponse(to: string, componentId: string, value: string) {
     await sendMessage(to, `[${componentId}] ${value}`, {
       plugin: { response: { component_id: componentId, value } },
     });
+  }
+
+  async function retryMessage(pending: PendingMessage) {
+    (pending as any).status = "sending";
+    (pending as any).error = undefined;
+    try {
+      await api.sendMessage(pending.to, pending.text);
+      (pending as any).status = "sent";
+      setTimeout(loadMessages, 300);
+    } catch (e) {
+      (pending as any).status = "failed";
+      (pending as any).error = String(e);
+    }
+    if ((pending as any).status === "sent") {
+      setTimeout(() => {
+        pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
+      }, 1000);
+    }
   }
 
   async function togglePlugin(id: string, enable: boolean) {
@@ -253,11 +305,11 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   return {
-    messages, plugins, config, logs, connected, polling,
+    messages, pendingMessages, plugins, config, logs, connected, polling,
     hostnames, selectedHostname, hiddenAddresses, processes, sessions, localHostname,
     sortedMessages,
     loadMessages, loadPlugins, loadConfig, saveConfigAndApply, loadLogs,
-    sendMessage, handlePluginResponse,
+    sendMessage, handlePluginResponse, retryMessage,
     togglePlugin, startPolling, initializeApp, stopPolling,
     listenForLogs, listenForMessages,
     loadHostnames, loadHiddenAddresses, loadLocalHostname,

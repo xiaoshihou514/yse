@@ -104,6 +104,11 @@
                   </t-link>
                 </div>
                 <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
+                <!-- Pending status indicators -->
+                <div v-if="(msg as any).__pending" class="msg-status">
+                  <span v-if="(msg as any).__status === 'sending'" class="msg-spinner"></span>
+                  <span v-else-if="(msg as any).__status === 'failed'" class="msg-retry" @click.stop="retryMessage(msg as any)" title="点击重试">⚠</span>
+                </div>
               </div>
             </div>
           </div>
@@ -357,21 +362,22 @@ const contacts = computed<Contact[]>(() => {
 
 const tabs = computed(() => {
   const groups = new Map<string, number>();
-  groups.set("all", 0);
   for (const c of visibleContacts.value) {
     const h = c.hostname || "未知";
     groups.set(h, (groups.get(h) || 0) + 1);
-    groups.set("all", (groups.get("all") || 0) + 1);
   }
-  if (store.localHostname && !groups.has(store.localHostname)) {
-    groups.set(store.localHostname, 0);
-    groups.set("all", (groups.get("all") || 0));
+  // Always show "all" tab
+  const allCount = Array.from(groups.values()).reduce((a, b) => a + b, 0);
+  const result: { key: string; label: string; count: number }[] = [
+    { key: "all", label: "全部对话", count: allCount },
+  ];
+  // Only show hostname tabs that have contacts
+  for (const [key, count] of groups) {
+    if (count > 0) {
+      result.push({ key, label: key, count });
+    }
   }
-  return Array.from(groups.entries()).map(([key, count]) => ({
-    key,
-    label: key === "all" ? "全部对话" : key,
-    count,
-  }));
+  return result;
 });
 
 const visibleContacts = computed(() =>
@@ -400,11 +406,22 @@ const filteredContacts = computed(() => {
 const conversation = computed(() => {
   const addr = selectedContact.value;
   if (!addr) return [];
-  return store.sortedMessages.filter(
+  const real = store.sortedMessages.filter(
     (m) =>
       (m.from === addr && m.to === ownAddress.value) ||
       (m.from === ownAddress.value && m.to === addr),
   );
+  const pending = store.pendingMessages
+    .filter((p) => p.to === addr && (p.status === "sending" || p.status === "failed"))
+    .map((p) => ({
+      ...p,
+      __pending: true,
+      __status: p.status,
+      protocol: "pending",
+      files: undefined,
+      meta: undefined,
+    }));
+  return [...real, ...pending];
 });
 
 function initial(addr: string) {
@@ -475,6 +492,10 @@ async function handleComponentResponse(msg: { from: string; to: string }, value:
   const contact = msg.from === ownAddress.value ? msg.to : msg.from;
   await store.handlePluginResponse(contact, "", value);
   await scrollToBottom();
+}
+
+function retryMessage(msg: any) {
+  store.retryMessage(msg);
 }
 
 async function scrollToBottom() {
@@ -647,6 +668,15 @@ onMounted(async () => {
 .msg-text :deep(input[type="checkbox"]) { margin-right: 4px; }
 .msg-files { margin-top: 4px; }
 .msg-time { font-size: 11px; margin-top: 4px; opacity: 0.65; text-align: right; }
+.msg-status { display: inline-flex; align-items: center; margin-left: 6px; }
+.msg-spinner {
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid var(--td-text-color-placeholder);
+  border-top-color: var(--td-brand-color);
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+}
+.msg-retry { cursor: pointer; font-size: 14px; color: var(--td-warning-color); }
+@keyframes spin { to { transform: rotate(360deg); } }
 .input-area {
   padding: 8px 16px 12px;
   border-top: 1px solid var(--td-component-stroke);
