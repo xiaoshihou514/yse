@@ -373,6 +373,9 @@ pub async fn send_message(
         )
         .await;
 
+    // Mark processed so the IMAP poll skips the SMTP copy (avoid re-route)
+    let _ = state.store.mark_processed(&msg.id).await;
+
     // Send via SMTP (best-effort for external delivery)
     if let Some(sender) = state.sender.read().await.as_ref() {
         let payload = msg.to_json().map_err(|e| e.to_string())?;
