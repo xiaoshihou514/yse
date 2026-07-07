@@ -173,6 +173,11 @@ const md = new MarkdownIt({
   highlight: highlightCode,
 });
 
+// Only allow safe URL protocols in markdown links — reject javascript: etc.
+md.validateLink = function (url: string): boolean {
+  return /^(https?:\/\/|mailto:)/i.test(url);
+};
+
 function renderMarkdown(text: string): string {
   return md.render(text);
 }
