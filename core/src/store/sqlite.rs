@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
+use tracing::debug;
 
 use crate::message::Message;
 
@@ -72,6 +73,7 @@ impl SqliteStorage {
 #[async_trait]
 impl Storage for SqliteStorage {
     async fn save_message(&self, msg: &Message) -> Result<(), StoreError> {
+        debug!(id = %msg.id, from = %msg.from_addr, to = %msg.to_addr, "sql: save_message");
         let conn = self
             .conn
             .lock()

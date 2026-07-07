@@ -2,9 +2,6 @@
   <div class="plugin-page">
     <!-- Desktop: table -->
     <t-card v-if="!isMobile" title="插件管理" :bordered="false">
-      <template #actions>
-        <t-button size="small" variant="outline" @click="showContactQr = true">分享名片</t-button>
-      </template>
       <t-table
         :data="store.plugins"
         :columns="columns"
@@ -18,9 +15,14 @@
           <span class="path-cell">{{ row.exec_path }}</span>
         </template>
         <template #operation="{ row }">
-          <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
-            <t-button theme="danger" variant="text">删除</t-button>
-          </t-popconfirm>
+          <div class="row-actions">
+            <t-button size="small" variant="text" @click="showPluginQr(row)">名片</t-button>
+            <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
+              <t-button theme="danger" variant="text" title="删除">
+                <template #icon><DeleteIcon /></template>
+              </t-button>
+            </t-popconfirm>
+          </div>
         </template>
       </t-table>
       <t-divider />
@@ -36,12 +38,11 @@
     <template v-else>
       <div class="mobile-header">
         <h2 class="mobile-title">插件管理</h2>
-        <t-button size="small" variant="outline" @click="showContactQr = true">分享名片</t-button>
       </div>
       <div class="plugin-cards">
         <div v-for="plugin in store.plugins" :key="plugin.id" class="plugin-card">
           <div class="card-top">
-            <div class="card-info">
+            <div class="card-func">
               <span class="card-name">{{ plugin.name }}</span>
               <span class="card-path">{{ plugin.exec_path }}</span>
             </div>
@@ -52,8 +53,13 @@
             >{{ procState(plugin.id) || '未启动' }}</t-tag>
           </div>
           <div class="card-actions">
+            <t-button size="small" variant="text" @click="showPluginQr(plugin)" title="分享名片">
+              <template #icon><QrcodeIcon /></template>
+            </t-button>
             <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(plugin)">
-              <t-button theme="danger" variant="text" size="small">删除</t-button>
+              <t-button theme="danger" variant="text" size="small" @click.stop title="删除">
+                <template #icon><DeleteIcon /></template>
+              </t-button>
             </t-popconfirm>
           </div>
         </div>
@@ -83,12 +89,13 @@
         </t-form>
       </t-dialog>
 
-      <!-- Contact QR dialog -->
-      <t-dialog v-model:visible="showContactQr" header="分享联系人" :footer="false" width="360px">
+      <!-- Per-plugin QR dialog -->
+      <t-dialog v-model:visible="showPluginQrDialog" :header="'分享名片 — ' + (qrPlugin?.name ?? '')" :footer="false" width="360px">
         <div class="qr-center">
-          <img v-if="contactQrUrl" :src="contactQrUrl" alt="联系人二维码" class="qr-img" />
+          <img v-if="pluginQrUrl" :src="pluginQrUrl" alt="插件联系人二维码" class="qr-img" />
           <p v-else>生成中...</p>
-          <p class="qr-hint">让对方扫描此二维码即可自动添加你为联系人</p>
+          <p class="qr-hint">让对方扫描此二维码即可添加该插件的联系人</p>
+          <p v-if="qrPlugin" class="qr-addr">地址: {{ qrPluginAddr }}</p>
         </div>
       </t-dialog>
     </template>
@@ -96,8 +103,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted } from "vue";
+import { ref, nextTick, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
+import { QrcodeIcon, DeleteIcon } from "tdesign-icons-vue-next";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
 import * as api from "@/api/commands";
@@ -109,8 +117,10 @@ const loading = ref(false);
 const newName = ref("");
 const newExec = ref("");
 const showAdd = ref(false);
-const showContactQr = ref(false);
-const contactQrUrl = ref("");
+const showPluginQrDialog = ref(false);
+const pluginQrUrl = ref("");
+const qrPlugin = ref<PluginConfig | null>(null);
+const qrPluginAddr = ref("");
 
 const columns = [
   { colKey: "name", title: "名称" },
@@ -173,27 +183,33 @@ async function pickFile() {
   } catch { /* not in tauri */ }
 }
 
-watch(showContactQr, async (v) => {
-  if (!v) return;
-  contactQrUrl.value = "";
+async function showPluginQr(plugin: PluginConfig) {
+  qrPlugin.value = plugin;
+  qrPluginAddr.value = "";
+  pluginQrUrl.value = "";
+  showPluginQrDialog.value = true;
+  console.log("[PluginView] showPluginQr called for", plugin.name);
   await nextTick();
   try {
     const QRCode = (await import("qrcode")).default;
     const own = store.config?.own_address ?? "";
     const at = own.lastIndexOf("@");
-    const name = at >= 0 ? own.slice(0, at).split("#")[0] : own;
-    const hostname = at >= 0 ? own.slice(at + 1) : store.localHostname;
-    const data = JSON.stringify({ name, hostname });
-    contactQrUrl.value = await QRCode.toDataURL(data, {
+    const myHostname = at >= 0 ? own.slice(at + 1) : (store.localHostname || "localhost");
+    const addr = `${plugin.name}#00000000@${myHostname}`;
+    qrPluginAddr.value = addr;
+    const data = JSON.stringify({ name: plugin.name, hostname: myHostname });
+    pluginQrUrl.value = await QRCode.toDataURL(data, {
       width: 280,
       margin: 2,
       color: { dark: "#000000", light: "#ffffff" },
     });
+    console.log("[PluginView] QR generated for", plugin.name);
   } catch (e) {
+    console.error("[PluginView] QR generation failed:", e);
     await MessagePlugin.error(`生成二维码失败: ${e}`);
-    showContactQr.value = false;
+    showPluginQrDialog.value = false;
   }
-});
+}
 
 onMounted(async () => {
   loading.value = true;
@@ -246,10 +262,21 @@ onMounted(async () => {
   gap: 4px;
   min-width: 0;
 }
+.card-func {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
 .card-name {
   font-size: 15px;
   font-weight: 500;
   color: var(--td-text-color-primary);
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .card-path {
   font-size: 12px;
@@ -261,7 +288,14 @@ onMounted(async () => {
 .card-actions {
   margin-top: 8px;
   display: flex;
+  gap: 6px;
   justify-content: flex-end;
+}
+.qr-addr {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  word-break: break-all;
+  text-align: center;
 }
 
 .fab {

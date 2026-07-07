@@ -126,6 +126,7 @@ impl ImapPoller {
     where
         F: FnMut(Vec<u8>) + Send + 'static,
     {
+        debug!("IMAP: initial connect");
         match self.connect_sync_log(&log_fn) {
             Ok(mut session) => {
                 self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
@@ -140,8 +141,10 @@ impl ImapPoller {
         let mut tick = interval(Duration::from_secs(10));
         while self.running.load(Ordering::SeqCst) {
             tick.tick().await;
+            debug!("IMAP: starting poll cycle");
             match self.connect_sync_log(&log_fn) {
                 Ok(mut session) => {
+                    debug!("IMAP: connected, fetching new messages");
                     self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
                 }
                 Err(e) => {
@@ -151,6 +154,7 @@ impl ImapPoller {
                 }
             }
         }
+        debug!("IMAP: poller stopped");
     }
 
     fn fetch_new_sync<F>(

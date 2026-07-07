@@ -144,12 +144,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { useRoute } from "vue-router";
 import { MessagePlugin } from "tdesign-vue-next";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { mobileChatOpen } from "@/composables/useChatOpen";
 import PluginComponent from "@/components/PluginComponent.vue";
 import type { PluginMeta } from "@/types/plugin";
 
@@ -200,10 +202,32 @@ function hostnameFromAddr(addr: string) {
   return parseAddress(addr).hostname;
 }
 
+const route = useRoute();
 const store = useYseStore();
 const isMobile = useIsMobile();
 const inputText = ref("");
 const selectedContact = ref("");
+
+// On mobile, track if a chat is open to hide the tab bar
+const chatOpenOnMobile = computed(() => isMobile.value && !!selectedContact.value);
+
+// Intercept hardware back — clear selected contact instead of navigating away
+function onPopState() {
+  if (selectedContact.value) {
+    selectedContact.value = "";
+    // Prevent default navigation by re-pushing state
+    history.pushState(null, "", route.fullPath);
+  }
+}
+onMounted(() => {
+  history.pushState(null, "", route.fullPath);
+  window.addEventListener("popstate", onPopState);
+});
+onUnmounted(() => window.removeEventListener("popstate", onPopState));
+
+// Sync mobileChatOpen so App.vue can hide the tab bar
+watch(selectedContact, (v) => { mobileChatOpen.value = isMobile.value && !!v; }, { immediate: true });
+
 const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
@@ -648,10 +672,11 @@ onMounted(async () => {
 /* Mobile */
 @media (max-width: 767px) {
   .contact-panel { width: 100%; min-width: 0; }
-  .chat-panel {
-    position: fixed; top: 0; left: 0; right: 0; bottom: 56px; z-index: 10;
-    background: var(--td-bg-color-page);
-  }
+.chat-panel {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10;
+  padding-top: env(safe-area-inset-top, 0);
+  background: var(--td-bg-color-page);
+}
   .message-area { padding-bottom: 56px; }
 }
 </style>

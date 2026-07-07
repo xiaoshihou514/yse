@@ -19,7 +19,7 @@
     <t-content class="main-content">
       <router-view />
     </t-content>
-    <div v-if="isMobile" class="mobile-tab-bar">
+    <div v-if="isMobile && !mobileChatOpen" class="mobile-tab-bar">
       <div
         v-for="item in navItems"
         :key="item.path"
@@ -38,6 +38,7 @@ import { computed, markRaw, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { mobileChatOpen } from "@/composables/useChatOpen";
 import { trace, debug, info, warn, error } from "@tauri-apps/plugin-log";
 import {
   ChatIcon, ExtensionIcon, SettingIcon, UserIcon,
