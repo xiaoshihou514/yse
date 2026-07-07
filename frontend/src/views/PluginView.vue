@@ -16,7 +16,9 @@
         </template>
         <template #operation="{ row }">
           <div class="row-actions">
-            <t-button size="small" variant="text" @click="showPluginQr(row)">名片</t-button>
+            <t-button size="small" variant="text" @click="showPluginQr(row)" title="分享名片">
+              <template #icon><QrcodeIcon /></template>
+            </t-button>
             <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
               <t-button theme="danger" variant="text" title="删除">
                 <template #icon><DeleteIcon /></template>
@@ -290,6 +292,17 @@ onMounted(async () => {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+}
+.qr-center {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.qr-img {
+  width: 240px; height: 240px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 8px; padding: 8px;
+}
+.qr-hint {
+  font-size: 13px; color: var(--td-text-color-placeholder); text-align: center;
 }
 .qr-addr {
   font-size: 12px;

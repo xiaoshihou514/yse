@@ -127,7 +127,6 @@ cat > gen/android/app/src/main/res/values/colors.xml << 'XMLCOLR'
     <color name="surface_dark">#1A1A18</color>
     <color name="on_surface">#1A1A18</color>
     <color name="on_surface_dark">#E8E5E0</color>
-    <color name="ic_launcher_background">#262626</color>
 </resources>
 XMLCOLR
 
