@@ -27,7 +27,7 @@ export function setConfigState(has: boolean) {
 }
 
 router.beforeEach((to) => {
-  if (to.name === "welcome" || to.name === "config") return true;
+  if (to.name === "welcome" || to.name === "config" || to.name === "scan") return true;
   if (!_configChecked) return true; // still loading
   if (!_hasConfig) return { name: "welcome" };
   return true;
