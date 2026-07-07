@@ -589,8 +589,15 @@ function formatSize(bytes: number) {
 function autoResizeTextarea() {
   const el = inputRef.value;
   if (!el) return;
-  el.style.height = "auto";
-  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  const prevHeight = el.offsetHeight;
+  el.style.height = "";
+  const newH = Math.min(el.scrollHeight, 120);
+  // Ignore tiny fluctuations (< 6px) to prevent single-line wobble
+  if (Math.abs(newH - prevHeight) > 6) {
+    el.style.height = newH + "px";
+  } else {
+    el.style.height = prevHeight + "px";
+  }
 }
 
 function onInputKeydown(e: KeyboardEvent) {
@@ -1072,7 +1079,14 @@ onMounted(async () => {
   .input-area.keyboard-open {
     padding-bottom: 10px;
   }
+  .chat-textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
   .send-btn {
+    height: 44px;
+    min-height: 44px;
+    font-size: 16px;
     padding: 0 16px;
   }
 }
