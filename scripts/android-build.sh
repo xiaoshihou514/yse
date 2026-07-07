@@ -23,7 +23,7 @@ fi
 KEY_PASSWORD=$(cat "$KEYSTORE_PASSWORD")
 
 # ── NDK setup ──────────────────────────────────────────────────────
-NDK_DIR=$(ls -1d "${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}/ndk/"*/ 2>/dev/null | head -1)
+NDK_DIR=$(ls -1d "${ANDROID_HOME:-$HOME/Android/Sdk}/ndk/"*/ 2>/dev/null | head -1)
 if [ -n "$NDK_DIR" ]; then
     export TARGET_RANLIB="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
     export CARGO_TARGET_AARCH64_LINUX_ANDROID_RANLIB="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
@@ -143,6 +143,13 @@ for theme_dir in gen/android/app/src/main/res/values gen/android/app/src/main/re
 </resources>
 XMLTHM
 done
+
+# 8. patch AndroidManifest.xml — windowSoftInputMode must be on <activity> for WebView
+#    ref: https://github.com/tauri-apps/tauri/issues/7868
+MANIFEST="gen/android/app/src/main/AndroidManifest.xml"
+if [ -f "$MANIFEST" ] && ! grep -q windowSoftInputMode "$MANIFEST"; then
+  sed -i '/android:launchMode="singleTask"/a\            android:windowSoftInputMode="adjustResize"' "$MANIFEST"
+fi
 
 npm install
 npx @tauri-apps/cli@^2 android build --apk --target aarch64

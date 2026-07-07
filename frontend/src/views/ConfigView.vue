@@ -235,7 +235,7 @@ watch(() => route.query.scanResult, (val) => {
     applyQrConfig(val as string);
     router.replace({ query: {} });
   }
-});
+}, { immediate: true });
 
 onUnmounted(() => {
   unlistenSystemTheme();

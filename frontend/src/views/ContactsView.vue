@@ -110,11 +110,13 @@ async function startContactScan() {
 
 watch([() => route.query.scanName, () => route.query.scanHostname], ([name, hostname]) => {
   if (name) {
+    newName.value = hostname ? `${name as string}-${hostname as string}` : name as string;
+    if (hostname) newHostname.value = hostname as string;
     newPlugin.value = name as string;
     showAdd.value = true;
     router.replace({ query: {} });
   }
-});
+}, { immediate: true });
 
 function parseAddress(addr: string) {
   const at = addr.lastIndexOf("@");
