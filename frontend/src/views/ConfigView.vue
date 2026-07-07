@@ -96,6 +96,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, watch, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { setConfigState } from "@/router";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import * as api from "@/api/commands";
@@ -241,13 +242,6 @@ const form = reactive({
   crypto_password: "",
 });
 
-watch(() => route.query.scanResult, (val) => {
-  if (val) {
-    applyQrConfig(val as string);
-    router.replace({ query: {} });
-  }
-}, { immediate: true });
-
 onUnmounted(() => {
   unlistenSystemTheme();
 });
@@ -298,6 +292,7 @@ async function handleSave() {
   try {
     const mappings = store.config?.plugin_mappings ?? [];
     await store.saveConfigAndApply({ ...form, plugin_mappings: mappings });
+    setConfigState(true);
     await MessagePlugin.success("配置已保存");
   } catch (e) {
     await MessagePlugin.error(`保存失败: ${e}`);
@@ -332,6 +327,12 @@ onMounted(async () => {
     form.email_password = store.config.email_password;
     form.own_address = store.config.own_address;
     form.crypto_password = store.config.crypto_password;
+  }
+  // apply QR scan result AFTER loading stored config (takes precedence)
+  const scanResult = route.query.scanResult;
+  if (scanResult) {
+    applyQrConfig(scanResult as string);
+    router.replace({ query: {} });
   }
   await refresh();
   store.listenForLogs();
