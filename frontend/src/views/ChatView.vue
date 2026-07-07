@@ -123,7 +123,7 @@
               @focus="onInputFocus"
               @input="autoResizeTextarea"
             ></textarea>
-            <t-button :disabled="!inputText.trim()" size="small" @click="handleSend">发送</t-button>
+            <t-button class="send-btn" :disabled="!inputText.trim()" size="small" @click="handleSend">发送</t-button>
           </div>
         </template>
         <div class="chat-panel chat-empty" v-else>
@@ -687,22 +687,21 @@ onMounted(async () => {
 .msg-retry { cursor: pointer; font-size: 14px; color: var(--td-warning-color); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .input-area {
-  display: flex; align-items: flex-end; gap: 8px;
+  display: flex; align-items: flex-start; gap: 8px;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
 }
 .chat-textarea {
   flex: 1; resize: none; outline: none;
-  font-family: inherit; font-size: 15px; line-height: 1.5;
+  font-family: inherit; font-size: 16px; line-height: 1.5;
   padding: 8px 12px; color: var(--td-text-color-primary);
-  min-height: 38px; max-height: 120px;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 8px;
+  min-height: 40px; max-height: 120px;
+  border: none; border-radius: 8px;
   background: var(--td-bg-color-secondarycontainer);
 }
-.chat-textarea:focus { border-color: var(--td-brand-color); }
 .chat-textarea::placeholder { color: var(--td-text-color-placeholder); }
+.send-btn { align-self: flex-start; height: 40px; display: flex; align-items: center; }
 
 .context-menu {
   position: fixed; z-index: 9999;
