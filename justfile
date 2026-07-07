@@ -54,7 +54,6 @@ android-init:
 
 # 完整构建 Android APK (前端 + NDK + 签名)
 android-build:
-    cd frontend && npm run build
     bash scripts/android-build.sh
 
 # ── 插件 ────────────────────────────────────────────────────────────────

@@ -38,6 +38,37 @@ rm -rf gen/android icons/android
 
 # 1. init MUST run before icon so tauri icon can inject into the project
 npx @tauri-apps/cli@^2 android init
+
+# 1a. patch Gradle distribution URL to China mirror for faster download
+PROPS="gen/android/gradle/wrapper/gradle-wrapper.properties"
+if [ -f "$PROPS" ]; then
+  sed -i 's|services\.gradle\.org/distributions|mirrors.cloud.tencent.com/gradle|' "$PROPS"
+fi
+
+# 1b. add Aliyun Maven mirrors to ALL Gradle build files (project, app, buildSrc, settings)
+python3 -c "
+import os, re
+
+for root, dirs, files in os.walk('gen/android'):
+    for f in files:
+        if f not in ('build.gradle.kts', 'settings.gradle.kts'):
+            continue
+        path = os.path.join(root, f)
+        with open(path) as fh:
+            s = fh.read()
+        # insert Aliyun repos before each google() call, preserving indent
+        def add_mirrors(m):
+            ind = m.group(1)
+            return (ind + 'maven { setUrl(\"' + chr(34) + 'https://maven.aliyun.com/repository/public' + chr(34) + ') }\n' +
+                    ind + 'maven { setUrl(\"' + chr(34) + 'https://maven.aliyun.com/repository/google' + chr(34) + ') }\n' +
+                    ind + 'maven { setUrl(\"' + chr(34) + 'https://maven.aliyun.com/repository/gradle-plugin' + chr(34) + ') }\n' +
+                    m.group(0))
+        s = re.sub(r'^(\s+)(google\(\))', add_mirrors, s, flags=re.MULTILINE)
+        with open(path, 'w') as fh:
+            fh.write(s)
+        print(f'patched: {path}')
+"
+
 # 2. generate icons — detects existing Android project and places
 #    icons into gen/android/app/src/main/res/mipmap-* directly
 npx @tauri-apps/cli@^2 icon ../icon.png
