@@ -134,9 +134,9 @@ async function startContactScan() {
     }
     const result = await scan({ windowed: true, formats: [Format.QRCode], cameraDirection: "back" });
     const data = JSON.parse(result.content);
-    if (data.name) newName.value = data.name;
+    if (data.name) newPlugin.value = data.name;
     if (data.hostname) newHostname.value = data.hostname;
-    await MessagePlugin.success("已从二维码读取联系人信息");
+    await MessagePlugin.success("已从二维码读取联系人信息，请填写名称");
   } catch (e) {
     console.error("[ContactScan] error:", e);
   } finally {
@@ -203,11 +203,12 @@ async function scanContactQr() {
         return;
       }
     }
-    const result = await scan({ formats: [Format.QRCode], cameraDirection: "back" });
+    const result = await scan({ windowed: true, formats: [Format.QRCode], cameraDirection: "back" });
     const data = JSON.parse(result.content);
-    if (data.name) newName.value = data.name;
+    // QR encodes { name: "插件名", hostname: "设备名" }
+    if (data.name) newPlugin.value = data.name;
     if (data.hostname) newHostname.value = data.hostname;
-    await MessagePlugin.success("已从二维码读取联系人信息");
+    await MessagePlugin.success("已从二维码读取联系人信息，请输入联系人名称");
   } catch {
     await MessagePlugin.info("扫码取消或失败");
   }

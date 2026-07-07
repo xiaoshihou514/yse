@@ -56,6 +56,7 @@ import { useIsMobile } from "@/composables/useIsMobile";
 import { mobileChatOpen } from "@/composables/useChatOpen";
 import { trace, debug, info, warn, error } from "@tauri-apps/plugin-log";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import appRouter, { setConfigState } from "@/router";
 import {
   ChatIcon, ExtensionIcon, SettingIcon, UserIcon,
 } from "tdesign-icons-vue-next";
@@ -108,6 +109,11 @@ onMounted(async () => {
   await nextTick();
   setupTitlebar();
   await store.loadConfig();
+  const hasCfg = !!store.config?.email_imap_server;
+  setConfigState(hasCfg);
+  if (!hasCfg && appRouter.currentRoute.value.name !== "welcome") {
+    appRouter.replace("/welcome");
+  }
   store.listenForLogs();
   store.listenForMessages();
   await store.initializeApp();
