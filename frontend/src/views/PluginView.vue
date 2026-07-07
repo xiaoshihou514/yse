@@ -16,7 +16,9 @@
         </template>
         <template #operation="{ row }">
           <div class="row-actions">
-            <t-button size="small" variant="outline" @click="showPluginQr(row)">QR</t-button>
+            <t-button size="small" variant="text" @click="showPluginQr(row)" title="分享名片">
+              <template #icon><QrcodeIcon /></template>
+            </t-button>
             <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
               <t-button theme="danger" variant="text" title="删除">
                 <template #icon><DeleteIcon /></template>
@@ -89,20 +91,21 @@
         </t-form>
       </t-dialog>
 
-      <!-- Per-plugin QR overlay (plain div, not t-dialog — t-dialog has issues on Android) -->
-      <div v-if="showPluginQrDialog" class="qr-overlay" @click="showPluginQrDialog = false">
-        <div class="qr-card" @click.stop>
-          <div class="qr-card-header">{{ qrPlugin?.name ?? '' }}</div>
-          <div class="qr-center">
-            <img v-if="pluginQrUrl" :src="pluginQrUrl" alt="二维码" class="qr-img" />
-            <p v-else>生成中...</p>
-            <p class="qr-hint">让对方扫描即可添加联系人</p>
-            <p v-if="qrPluginAddr" class="qr-addr">{{ qrPluginAddr }}</p>
-          </div>
-          <t-button size="small" style="margin-top:12px" @click="showPluginQrDialog = false">关闭</t-button>
-        </div>
-      </div>
     </template>
+
+    <!-- Per-plugin QR overlay (outside v-if/v-else so it works on desktop too) -->
+    <div v-if="showPluginQrDialog" class="qr-overlay" @click="showPluginQrDialog = false">
+      <div class="qr-card" @click.stop>
+        <div class="qr-card-header">{{ qrPlugin?.name ?? '' }}</div>
+        <div class="qr-center">
+          <img v-if="pluginQrUrl" :src="pluginQrUrl" alt="二维码" class="qr-img" />
+          <p v-else>生成中...</p>
+          <p class="qr-hint">让对方扫描即可添加联系人</p>
+          <p v-if="qrPluginAddr" class="qr-addr">{{ qrPluginAddr }}</p>
+        </div>
+        <t-button size="small" style="margin-top:12px" @click="showPluginQrDialog = false">关闭</t-button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -209,6 +212,7 @@ async function showPluginQr(plugin: PluginConfig) {
     });
   } catch (e) {
     console.error("[PluginView] QR gen failed:", e);
+    MessagePlugin.error(`生成二维码失败: ${e}`);
   }
 }
 

@@ -53,32 +53,27 @@
     </t-dialog>
 
     <!-- QR import dialog -->
-    <t-dialog
-      v-model:visible="qrImportVisible"
-      header="扫码导入"
-      :footer="false"
-      :close-on-overlay-click="false"
-      width="400px"
-    >
-      <div class="qr-center">
-        <div class="scanner-wrapper">
-          <div id="qr-scanner-id" class="scanner-box">
-            <div class="scanner-frame">
-              <div class="frame-corner tl"></div>
-              <div class="frame-corner tr"></div>
-              <div class="frame-corner bl"></div>
-              <div class="frame-corner br"></div>
-            </div>
-            <div class="scanner-line"></div>
+    <!-- QR scanner overlay (windowed mode — webview transparent, camera shows through) -->
+    <div v-if="qrImportVisible" class="qr-scanner-overlay">
+      <div class="scanner-wrapper">
+        <div id="qr-scanner-id" class="scanner-box">
+          <div class="scanner-frame">
+            <div class="frame-corner tl"></div>
+            <div class="frame-corner tr"></div>
+            <div class="frame-corner bl"></div>
+            <div class="frame-corner br"></div>
           </div>
+          <div class="scanner-line"></div>
         </div>
         <p class="qr-hint">将二维码置于框内</p>
-        <t-space style="margin-top: 12px">
+      </div>
+      <div class="qr-scanner-footer">
+        <t-space>
           <t-button size="small" @click="stopScanner">取消</t-button>
-          <t-button size="small" variant="outline" @click="uploadQrImage">上传二维码图片</t-button>
+          <t-button size="small" variant="outline" @click="uploadQrImage">上传图片</t-button>
         </t-space>
       </div>
-    </t-dialog>
+    </div>
 
     <t-card title="界面" :bordered="false" style="margin-bottom: 20px">
       <t-form-item label="主题模式">
@@ -240,7 +235,7 @@ async function showImportQr() {
       }
     }
     console.log("[QR] starting scan...");
-    const result = await mod.scan({ formats: [mod.Format.QRCode], cameraDirection: "back" });
+    const result = await mod.scan({ windowed: true, formats: [mod.Format.QRCode], cameraDirection: "back" });
     console.log("[QR] scan result:", result);
     applyQrConfig(result.content);
   } catch (e) {
@@ -323,7 +318,7 @@ const form = reactive({
   email_smtp_port: 465,
   email_username: "",
   email_password: "",
-  own_address: "me@yse.org",
+  own_address: "me",
   crypto_password: "",
 });
 
@@ -436,10 +431,21 @@ onMounted(async () => {
 .qr-hint {
   font-size: 13px; color: var(--td-text-color-placeholder); text-align: center;
 }
+.qr-scanner-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(0,0,0,0.5);
+}
+.qr-scanner-footer {
+  position: fixed; bottom: 40px; left: 0; right: 0;
+  display: flex; justify-content: center;
+  z-index: 10000;
+}
 .scanner-wrapper {
   width: 280px; height: 280px; border-radius: 8px;
   overflow: hidden; position: relative;
-  background: var(--td-bg-color-component);
+  margin-top: 25vh;
+  background: transparent;
 }
 .scanner-box {
   width: 100%; height: 100%; position: relative;
