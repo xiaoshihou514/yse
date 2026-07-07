@@ -37,7 +37,11 @@ fe-typecheck:
 
 # ── Tauri 桌面端 ────────────────────────────────────────────────────────
 
-# Tauri 开发模式 (启动 vite + tauri)
+# 前端开发服务器 (Vite)
+fe-dev:
+    cd frontend && npm run dev
+
+# Tauri 开发模式 (需先启动 fe-dev)
 dev:
     cd desktop && cargo tauri dev
 
