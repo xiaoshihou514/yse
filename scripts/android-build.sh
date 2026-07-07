@@ -116,6 +116,21 @@ cp -f icons/32x32.png ../frontend/public/icon.png
 #    Xiaomi devices may lack Google Play Services dynamite module for barcode scanning.
 sed -i '/^dependencies {/a\    implementation("com.google.mlkit:barcode-scanning:17.0.0")' gen/android/app/build.gradle.kts
 
+# 6. patch Android theme colors to match custom brand palette
+cat > gen/android/app/src/main/res/values/colors.xml << 'XMLCOLR'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#0D8575</color>
+    <color name="brand_dark">#47B09A</color>
+    <color name="brand_light">#E6F7F4</color>
+    <color name="surface">#F5F3F0</color>
+    <color name="surface_dark">#1A1A18</color>
+    <color name="on_surface">#1A1A18</color>
+    <color name="on_surface_dark">#E8E5E0</color>
+    <color name="ic_launcher_background">#262626</color>
+</resources>
+XMLCOLR
+
 npm install
 npx @tauri-apps/cli@^2 android build --apk --target aarch64
 cd ..

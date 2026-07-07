@@ -4,3 +4,97 @@ html, body, #app {
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
+
+/* ═══════════════════════════════════════════════
+   盐水鹅 自定义主题 — 青碧主色 + 琥珀点缀
+   ═══════════════════════════════════════════════ */
+
+/* ── Light theme ── */
+:root,
+:root[theme-mode="light"] {
+  --yse-brand-1: #E6F7F4;
+  --yse-brand-2: #C2EDE6;
+  --yse-brand-3: #94E0D4;
+  --yse-brand-4: #5FCFBF;
+  --yse-brand-5: #2DBAA6;
+  --yse-brand-6: #1AA08E;
+  --yse-brand-7: #0D8575;
+  --yse-brand-8: #0A6B5E;
+  --yse-brand-9: #075249;
+  --yse-brand-10: #043A34;
+
+  --yse-success: #3A9D6E;
+  --yse-warning: #D4895A;
+  --yse-error: #C85A5A;
+
+  --yse-bg-page: #F5F3F0;
+  --yse-bg-container: #FFFFFF;
+  --yse-bg-secondary: #F0EEEA;
+  --yse-bg-component: #E8E5E0;
+  --yse-stroke: #DDDAD4;
+}
+
+/* ── Dark theme ── */
+:root[theme-mode="dark"] {
+  --yse-brand-1: #1A2E2B;
+  --yse-brand-2: #1A3D38;
+  --yse-brand-3: #1A4D45;
+  --yse-brand-4: #1A5E53;
+  --yse-brand-5: #1A7062;
+  --yse-brand-6: #1A8372;
+  --yse-brand-7: #2D9A86;
+  --yse-brand-8: #47B09A;
+  --yse-brand-9: #6AC5B0;
+  --yse-brand-10: #92DBC8;
+
+  --yse-success: #5BB88A;
+  --yse-warning: #D4996A;
+  --yse-error: #C86A6A;
+
+  --yse-bg-page: #1A1A18;
+  --yse-bg-container: #262624;
+  --yse-bg-secondary: #2E2E2B;
+  --yse-bg-component: #383835;
+  --yse-stroke: #40403C;
+}
+
+/* ── Map to TDesign variables ── */
+:root,
+:root[theme-mode="light"],
+:root[theme-mode="dark"] {
+  --td-brand-color-1:  var(--yse-brand-1);
+  --td-brand-color-2:  var(--yse-brand-2);
+  --td-brand-color-3:  var(--yse-brand-3);
+  --td-brand-color-4:  var(--yse-brand-4);
+  --td-brand-color-5:  var(--yse-brand-5);
+  --td-brand-color-6:  var(--yse-brand-6);
+  --td-brand-color-7:  var(--yse-brand-7);
+  --td-brand-color-8:  var(--yse-brand-8);
+  --td-brand-color-9:  var(--yse-brand-9);
+  --td-brand-color-10: var(--yse-brand-10);
+
+  --td-brand-color:            var(--yse-brand-7);
+  --td-brand-color-hover:      var(--yse-brand-6);
+  --td-brand-color-focus:      var(--yse-brand-2);
+  --td-brand-color-active:     var(--yse-brand-8);
+  --td-brand-color-disabled:   var(--yse-brand-3);
+  --td-brand-color-light:      var(--yse-brand-1);
+  --td-brand-color-light-hover:var(--yse-brand-2);
+
+  --td-success-color:      var(--yse-success);
+  --td-warning-color:      var(--yse-warning);
+  --td-error-color:        var(--yse-error);
+
+  --td-bg-color-page:                  var(--yse-bg-page);
+  --td-bg-color-container:             var(--yse-bg-container);
+  --td-bg-color-secondarycontainer:    var(--yse-bg-secondary);
+  --td-bg-color-component:             var(--yse-bg-component);
+  --td-component-stroke:               var(--yse-stroke);
+
+  /* ChatView uses rgba(var(--td-brand-color-rgb), 0.25) for shadow */
+  --td-brand-color-rgb: 13, 133, 117;  /* → rgba(13,133,117,0.25) */
+}
+
+:root[theme-mode="dark"] {
+  --td-brand-color-rgb: 71, 176, 154;  /* → rgba(71,176,154,0.25) */
+}

@@ -5837,6 +5837,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-barcode-scanner",
+ "tauri-plugin-dialog",
  "tauri-plugin-log",
  "tauri-plugin-os",
  "tokio",
