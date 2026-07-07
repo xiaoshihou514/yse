@@ -39,7 +39,7 @@ fe-typecheck:
 
 # Tauri 开发模式 (启动 vite + tauri)
 dev:
-    cargo tauri dev
+    cd desktop && cargo tauri dev
 
 # 构建 AppImage
 build-appimage:
