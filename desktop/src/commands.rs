@@ -561,16 +561,23 @@ impl YseState {
                                 // send a helpful error reply back to the sender.
                                 if matches!(&result, yse_core::plugin::session::RouteResult::PluginNotFound { .. }) {
                                     if let Some(plugin_name) = result.plugin_name() {
-                                        let reply_text = format!(
-                                            "错误: 插件「{}」在此机器上不存在。\n\n\
-                                             可用插件列表可通过 /help 查看。\n\
-                                             请联系管理员添加所需插件。",
-                                            plugin_name
-                                        );
+                                        let available: Vec<String> = plugin_configs.iter()
+                                            .filter(|p| p.enabled)
+                                            .map(|p| p.name.clone())
+                                            .collect();
+                                        let reply_text = if available.is_empty() {
+                                            format!("错误: 插件「{}」在此机器上不存在。\n\n当前没有可用插件。", plugin_name)
+                                        } else {
+                                            format!(
+                                                "错误: 插件「{}」在此机器上不存在。\n\n可用插件: {}",
+                                                plugin_name,
+                                                available.join(", ")
+                                            )
+                                        };
                                         let ck_guard = ck.read().await;
                                         if let Some(ref k) = *ck_guard {
                                             if let Err(e) = send_plugin_error_reply(
-                                                &msg.from_addr, &own, &reply_text,
+                                                &msg.from_addr, &reply_text,
                                                 &*snd, k, &cfg,
                                             ).await {
                                                 warn!("send_plugin_error_reply failed: {}", e);
@@ -639,14 +646,16 @@ impl YseState {
 /// This lets the sender know what happened instead of getting a silent failure.
 async fn send_plugin_error_reply(
     to_addr: &str,
-    from_addr: &str,
     reply_text: &str,
     sender: &tokio::sync::RwLock<Option<SmtpSender>>,
     crypto_key: &Key,
     cfg: &tokio::sync::RwLock<YseConfig>,
 ) -> Result<(), String> {
-    let email_user = cfg.read().await.email_username.clone();
-    let reply_msg = Message::new(from_addr.to_string(), to_addr.to_string(), Some(reply_text.to_string()));
+    let (email_user, from_addr) = {
+        let g = cfg.read().await;
+        (g.email_username.clone(), g.own_address.clone())
+    };
+    let reply_msg = Message::new(from_addr, to_addr.to_string(), Some(reply_text.to_string()));
     let payload = reply_msg.to_json().map_err(|e| e.to_string())?;
     let encrypted = encrypt(crypto_key, &payload).map_err(|e| e.to_string())?;
     if let Some(s) = sender.read().await.as_ref() {

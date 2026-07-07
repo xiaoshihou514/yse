@@ -153,7 +153,15 @@ impl SessionRegistry {
             }
         }
 
-        let config = plugin_configs.iter().find(|p| p.id == name || p.name == name)?.clone();
+        let config = plugin_configs
+            .iter()
+            .find(|p| p.id == name || p.name == name)
+            .or_else(|| {
+                // Fallback: try stripping -hostname suffix (e.g., "echo-bot-fedora" -> "echo-bot")
+                let (prefix, _) = name.rsplit_once('-')?;
+                plugin_configs.iter().find(|p| p.id == prefix || p.name == prefix)
+            })?
+            .clone();
         let plugin_id = config.id.clone();
 
         if let Err(e) = process_manager

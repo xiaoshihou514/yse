@@ -86,31 +86,31 @@
             <span class="topbar-name">{{ displayName(selectedContact) }}</span>
           </div>
           <div class="message-area" ref="messagesContainer">
-            <div
-              v-for="msg in conversation"
-              :key="msg.id"
-              :class="['msg-row', msg.from === ownAddress ? 'row-self' : 'row-other']"
-            >
-              <div class="msg-bubble" @contextmenu.prevent="onBubbleContext($event, msg)">
-                <div class="msg-text" v-if="msg.text" v-html="renderMarkdown(msg.text)"></div>
-                <PluginComponent
-                  v-if="(msg.meta as PluginMeta)?.plugin?.component"
-                  :comp="(msg.meta as PluginMeta)!.plugin!.component!"
-                  @respond="(value: string) => handleComponentResponse(msg, value)"
-                />
-                <div class="msg-files" v-if="msg.files?.length">
-                  <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary" size="small">
-                    {{ f.name }} ({{ formatSize(f.size) }})
-                  </t-link>
+              <div
+                v-for="msg in conversation"
+                :key="msg.id"
+                :class="['msg-row', msg.from === ownAddress ? 'row-self' : 'row-other']"
+              >
+                <div class="msg-bubble" @contextmenu.prevent="onBubbleContext($event, msg)">
+                  <div class="msg-text" v-if="msg.text" v-html="renderMarkdown(msg.text)"></div>
+                  <PluginComponent
+                    v-if="(msg.meta as PluginMeta)?.plugin?.component"
+                    :comp="(msg.meta as PluginMeta)!.plugin!.component!"
+                    @respond="(value: string) => handleComponentResponse(msg, value)"
+                  />
+                  <div class="msg-files" v-if="msg.files?.length">
+                    <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary" size="small">
+                      {{ f.name }} ({{ formatSize(f.size) }})
+                    </t-link>
+                  </div>
+                  <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
                 </div>
-                <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
-                <!-- Pending status indicators -->
-                <div v-if="(msg as any).__pending" class="msg-status">
+                <!-- Pending status indicators (outside bubble, left side for self) -->
+                <div v-if="(msg as any).__pending" class="msg-indicator">
                   <span v-if="(msg as any).__status === 'sending'" class="msg-spinner"></span>
                   <span v-else-if="(msg as any).__status === 'failed'" class="msg-retry" @click.stop="retryMessage(msg as any)" title="点击重试">⚠</span>
                 </div>
               </div>
-            </div>
           </div>
           <div class="input-area">
             <textarea
@@ -121,11 +121,9 @@
               class="chat-textarea"
               @keydown="onInputKeydown"
               @focus="onInputFocus"
+              @input="autoResizeTextarea"
             ></textarea>
-            <div class="input-actions">
-              <span class="input-hint">Enter 发送</span>
-              <t-button :disabled="!inputText.trim()" size="small" @click="handleSend">发送</t-button>
-            </div>
+            <t-button :disabled="!inputText.trim()" size="small" @click="handleSend">发送</t-button>
           </div>
         </template>
         <div class="chat-panel chat-empty" v-else>
@@ -412,7 +410,7 @@ const conversation = computed(() => {
       (m.from === ownAddress.value && m.to === addr),
   );
   const pending = store.pendingMessages
-    .filter((p) => p.to === addr && (p.status === "sending" || p.status === "failed"))
+    .filter((p) => p.to === addr && (p.status === "sending" || p.status === "failed" || p.status === "sent"))
     .map((p) => ({
       ...p,
       __pending: true,
@@ -420,7 +418,15 @@ const conversation = computed(() => {
       protocol: "pending",
       files: undefined,
       meta: undefined,
-    }));
+    }))
+    // Dedup sent pending: skip if a real message with same text+timestamp already exists
+    .filter((p) => {
+      if (p.__status !== "sent") return true;
+      return !real.some(r =>
+        r.text && p.text && r.text === p.text &&
+        Math.abs(r.timestamp - p.timestamp) < 5000
+      );
+    });
   return [...real, ...pending];
 });
 
@@ -465,15 +471,17 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function autoResizeTextarea() {
+  const el = inputRef.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+}
+
 function onInputKeydown(e: KeyboardEvent) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     handleSend();
-  }
-  const el = inputRef.value;
-  if (el) {
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
   }
 }
 
@@ -482,6 +490,7 @@ async function handleSend() {
   try {
     await store.sendMessage(selectedContact.value, inputText.value.trim());
     inputText.value = "";
+    if (inputRef.value) inputRef.value.style.height = "auto";
     await scrollToBottom();
   } catch (e) {
     await MessagePlugin.error(`发送失败: ${e}`);
@@ -639,8 +648,8 @@ onMounted(async () => {
   padding: 16px 20px;
   display: flex; flex-direction: column; gap: 8px;
 }
-.msg-row { display: flex; }
-.row-self { justify-content: flex-end; }
+.msg-row { display: flex; align-items: flex-end; gap: 6px; }
+.row-self { flex-direction: row-reverse; }
 .row-other { justify-content: flex-start; }
 .msg-bubble {
   max-width: 70%; padding: 8px 12px;
@@ -668,7 +677,7 @@ onMounted(async () => {
 .msg-text :deep(input[type="checkbox"]) { margin-right: 4px; }
 .msg-files { margin-top: 4px; }
 .msg-time { font-size: 11px; margin-top: 4px; opacity: 0.65; text-align: right; }
-.msg-status { display: inline-flex; align-items: center; margin-left: 6px; }
+.msg-indicator { flex-shrink: 0; display: flex; align-items: center; padding-bottom: 8px; }
 .msg-spinner {
   display: inline-block; width: 12px; height: 12px;
   border: 2px solid var(--td-text-color-placeholder);
@@ -678,21 +687,18 @@ onMounted(async () => {
 .msg-retry { cursor: pointer; font-size: 14px; color: var(--td-warning-color); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .input-area {
-  padding: 8px 16px 12px;
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 8px 12px;
   border-top: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
 }
 .chat-textarea {
-  width: 100%; border: none; resize: none; outline: none;
+  flex: 1; border: none; resize: none; outline: none;
   font-family: inherit; font-size: 14px; line-height: 1.5;
   padding: 6px 0; background: transparent; color: var(--td-text-color-primary);
+  min-height: 22px; max-height: 120px;
 }
 .chat-textarea::placeholder { color: var(--td-text-color-placeholder); }
-.input-actions {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 6px;
-}
-.input-hint { font-size: 12px; color: var(--td-text-color-placeholder); }
 
 .context-menu {
   position: fixed; z-index: 9999;

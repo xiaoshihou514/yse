@@ -67,6 +67,13 @@ export const useYseStore = defineStore("yse", () => {
   async function loadMessages() {
     try {
       messages.value = await api.getMessages(100);
+      // Clean up pending "sent" entries that have a matching real message
+      pendingMessages.value = pendingMessages.value.filter((p) => {
+        if (p.status !== "sent") return true;
+        return !messages.value.some((r) =>
+          r.text === p.text && Math.abs(r.timestamp - p.timestamp) < 5000
+        );
+      });
     } catch (e) {
       console.error("loadMessages failed:", e);
     }
@@ -121,12 +128,6 @@ export const useYseStore = defineStore("yse", () => {
       (pending as any).status = "failed";
       (pending as any).error = String(e);
     }
-    // Remove from pending after a short delay if sent
-    if ((pending as any).status === "sent") {
-      setTimeout(() => {
-        pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
-      }, 1000);
-    }
   }
 
   async function handlePluginResponse(to: string, componentId: string, value: string) {
@@ -145,11 +146,6 @@ export const useYseStore = defineStore("yse", () => {
     } catch (e) {
       (pending as any).status = "failed";
       (pending as any).error = String(e);
-    }
-    if ((pending as any).status === "sent") {
-      setTimeout(() => {
-        pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
-      }, 1000);
     }
   }
 
