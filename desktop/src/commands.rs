@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, State};
 use tokio::sync::RwLock;
+use tracing::warn;
+use yse_core::crypto::Key;
 use yse_core::{
     config::YseConfig,
     crypto::{decrypt, derive_key, encrypt},
@@ -423,6 +425,8 @@ impl YseState {
     pub async fn start_polling_inner(&self, app_handle: tauri::AppHandle) -> Result<(), String> {
         use tauri::Emitter;
 
+        let sender = self.sender.clone();
+        let crypto_key = self.crypto_key.clone();
         let (imap_cfg, key, store, own_addr, session_registry, process_manager, yse_cfg) = {
             let cfg = self.config.read().await;
             let imap = ImapConfig {
@@ -529,7 +533,9 @@ impl YseState {
                         let own = own_addr.clone();
                         let sr = session_registry.clone();
                         let pm = process_manager.clone();
-                        let _cfg = yse_cfg.clone();
+                        let cfg = yse_cfg.clone();
+                        let snd = sender.clone();
+                        let ck = crypto_key.clone();
 
                         tokio::spawn(async move {
                             let _ = store.save_message(&msg).await;
@@ -538,7 +544,7 @@ impl YseState {
                             if !already {
                                 let plugin_configs = store.list_plugins().await.unwrap_or_default();
                                 // Route via session registry (starts plugin if needed)
-                                let dispatched = sr
+                                let result = sr
                                     .route(
                                         &msg.to_addr,
                                         &msg.from_addr,
@@ -550,10 +556,33 @@ impl YseState {
                                     )
                                     .await;
                                 let _ = store.mark_processed(&msg.id).await;
-                                let log_msg = if dispatched {
-                                    format!("session-routed msg {} via session registry", msg.id)
-                                } else {
-                                    format!("msg {}: not routed locally (hostname mismatch or no plugin)", msg.id)
+
+                                // If the message was for a plugin that doesn't exist here,
+                                // send a helpful error reply back to the sender.
+                                if matches!(&result, yse_core::plugin::session::RouteResult::PluginNotFound { .. }) {
+                                    if let Some(plugin_name) = result.plugin_name() {
+                                        let reply_text = format!(
+                                            "错误: 插件「{}」在此机器上不存在。\n\n\
+                                             可用插件列表可通过 /help 查看。\n\
+                                             请联系管理员添加所需插件。",
+                                            plugin_name
+                                        );
+                                        let ck_guard = ck.read().await;
+                                        if let Some(ref k) = *ck_guard {
+                                            if let Err(e) = send_plugin_error_reply(
+                                                &msg.from_addr, &own, &reply_text,
+                                                &*snd, k, &cfg,
+                                            ).await {
+                                                warn!("send_plugin_error_reply failed: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                let log_msg = match &result {
+                                    yse_core::plugin::session::RouteResult::Dispatched =>
+                                        format!("session-routed msg {} via session registry", msg.id),
+                                    _ => format!("msg {}: not routed locally ({:?})", msg.id, result),
                                 };
                                 let log = LogEntry {
                                     level: "info".into(),
@@ -561,18 +590,14 @@ impl YseState {
                                     timestamp: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .unwrap()
-                                        .as_millis()
-                                        as u64,
+                                        .as_millis() as u64,
                                 };
                                 let _ = handle.emit("log-entry", &log);
                             }
 
                             let entry = LogEntry {
                                 level: "debug".into(),
-                                message: format!(
-                                    "received msg {} from {} to {}",
-                                    msg.id, msg.from_addr, msg.to_addr
-                                ),
+                                message: format!("received msg {} from {} to {}", msg.id, msg.from_addr, msg.to_addr),
                                 timestamp: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap()
@@ -608,6 +633,29 @@ impl YseState {
             format!("loaded {} enabled plugin config(s), no auto-start", count),
         );
     }
+}
+
+/// Send a reply message to the original sender when a plugin is not found.
+/// This lets the sender know what happened instead of getting a silent failure.
+async fn send_plugin_error_reply(
+    to_addr: &str,
+    from_addr: &str,
+    reply_text: &str,
+    sender: &tokio::sync::RwLock<Option<SmtpSender>>,
+    crypto_key: &Key,
+    cfg: &tokio::sync::RwLock<YseConfig>,
+) -> Result<(), String> {
+    let email_user = cfg.read().await.email_username.clone();
+    let reply_msg = Message::new(from_addr.to_string(), to_addr.to_string(), Some(reply_text.to_string()));
+    let payload = reply_msg.to_json().map_err(|e| e.to_string())?;
+    let encrypted = encrypt(crypto_key, &payload).map_err(|e| e.to_string())?;
+    if let Some(s) = sender.read().await.as_ref() {
+        let d = disguise::disguise();
+        s.send((&email_user, &d.display_name), &email_user, encrypted, vec![])
+            .await
+            .map_err(|e| format!("SMTP send error reply failed: {}", e))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

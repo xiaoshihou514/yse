@@ -9,6 +9,31 @@ use crate::identity;
 use crate::message::FileAttachment;
 use crate::store::PluginConfig;
 
+/// Result of trying to route a message to a plugin.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RouteResult {
+    /// Message was successfully dispatched to a plugin.
+    Dispatched,
+    /// Address couldn't be parsed.
+    InvalidAddress,
+    /// Hostname doesn't match this machine.
+    WrongHost,
+    /// Plugin with the given name was not found.
+    PluginNotFound { plugin_name: String },
+    /// Plugin was found but failed to start.
+    PluginStartFailed { plugin_name: String },
+}
+
+impl RouteResult {
+    pub fn plugin_name(&self) -> Option<&str> {
+        match self {
+            RouteResult::PluginNotFound { plugin_name } => Some(plugin_name.as_str()),
+            RouteResult::PluginStartFailed { plugin_name } => Some(plugin_name.as_str()),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Session {
     pub hash: String,
@@ -70,19 +95,19 @@ impl SessionRegistry {
         files: Option<&Vec<FileAttachment>>,
         plugin_configs: &[PluginConfig],
         process_manager: &PluginProcessManager,
-    ) -> bool {
+    ) -> RouteResult {
         let (name, hash, hostname) = match identity::parse_address(to_addr) {
             Some(p) => p,
             None => {
                 info!("route: cannot parse address: {}", to_addr);
-                return false;
+                return RouteResult::InvalidAddress;
             }
         };
 
         let our_host = identity::local_hostname();
         if hostname != our_host {
             info!("route: message for another host: {} (we are {})", hostname, our_host);
-            return false;
+            return RouteResult::WrongHost;
         }
 
         let plugin_id = self.resolve_plugin(name, hash, plugin_configs, process_manager).await;
@@ -97,11 +122,17 @@ impl SessionRegistry {
                     files: files.cloned(),
                 };
                 self.dispatch_to_plugin(&pid, &notif, process_manager).await;
-                true
+                RouteResult::Dispatched
             }
             None => {
-                warn!("route: no plugin found for name={} hash={}", name, hash);
-                false
+                let known = plugin_configs.iter().any(|p| p.id == name || p.name == name);
+                if known {
+                    warn!("route: plugin {} failed to start", name);
+                    RouteResult::PluginStartFailed { plugin_name: name.to_string() }
+                } else {
+                    warn!("route: no plugin found for name={} hash={}", name, hash);
+                    RouteResult::PluginNotFound { plugin_name: name.to_string() }
+                }
             }
         }
     }

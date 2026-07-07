@@ -1,8 +1,9 @@
 use argon2::Argon2;
 use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
-    ChaCha20Poly1305, Key, Nonce,
+    ChaCha20Poly1305, Nonce,
 };
+pub use chacha20poly1305::Key;
 use thiserror::Error;
 
 const SALT: &[u8] = b"yse-argon2-salt-v1";
