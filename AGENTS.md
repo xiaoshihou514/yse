@@ -36,6 +36,7 @@ Cargo workspace (resolver = "2")
 ```
 
 Key source:
+
 - `desktop/src/lib.rs` — Tauri Builder, plugin registration, temp runtime in .setup()
 - `desktop/src/commands.rs` — ~25 Tauri commands + YseState
 - `mobile/src/lib.rs` — bare builder, registers tauri-plugin-os + barcode-scanner (`#[cfg(mobile)]`)
@@ -47,12 +48,14 @@ Key source:
 ## Critical gotchas
 
 ### Setup runtime
+
 - Tauri `.setup()` hook runs **before** Tokio runtime is ready. Use temporary
   `tokio::runtime::Runtime::new()` + `block_on` for one-time init (`desktop/src/lib.rs:46-49`).
 - Tasks spawned with `tokio::spawn` inside the temporary runtime are **cancelled** when
   `block_on` returns. Long-lived tasks MUST use Tauri's permanent runtime.
 
 ### IMAP
+
 - `imap::Session` is **not `Send`** — never hold across `.await`.
 - 163/Coremail/QQ Mail requires `ID ("name" "yse" "version" "1.0")` before SELECT INBOX
   (`session.run_command_and_check_ok(...)`, imap 3.0.0-alpha.15 native support).
@@ -60,6 +63,7 @@ Key source:
   QQ Mail rejects `UID SEARCH UID N:*`.
 
 ### Frontend
+
 - Tauri v2 has **no `__TAURI__` global** — always import from `@tauri-apps/api`.
 - `@` path alias → `src/` (vite.config.ts).
 - Theme stored in `localStorage` key `"yse-theme"` (one of `"light"`/`"dark"`/`"auto"`),
@@ -71,27 +75,33 @@ Key source:
   (`tauri.conf.json` in both `desktop/` and `mobile/`).
 
 ### Address format
+
 - All virtual addresses: `name#8char-hex@hostname`.
 - `identity::parse_address(addr)` → `(name, hash, hostname)`.
 - Per-contact sender hash persistent in `contact_hashes` SQLite table.
 
 ### Plugin lifecycle
+
 - **No auto-start on boot.** Plugins start on demand when a message arrives for a local address.
 - `SessionRegistry::route()` checks hostname match → hash→plugin_id → starts plugin if needed.
 - Crashed plugins auto-restart up to 3 times.
 
 ### SMTP
+
 - `ContentType` parsing: use `"text/plain".parse::<ContentType>()` (FromStr), NOT `Header::parse`.
 - SMTP envelope sender must match authenticated user.
 
 ### Encryption
+
 - Argon2id → 32B ChaCha20-Poly1305 key. Fixed salt `b"yse-argon2-salt-v1"`.
 - 12B random Nonce prefixed to ciphertext (split at index 12 on decrypt).
 
 ### SQLite
+
 - `dirs_next::data_dir()/yse/yse.db`. Tables: `contact_hashes`, `hidden_addresses`, `config`.
 
 ### Plugin system
+
 - Child process JSON-RPC over stdin/stdout. Plugin sends: `send`, `log`.
   Core sends: `message`, `config`, `shutdown`.
 - Plugins **outside** workspace.
@@ -109,6 +119,7 @@ Key source:
 ## Mobile (Android)
 
 ### Build flow
+
 - `just android-build` → `scripts/android-build.sh`:
   1. `rm -rf gen/android icons/android` — force fresh init (picks up plugin native code)
   2. `tauri android init` — generates Android project (must run BEFORE icon gen)
@@ -120,16 +131,19 @@ Key source:
   8. `zipalign` + `apksigner sign` with `mobile/yse-keystore.jks` (committed, persistent key)
 
 ### Signing
+
 - Keystore at `mobile/yse-keystore.jks` (RSA 2048, alias=upload, password in `keystore.password`).
 - Generated once on first build, committed to repo. All builds use same key → upgrades work.
 - If regenerated, commit both files.
 
 ### Capabilities (Tauri 2 permission model)
+
 - `mobile/capabilities/default.json` — `core:default` + `os:default` (common, all platforms).
 - `mobile/capabilities/mobile.json` — `barcode-scanner:default` (Android/iOS only, via `cargo tauri add barcode-scanner`).
 - `desktop/capabilities/default.json` — `core:default`, `shell:allow-open`, `dialog:default`, `os:default`.
 
 ### Barcode scanner (camera)
+
 - Only works on Android/iOS (Tauri plugin does not support desktop).
 - Dependency in `mobile/Cargo.toml` under `[target.'cfg(android/ios)'.dependencies]`.
 - Frontend: `scan({ formats: [Format.QRCode] })` — uses native scanner UI (no `windowed: true`).
@@ -137,21 +151,25 @@ Key source:
 - Plugin's AndroidManifest.xml auto-injects `CAMERA` + `VIBRATE` permissions.
 
 ### Gradle mirror (China only)
+
 - `~/.gradle/init.gradle` created by build script — overrides all repos with Aliyun mirrors.
 - Without this, `repo.maven.apache.org` fails with SSL cert mismatch (GFW interception).
 
 ## Desktop (Linux AppImage)
+
 - Requires: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`,
   `libjavascriptcoregtk-4.1-dev`, `libsoup-3.0-dev`.
 - `just build-appimage` → `target/release/bundle/appimage/*.AppImage`.
 
 ## CI / Release
+
 - GitHub Actions (`.github/workflows/build.yml`): 4 jobs — desktop, android, check, release.
 - Android job is extremely slow (~30mins). Don't wait for it.
 - Release job runs on push to main after other 3 succeed.
 - APK signing uses repo keystore (same key every build).
 
 ## Git conventions
+
 - Commit messages in Chinese, conventional-commits format: `fix:`, `feat:`, `refactor:`, `chore:`, `style:`.
 - AI-generated commits include `Co-authored-by: opencode <deepseek@opencode.com>`.
 - Author & committer: `xiaoshihou <xiaoshihou@tutamail.com>`.

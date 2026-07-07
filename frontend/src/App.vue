@@ -4,13 +4,26 @@
     <div v-if="!isMobile" class="titlebar" data-tauri-drag-region>
       <div class="titlebar-controls">
         <button class="titlebar-btn" id="titlebar-minimize" title="最小化">
-          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13H5v-2h14z"/></svg>
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="currentColor" d="M19 13H5v-2h14z" />
+          </svg>
         </button>
         <button class="titlebar-btn" id="titlebar-maximize" title="最大化">
-          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 4h16v16H4zm2 4v10h12V8z"/></svg>
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="currentColor" d="M4 4h16v16H4zm2 4v10h12V8z" />
+          </svg>
         </button>
-        <button class="titlebar-btn titlebar-btn-close" id="titlebar-close" title="关闭">
-          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M13.46 12L19 17.54V19h-1.46L12 13.46L6.46 19H5v-1.46L10.54 12L5 6.46V5h1.46L12 10.54L17.54 5H19v1.46z"/></svg>
+        <button
+          class="titlebar-btn titlebar-btn-close"
+          id="titlebar-close"
+          title="关闭"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path
+              fill="currentColor"
+              d="M13.46 12L19 17.54V19h-1.46L12 13.46L6.46 19H5v-1.46L10.54 12L5 6.46V5h1.46L12 10.54L17.54 5H19v1.46z"
+            />
+          </svg>
         </button>
       </div>
     </div>
@@ -59,7 +72,10 @@ import { trace, debug, info, warn, error } from "@tauri-apps/plugin-log";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import appRouter, { setConfigState } from "@/router";
 import {
-  ChatIcon, ExtensionIcon, SettingIcon, UserIcon,
+  ChatIcon,
+  ExtensionIcon,
+  SettingIcon,
+  UserIcon,
 } from "tdesign-icons-vue-next";
 
 const router = useRouter();
@@ -80,7 +96,10 @@ function navigate(val: string) {
   router.push(val);
 }
 
-function forwardConsole(fnName: "log" | "debug" | "info" | "warn" | "error", logger: (message: string) => Promise<void>) {
+function forwardConsole(
+  fnName: "log" | "debug" | "info" | "warn" | "error",
+  logger: (message: string) => Promise<void>,
+) {
   const original = console[fnName];
   console[fnName] = (message: unknown) => {
     original(message);
@@ -124,18 +143,36 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.app-layout { height: 100vh; display: flex; flex-direction: column; }
-.app-layout > .t-layout { flex: 1; min-height: 0; display: flex; }
+.app-layout {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.app-layout > .t-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
 .app-aside {
-  display: flex !important; flex-direction: column; align-items: center;
-  width: 64px !important; min-width: 64px !important; padding: 8px 0;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  width: 64px !important;
+  min-width: 64px !important;
+  padding: 8px 0;
   border-right: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
 }
 .aside-logo {
-  width: 44px; height: 44px; margin-bottom: 24px; margin-top: 8px;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.6); border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 24px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 10px;
 }
 
 /* ── Custom titlebar ── */
@@ -165,21 +202,54 @@ onMounted(async () => {
   background: transparent;
   color: var(--td-text-color-secondary);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
-.titlebar-btn:hover { background: var(--td-bg-color-secondarycontainer); color: var(--td-text-color-primary); }
-.titlebar-btn-close:hover { background: var(--td-error-color); color: #fff; }
-.logo-img { width: 32px; height: 32px; }
-.aside-nav { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.titlebar-btn:hover {
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-primary);
+}
+.titlebar-btn-close:hover {
+  background: var(--td-error-color);
+  color: #fff;
+}
+.logo-img {
+  width: 32px;
+  height: 32px;
+}
+.aside-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .nav-item {
-  width: 44px; height: 44px; display: flex; align-items: center;
-  justify-content: center; border-radius: 8px; cursor: pointer;
-  color: var(--td-text-color-secondary); font-size: 22px;
-  transition: background 0.15s, color 0.15s;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--td-text-color-secondary);
+  font-size: 22px;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
-.nav-item:hover { background: var(--td-bg-color-secondarycontainer); color: var(--td-text-color-primary); }
-.nav-item.active { background: var(--td-brand-color-light); color: var(--td-brand-color); }
-.main-content { overflow-y: auto; background: var(--td-bg-color-page); }
+.nav-item:hover {
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-primary);
+}
+.nav-item.active {
+  background: var(--td-brand-color-light);
+  color: var(--td-brand-color);
+}
+.main-content {
+  overflow-y: auto;
+  background: var(--td-bg-color-page);
+}
 
 .mobile-tab-bar {
   position: fixed;

@@ -1,5 +1,12 @@
 import { parseStdin, sendResponse, sendList, sendLog } from "./yse.js";
-import { initBot, getUserState, sendPrompt, sendTuiPrompt, listSessions, getSessionInfo } from "./opencode.js";
+import {
+  initBot,
+  getUserState,
+  sendPrompt,
+  sendTuiPrompt,
+  listSessions,
+  getSessionInfo,
+} from "./opencode.js";
 
 const HELP = `可用命令：
 发消息 → 发送给 AI（需先用 /select 或 /new 选择会话）
@@ -25,7 +32,10 @@ async function main() {
     state = await initBot();
   } catch (e: any) {
     sendLog("error", `failed to connect to OpenCode: ${e.message ?? e}`);
-    sendLog("info", "opencode-bot running in degraded mode — OpenCode unavailable");
+    sendLog(
+      "info",
+      "opencode-bot running in degraded mode — OpenCode unavailable",
+    );
     state = null as any;
   }
 
@@ -47,7 +57,10 @@ async function main() {
       if (text === "/help") {
         sendResponse(from, HELP);
       } else {
-        sendResponse(from, "OpenCode 未连接，无法处理。输入 /help 查看可用命令。");
+        sendResponse(
+          from,
+          "OpenCode 未连接，无法处理。输入 /help 查看可用命令。",
+        );
       }
       continue;
     }
@@ -78,7 +91,13 @@ async function main() {
 
 // ---- Command handlers ----
 
-async function handleCommand(state: any, from: string, us: any, cmd: string, arg: string) {
+async function handleCommand(
+  state: any,
+  from: string,
+  us: any,
+  cmd: string,
+  arg: string,
+) {
   switch (cmd) {
     case "help":
       sendResponse(from, HELP);
@@ -89,7 +108,10 @@ async function handleCommand(state: any, from: string, us: any, cmd: string, arg
       break;
 
     case "select":
-      if (!arg) { sendResponse(from, "用法: /select <session_id>"); break; }
+      if (!arg) {
+        sendResponse(from, "用法: /select <session_id>");
+        break;
+      }
       us.sessionId = arg;
       us.mode = "sdk";
       const info = await getSessionInfo(state.client, arg);
@@ -102,12 +124,18 @@ async function handleCommand(state: any, from: string, us: any, cmd: string, arg
       break;
 
     case "info":
-      if (!us.sessionId) { sendResponse(from, "未选择会话"); break; }
+      if (!us.sessionId) {
+        sendResponse(from, "未选择会话");
+        break;
+      }
       sendResponse(from, await getSessionInfo(state.client, us.sessionId));
       break;
 
     case "abort":
-      if (!us.sessionId) { sendResponse(from, "未选择会话"); break; }
+      if (!us.sessionId) {
+        sendResponse(from, "未选择会话");
+        break;
+      }
       try {
         await state.client.session.abort({ path: { id: us.sessionId } });
         sendResponse(from, "✅ 已中止");
@@ -117,7 +145,10 @@ async function handleCommand(state: any, from: string, us: any, cmd: string, arg
       break;
 
     case "undo":
-      if (!us.sessionId) { sendResponse(from, "未选择会话"); break; }
+      if (!us.sessionId) {
+        sendResponse(from, "未选择会话");
+        break;
+      }
       try {
         await state.client.session.revert({ path: { id: us.sessionId } });
         sendResponse(from, "✅ 已撤回上一条消息");
@@ -127,7 +158,10 @@ async function handleCommand(state: any, from: string, us: any, cmd: string, arg
       break;
 
     case "redo":
-      if (!us.sessionId) { sendResponse(from, "未选择会话"); break; }
+      if (!us.sessionId) {
+        sendResponse(from, "未选择会话");
+        break;
+      }
       try {
         await state.client.session.unrevert({ path: { id: us.sessionId } });
         sendResponse(from, "✅ 已恢复撤回");
@@ -151,7 +185,10 @@ async function handleCommand(state: any, from: string, us: any, cmd: string, arg
       break;
 
     case "tui-status":
-      sendResponse(from, `TUI 模式: ${us.mode === "tui" ? "已连接" : "未连接"}\n会话: ${us.sessionId ?? "未选择"}`);
+      sendResponse(
+        from,
+        `TUI 模式: ${us.mode === "tui" ? "已连接" : "未连接"}\n会话: ${us.sessionId ?? "未选择"}`,
+      );
       break;
 
     case "project":
@@ -159,10 +196,16 @@ async function handleCommand(state: any, from: string, us: any, cmd: string, arg
       break;
 
     case "dir":
-      if (!arg) { sendResponse(from, "用法: /dir <path>"); break; }
+      if (!arg) {
+        sendResponse(from, "用法: /dir <path>");
+        break;
+      }
       state.projectDir = arg;
       us.sessionId = null;
-      sendResponse(from, `✅ 已切换到目录: ${arg}\n请用 /new 或 /select 选择会话`);
+      sendResponse(
+        from,
+        `✅ 已切换到目录: ${arg}\n请用 /new 或 /select 选择会话`,
+      );
       break;
 
     default:
@@ -192,17 +235,25 @@ async function cmdNew(state: any, from: string, us: any, title: string) {
       return;
     }
     us.sessionId = sessionId;
-    sendResponse(from, `✅ 已新建会话「${title || "(无标题)"}」\nID: ${sessionId}\n现在可以发送消息了`);
+    sendResponse(
+      from,
+      `✅ 已新建会话「${title || "(无标题)"}」\nID: ${sessionId}\n现在可以发送消息了`,
+    );
   } catch (e: any) {
     sendResponse(from, `创建会话失败: ${e.message ?? e}`);
   }
 }
 
 async function cmdMessages(state: any, from: string, us: any, arg: string) {
-  if (!us.sessionId) { sendResponse(from, "未选择会话"); return; }
+  if (!us.sessionId) {
+    sendResponse(from, "未选择会话");
+    return;
+  }
   const limit = parseInt(arg, 10) || 5;
   try {
-    const result = await state.client.session.messages({ path: { id: us.sessionId } } as any);
+    const result = await state.client.session.messages({
+      path: { id: us.sessionId },
+    } as any);
     const msgs = (result.data as any[]) ?? [];
     const recent = msgs.slice(-limit);
     if (recent.length === 0) {
@@ -211,7 +262,12 @@ async function cmdMessages(state: any, from: string, us: any, arg: string) {
     }
     const lines = recent.map((m: any, i: number) => {
       const role = m.info?.role ?? "?";
-      const text = m.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join(" ").slice(0, 200) ?? "";
+      const text =
+        m.parts
+          ?.filter((p: any) => p.type === "text")
+          .map((p: any) => p.text)
+          .join(" ")
+          .slice(0, 200) ?? "";
       return `${i + 1}. [${role}] ${text}`;
     });
     sendResponse(from, lines.join("\n\n"));
@@ -224,7 +280,10 @@ async function cmdProject(state: any, from: string) {
   try {
     const p = await state.client.project.current();
     const data = p.data as any;
-    if (!data) { sendResponse(from, "未获取到项目信息"); return; }
+    if (!data) {
+      sendResponse(from, "未获取到项目信息");
+      return;
+    }
     const lines: string[] = [];
     if (data.name) lines.push(`📁 项目: ${data.name}`);
     if (data.directory) lines.push(`📂 目录: ${data.directory}`);

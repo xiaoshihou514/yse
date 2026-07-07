@@ -14,7 +14,12 @@ const router = createRouter({
     { path: "/contacts", name: "contacts", component: ContactsView },
     { path: "/config", name: "config", component: ConfigView },
     { path: "/welcome", name: "welcome", component: WelcomeView },
-    { path: "/scan", name: "scan", component: ScanView, meta: { fullscreen: true } },
+    {
+      path: "/scan",
+      name: "scan",
+      component: ScanView,
+      meta: { fullscreen: true },
+    },
   ],
 });
 
@@ -27,7 +32,8 @@ export function setConfigState(has: boolean) {
 }
 
 router.beforeEach((to) => {
-  if (to.name === "welcome" || to.name === "config" || to.name === "scan") return true;
+  if (to.name === "welcome" || to.name === "config" || to.name === "scan")
+    return true;
   if (!_configChecked) return true; // still loading
   if (!_hasConfig) return { name: "welcome" };
   return true;

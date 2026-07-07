@@ -3,7 +3,10 @@
 // These are typed stubs; actual Rust commands to be implemented in desktop/mobile.
 // ---------------------------------------------------------------------------
 
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+async function invoke<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(cmd, args);
 }
@@ -73,7 +76,12 @@ export interface LogEntry {
 
 // --- Tauri commands -------------------------------------------------------
 
-export async function sendMessage(to: string, text: string, files?: string[], meta?: Record<string, unknown>): Promise<void> {
+export async function sendMessage(
+  to: string,
+  text: string,
+  files?: string[],
+  meta?: Record<string, unknown>,
+): Promise<void> {
   return invoke("send_message", { to, text, files, meta });
 }
 
@@ -117,7 +125,12 @@ export async function getLogs(limit = 100): Promise<LogEntry[]> {
   return invoke("get_logs", { limit });
 }
 
-export async function testEmail(server: string, port: number, username: string, password: string): Promise<string> {
+export async function testEmail(
+  server: string,
+  port: number,
+  username: string,
+  password: string,
+): Promise<string> {
   return invoke("test_email", { server, port, username, password });
 }
 
@@ -133,7 +146,10 @@ export async function getHostname(): Promise<string> {
   return invoke("get_hostname");
 }
 
-export async function toggleHideConversation(address: string, hidden: boolean): Promise<void> {
+export async function toggleHideConversation(
+  address: string,
+  hidden: boolean,
+): Promise<void> {
   return invoke("toggle_hide_conversation", { address, hidden });
 }
 

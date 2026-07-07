@@ -6,13 +6,21 @@
           <t-input v-model="form.email_imap_server" placeholder="imap.qq.com" />
         </t-form-item>
         <t-form-item label="IMAP 端口" name="email_imap_port">
-          <t-input-number v-model="form.email_imap_port" :min="1" :max="65535" />
+          <t-input-number
+            v-model="form.email_imap_port"
+            :min="1"
+            :max="65535"
+          />
         </t-form-item>
         <t-form-item label="SMTP 服务器" name="email_smtp_server">
           <t-input v-model="form.email_smtp_server" placeholder="smtp.qq.com" />
         </t-form-item>
         <t-form-item label="SMTP 端口" name="email_smtp_port">
-          <t-input-number v-model="form.email_smtp_port" :min="1" :max="65535" />
+          <t-input-number
+            v-model="form.email_smtp_port"
+            :min="1"
+            :max="65535"
+          />
         </t-form-item>
         <t-form-item label="邮箱地址" name="email_username">
           <t-input v-model="form.email_username" placeholder="user@qq.com" />
@@ -21,18 +29,36 @@
           <t-input v-model="form.email_password" type="password" />
         </t-form-item>
         <t-form-item label="我的显示名称">
-          <t-input v-model="form.own_address" placeholder="你的名称 (用于发件地址)" />
-          <template #help>本机主机名: {{ store.localHostname || '加载中...' }}</template>
+          <t-input
+            v-model="form.own_address"
+            placeholder="你的名称 (用于发件地址)"
+          />
+          <template #help
+            >本机主机名: {{ store.localHostname || "加载中..." }}</template
+          >
         </t-form-item>
         <t-form-item label="加密密码">
-          <t-input v-model="form.crypto_password" type="password" placeholder="用于消息加密，更改后保存即可生效" />
+          <t-input
+            v-model="form.crypto_password"
+            type="password"
+            placeholder="用于消息加密，更改后保存即可生效"
+          />
         </t-form-item>
         <t-form-item>
           <t-space>
-            <t-button theme="primary" type="submit" :loading="saving">保存</t-button>
+            <t-button theme="primary" type="submit" :loading="saving"
+              >保存</t-button
+            >
             <t-button theme="default" @click="handleTest">测试连接</t-button>
-            <t-button theme="default" variant="outline" @click="showExportQr">导出二维码</t-button>
-            <t-button theme="default" variant="outline" @click="handleImportQr">{{ isMobilePlatform ? '扫码导入' : '导入配置' }}</t-button>
+            <t-button theme="default" variant="outline" @click="showExportQr"
+              >导出二维码</t-button
+            >
+            <t-button
+              theme="default"
+              variant="outline"
+              @click="handleImportQr"
+              >{{ isMobilePlatform ? "扫码导入" : "导入配置" }}</t-button
+            >
           </t-space>
         </t-form-item>
       </t-form>
@@ -46,7 +72,12 @@
       width="360px"
     >
       <div class="qr-center">
-        <img v-if="qrDataUrl" :src="qrDataUrl" alt="配置二维码" class="qr-img" />
+        <img
+          v-if="qrDataUrl"
+          :src="qrDataUrl"
+          alt="配置二维码"
+          class="qr-img"
+        />
         <p v-else>生成中...</p>
         <p class="qr-hint">用另一台设备的盐水鹅扫描此二维码以导入配置</p>
       </div>
@@ -76,7 +107,14 @@
         </t-space>
       </template>
       <div class="log-container" ref="logContainer">
-        <div v-if="filteredLogs.length === 0" style="text-align: center; color: var(--td-text-color-placeholder); padding: 40px">
+        <div
+          v-if="filteredLogs.length === 0"
+          style="
+            text-align: center;
+            color: var(--td-text-color-placeholder);
+            padding: 40px;
+          "
+        >
           暂无日志
         </div>
         <div
@@ -85,7 +123,9 @@
           :class="['log-entry', `log-${entry.level}`]"
         >
           <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
-          <t-tag :theme="tagTheme(entry.level)" size="small">{{ entry.level.toUpperCase() }}</t-tag>
+          <t-tag :theme="tagTheme(entry.level)" size="small">{{
+            entry.level.toUpperCase()
+          }}</t-tag>
           <span class="log-msg">{{ entry.message }}</span>
         </div>
       </div>
@@ -94,7 +134,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick, watch, onUnmounted } from "vue";
+import {
+  ref,
+  reactive,
+  computed,
+  onMounted,
+  nextTick,
+  watch,
+  onUnmounted,
+} from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { setConfigState } from "@/router";
 import { MessagePlugin } from "tdesign-vue-next";
@@ -171,7 +219,10 @@ async function showExportQr() {
   await nextTick();
   try {
     const QRCode = (await import("qrcode")).default;
-    const data = JSON.stringify({ ...form, plugin_mappings: store.config?.plugin_mappings ?? [] });
+    const data = JSON.stringify({
+      ...form,
+      plugin_mappings: store.config?.plugin_mappings ?? [],
+    });
     qrDataUrl.value = await QRCode.toDataURL(data, {
       width: 280,
       margin: 2,
@@ -205,7 +256,9 @@ async function uploadQrImage() {
         const result = await tempCode.scanFile(file, false);
         applyQrConfig(result);
       } finally {
-        try { await tempCode.clear(); } catch {}
+        try {
+          await tempCode.clear();
+        } catch {}
       }
     };
     input.click();
@@ -217,9 +270,11 @@ async function uploadQrImage() {
 function applyQrConfig(json: string) {
   try {
     const cfg = JSON.parse(json);
-    if (cfg.email_imap_server != null) form.email_imap_server = cfg.email_imap_server;
+    if (cfg.email_imap_server != null)
+      form.email_imap_server = cfg.email_imap_server;
     if (cfg.email_imap_port != null) form.email_imap_port = cfg.email_imap_port;
-    if (cfg.email_smtp_server != null) form.email_smtp_server = cfg.email_smtp_server;
+    if (cfg.email_smtp_server != null)
+      form.email_smtp_server = cfg.email_smtp_server;
     if (cfg.email_smtp_port != null) form.email_smtp_port = cfg.email_smtp_port;
     if (cfg.email_username) form.email_username = cfg.email_username;
     if (cfg.email_password) form.email_password = cfg.email_password;
@@ -254,7 +309,10 @@ const levelOptions = [
 ];
 
 const levelPriority: Record<string, number> = {
-  debug: 0, info: 1, warn: 2, error: 3,
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
 };
 
 const filteredLogs = computed(() => {
@@ -268,10 +326,14 @@ function formatTime(ts: number) {
 
 function tagTheme(level: string) {
   switch (level) {
-    case "error": return "danger";
-    case "warn": return "warning";
-    case "info": return "primary";
-    default: return "default";
+    case "error":
+      return "danger";
+    case "warn":
+      return "warning";
+    case "info":
+      return "primary";
+    default:
+      return "default";
   }
 }
 
@@ -352,15 +414,22 @@ onMounted(async () => {
   text-align: left;
 }
 .qr-center {
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 .qr-img {
-  width: 240px; height: 240px;
+  width: 240px;
+  height: 240px;
   border: 1px solid var(--td-component-stroke);
-  border-radius: 8px; padding: 8px;
+  border-radius: 8px;
+  padding: 8px;
 }
 .qr-hint {
-  font-size: 13px; color: var(--td-text-color-placeholder); text-align: center;
+  font-size: 13px;
+  color: var(--td-text-color-placeholder);
+  text-align: center;
 }
 
 .log-container {

@@ -12,7 +12,10 @@ import router from "./router";
 const theme = localStorage.getItem("yse-theme") || "auto";
 if (theme === "dark") {
   document.documentElement.setAttribute("theme-mode", "dark");
-} else if (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+} else if (
+  theme === "auto" &&
+  window.matchMedia("(prefers-color-scheme: dark)").matches
+) {
   document.documentElement.setAttribute("theme-mode", "dark");
 }
 

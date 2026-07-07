@@ -12,22 +12,44 @@
           <span>{{ displayAddress(row) }}</span>
         </template>
         <template #plugin_id="{ row }">
-          <span>{{ pluginName(row.plugin_id) || '—' }}</span>
+          <span>{{ pluginName(row.plugin_id) || "—" }}</span>
         </template>
         <template #operation="{ row }">
-          <t-popconfirm content="确定删除此联系人？" @confirm="handleDelete(row)">
+          <t-popconfirm
+            content="确定删除此联系人？"
+            @confirm="handleDelete(row)"
+          >
             <t-button theme="danger" variant="text">删除</t-button>
           </t-popconfirm>
         </template>
       </t-table>
       <t-divider />
       <t-space>
-        <t-input v-model="newName" placeholder="名称" style="width: 200px" @keydown.enter="handleAdd" />
-        <t-input v-model="newHostname" placeholder="目标主机" style="width: 160px" @keydown.enter="handleAdd" />
-        <t-input v-model="newPlugin" placeholder="绑定插件 (可选)" style="width: 200px" @keydown.enter="handleAdd" />
+        <t-input
+          v-model="newName"
+          placeholder="名称"
+          style="width: 200px"
+          @keydown.enter="handleAdd"
+        />
+        <t-input
+          v-model="newHostname"
+          placeholder="目标主机"
+          style="width: 160px"
+          @keydown.enter="handleAdd"
+        />
+        <t-input
+          v-model="newPlugin"
+          placeholder="绑定插件 (可选)"
+          style="width: 200px"
+          @keydown.enter="handleAdd"
+        />
         <t-button @click="handleAdd">添加联系人</t-button>
       </t-space>
-      <div class="form-hint">地址格式：<code>{{ newName || '名称' }}#8位随机码@{{ newHostname || '主机名' }}</code></div>
+      <div class="form-hint">
+        地址格式：<code
+          >{{ newName || "名称" }}#8位随机码@{{ newHostname || "主机名" }}</code
+        >
+      </div>
     </t-card>
 
     <!-- Mobile: card list -->
@@ -36,16 +58,27 @@
         <h2 class="mobile-title">联系人管理</h2>
       </div>
       <div class="contact-cards">
-        <div v-for="m in displayMappings" :key="m.virtual_addr" class="contact-card">
+        <div
+          v-for="m in displayMappings"
+          :key="m.virtual_addr"
+          class="contact-card"
+        >
           <div class="card-top">
             <div class="card-info">
               <span class="card-addr">{{ displayAddress(m) }}</span>
-              <span v-if="m.plugin_id" class="card-plugin">绑定: {{ pluginName(m.plugin_id) }}</span>
+              <span v-if="m.plugin_id" class="card-plugin"
+                >绑定: {{ pluginName(m.plugin_id) }}</span
+              >
             </div>
           </div>
           <div class="card-actions">
-            <t-popconfirm content="确定删除此联系人？" @confirm="handleDelete(m)">
-              <t-button theme="danger" variant="text" size="small">删除</t-button>
+            <t-popconfirm
+              content="确定删除此联系人？"
+              @confirm="handleDelete(m)"
+            >
+              <t-button theme="danger" variant="text" size="small"
+                >删除</t-button
+              >
             </t-popconfirm>
           </div>
         </div>
@@ -56,31 +89,52 @@
         <template #icon><span class="fab-icon">+</span></template>
       </t-button>
 
-      <t-dialog v-model:visible="showAdd" header="添加联系人" :footer="false" width="360px" :close-on-overlay-click="true">
+      <t-dialog
+        v-model:visible="showAdd"
+        header="添加联系人"
+        :footer="false"
+        width="360px"
+        :close-on-overlay-click="true"
+      >
         <t-form>
           <t-form-item label="名称">
             <t-input v-model="newName" placeholder="如 echo-bot" />
           </t-form-item>
           <t-form-item label="主机名">
             <t-input v-model="newHostname" placeholder="目标主机" />
-            <template #help>已知主机: {{ store.hostnames.join(', ') || '无' }}</template>
+            <template #help
+              >已知主机: {{ store.hostnames.join(", ") || "无" }}</template
+            >
           </t-form-item>
           <t-form-item label="绑定插件">
             <t-input v-model="newPlugin" placeholder="可选" />
-            <template #help>已知插件: {{ store.plugins.map(p => p.name).join(', ') || '无' }}</template>
+            <template #help
+              >已知插件:
+              {{
+                store.plugins.map((p) => p.name).join(", ") || "无"
+              }}</template
+            >
           </t-form-item>
           <t-form-item>
-              <div class="addr-preview">地址: <code>{{ newName || '名称' }}#8位随机码@{{ newHostname || '主机名' }}</code></div>
+            <div class="addr-preview">
+              地址:
+              <code
+                >{{ newName || "名称" }}#8位随机码@{{
+                  newHostname || "主机名"
+                }}</code
+              >
+            </div>
           </t-form-item>
           <t-form-item>
             <t-button block @click="handleAdd">添加</t-button>
           </t-form-item>
           <t-form-item v-if="isMobilePlatform">
-            <t-button variant="outline" block @click="startContactScan">扫一扫添加</t-button>
+            <t-button variant="outline" block @click="startContactScan"
+              >扫一扫添加</t-button
+            >
           </t-form-item>
         </t-form>
       </t-dialog>
-
     </template>
   </div>
 </template>
@@ -108,15 +162,21 @@ async function startContactScan() {
   router.push("/scan?type=contact");
 }
 
-watch([() => route.query.scanName, () => route.query.scanHostname], ([name, hostname]) => {
-  if (name) {
-    newName.value = hostname ? `${name as string}-${hostname as string}` : name as string;
-    if (hostname) newHostname.value = hostname as string;
-    newPlugin.value = name as string;
-    showAdd.value = true;
-    router.replace({ query: {} });
-  }
-}, { immediate: true });
+watch(
+  [() => route.query.scanName, () => route.query.scanHostname],
+  ([name, hostname]) => {
+    if (name) {
+      newName.value = hostname
+        ? `${name as string}-${hostname as string}`
+        : (name as string);
+      if (hostname) newHostname.value = hostname as string;
+      newPlugin.value = name as string;
+      showAdd.value = true;
+      router.replace({ query: {} });
+    }
+  },
+  { immediate: true },
+);
 
 function parseAddress(addr: string) {
   const at = addr.lastIndexOf("@");
@@ -160,7 +220,8 @@ const columns = [
 
 async function scanContactQr() {
   try {
-    const { scan, Format, requestPermissions, checkPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
+    const { scan, Format, requestPermissions, checkPermissions } =
+      await import("@tauri-apps/plugin-barcode-scanner");
     const perm = await checkPermissions();
     if (perm !== "granted") {
       const result = await requestPermissions();
@@ -169,7 +230,11 @@ async function scanContactQr() {
         return;
       }
     }
-    const result = await scan({ windowed: true, formats: [Format.QRCode], cameraDirection: "back" });
+    const result = await scan({
+      windowed: true,
+      formats: [Format.QRCode],
+      cameraDirection: "back",
+    });
     const data = JSON.parse(result.content);
     // QR encodes { name: "插件名", hostname: "设备名" }
     if (data.name) newPlugin.value = data.name;
@@ -180,7 +245,10 @@ async function scanContactQr() {
   }
 }
 
-function displayAddress(row: { virtual_addr: string; _parsed: ReturnType<typeof parseAddress> }) {
+function displayAddress(row: {
+  virtual_addr: string;
+  _parsed: ReturnType<typeof parseAddress>;
+}) {
   const p = row._parsed;
   if (p.hostname) return `${p.name}@${p.hostname}`;
   return p.name;
@@ -293,7 +361,7 @@ onMounted(async () => {
   background: var(--td-bg-color-container);
   border-radius: 10px;
   padding: 14px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .card-top {
   display: flex;
@@ -330,7 +398,7 @@ onMounted(async () => {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 .fab-icon {
   font-size: 24px;
@@ -338,12 +406,15 @@ onMounted(async () => {
 }
 
 .scanner-box-wrap {
-  position: fixed; left: 50%; top: 25vh;
-  width: 280px; height: 280px;
+  position: fixed;
+  left: 50%;
+  top: 25vh;
+  width: 280px;
+  height: 280px;
   transform: translateX(-50%);
   border-radius: 12px;
   background: transparent !important;
-  box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
   pointer-events: auto;
 }
 
@@ -352,11 +423,15 @@ onMounted(async () => {
     bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
   .scanner-box-wrap {
-    width: calc(100vw - 64px); height: calc(100vw - 64px);
-    max-width: 300px; max-height: 300px;
+    width: calc(100vw - 64px);
+    height: calc(100vw - 64px);
+    max-width: 300px;
+    max-height: 300px;
   }
 }
 @media (min-width: 768px) {
-  .contacts-page .t-card { margin: 16px; }
+  .contacts-page .t-card {
+    margin: 16px;
+  }
 }
 </style>

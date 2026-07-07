@@ -4,7 +4,9 @@
       <div class="progress-fill" :style="{ width: pct + '%' }"></div>
     </div>
     <div class="progress-meta">
-      <span class="progress-status" v-if="component.status">{{ component.status }}</span>
+      <span class="progress-status" v-if="component.status">{{
+        component.status
+      }}</span>
       <span class="progress-pct">{{ pct }}%</span>
     </div>
   </div>
@@ -25,7 +27,9 @@ const pct = computed(() => {
 
 <style scoped>
 .progress-wrap {
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .progress-bar {
   height: 8px;
@@ -40,9 +44,15 @@ const pct = computed(() => {
   transition: width 0.4s ease;
 }
 .progress-meta {
-  display: flex; justify-content: space-between;
+  display: flex;
+  justify-content: space-between;
   font-size: 12px;
 }
-.progress-status { color: var(--td-text-color-placeholder); }
-.progress-pct { color: var(--td-text-color-primary); font-weight: 500; }
+.progress-status {
+  color: var(--td-text-color-placeholder);
+}
+.progress-pct {
+  color: var(--td-text-color-primary);
+  font-weight: 500;
+}
 </style>

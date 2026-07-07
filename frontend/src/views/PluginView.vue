@@ -16,10 +16,18 @@
         </template>
         <template #operation="{ row }">
           <div class="row-actions">
-            <t-button size="small" variant="text" @click="showPluginQr(row)" title="分享名片">
+            <t-button
+              size="small"
+              variant="text"
+              @click="showPluginQr(row)"
+              title="分享名片"
+            >
               <template #icon><QrcodeIcon /></template>
             </t-button>
-            <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(row)">
+            <t-popconfirm
+              content="确定删除此插件？"
+              @confirm="handleDelete(row)"
+            >
               <t-button theme="danger" variant="text" title="删除">
                 <template #icon><DeleteIcon /></template>
               </t-button>
@@ -30,7 +38,11 @@
       <t-divider />
       <t-space>
         <t-input v-model="newName" placeholder="插件名称" />
-        <t-input v-model="newExec" placeholder="可执行文件路径" style="width: 300px" />
+        <t-input
+          v-model="newExec"
+          placeholder="可执行文件路径"
+          style="width: 300px"
+        />
         <t-button variant="outline" @click="pickFile">选择文件</t-button>
         <t-button @click="handleAdd">添加</t-button>
       </t-space>
@@ -42,7 +54,11 @@
         <h2 class="mobile-title">插件管理</h2>
       </div>
       <div class="plugin-cards">
-        <div v-for="plugin in store.plugins" :key="plugin.id" class="plugin-card">
+        <div
+          v-for="plugin in store.plugins"
+          :key="plugin.id"
+          class="plugin-card"
+        >
           <div class="card-top">
             <div class="card-func">
               <span class="card-name">{{ plugin.name }}</span>
@@ -52,14 +68,29 @@
               :theme="procTag(procState(plugin.id))"
               size="small"
               variant="light"
-            >{{ procState(plugin.id) || '未启动' }}</t-tag>
+              >{{ procState(plugin.id) || "未启动" }}</t-tag
+            >
           </div>
           <div class="card-actions">
-            <t-button size="small" variant="outline" @click="showPluginQr(plugin)" title="分享名片">
+            <t-button
+              size="small"
+              variant="outline"
+              @click="showPluginQr(plugin)"
+              title="分享名片"
+            >
               <template #icon><QrcodeIcon /></template>
             </t-button>
-            <t-popconfirm content="确定删除此插件？" @confirm="handleDelete(plugin)">
-              <t-button theme="danger" variant="text" size="small" @click.stop title="删除">
+            <t-popconfirm
+              content="确定删除此插件？"
+              @confirm="handleDelete(plugin)"
+            >
+              <t-button
+                theme="danger"
+                variant="text"
+                size="small"
+                @click.stop
+                title="删除"
+              >
                 <template #icon><DeleteIcon /></template>
               </t-button>
             </t-popconfirm>
@@ -74,7 +105,13 @@
       </t-button>
 
       <!-- Add dialog -->
-      <t-dialog v-model:visible="showAdd" header="添加插件" :footer="false" width="360px" :close-on-overlay-click="true">
+      <t-dialog
+        v-model:visible="showAdd"
+        header="添加插件"
+        :footer="false"
+        width="360px"
+        :close-on-overlay-click="true"
+      >
         <t-form>
           <t-form-item label="名称">
             <t-input v-model="newName" placeholder="如 echo-bot" />
@@ -82,7 +119,9 @@
           <t-form-item label="执行路径">
             <t-input v-model="newExec" placeholder="/usr/local/bin/echo-bot" />
             <template #help>
-              <t-button size="small" variant="outline" @click="pickFile">选择文件</t-button>
+              <t-button size="small" variant="outline" @click="pickFile"
+                >选择文件</t-button
+              >
             </template>
           </t-form-item>
           <t-form-item>
@@ -90,20 +129,33 @@
           </t-form-item>
         </t-form>
       </t-dialog>
-
     </template>
 
     <!-- Per-plugin QR overlay (outside v-if/v-else so it works on desktop too) -->
-    <div v-if="showPluginQrDialog" class="qr-overlay" @click="showPluginQrDialog = false">
+    <div
+      v-if="showPluginQrDialog"
+      class="qr-overlay"
+      @click="showPluginQrDialog = false"
+    >
       <div class="qr-card" @click.stop>
-        <div class="qr-card-header">{{ qrPlugin?.name ?? '' }}</div>
+        <div class="qr-card-header">{{ qrPlugin?.name ?? "" }}</div>
         <div class="qr-center">
-          <img v-if="pluginQrUrl" :src="pluginQrUrl" alt="二维码" class="qr-img" />
+          <img
+            v-if="pluginQrUrl"
+            :src="pluginQrUrl"
+            alt="二维码"
+            class="qr-img"
+          />
           <p v-else>生成中...</p>
           <p class="qr-hint">让对方扫描即可添加联系人</p>
           <p v-if="qrPluginAddr" class="qr-addr">{{ qrPluginAddr }}</p>
         </div>
-        <t-button size="small" style="margin-top:12px" @click="showPluginQrDialog = false">关闭</t-button>
+        <t-button
+          size="small"
+          style="margin-top: 12px"
+          @click="showPluginQrDialog = false"
+          >关闭</t-button
+        >
       </div>
     </div>
   </div>
@@ -139,7 +191,9 @@ function procState(pluginId: string): string | undefined {
   return store.processes.find((p) => p.id === pluginId)?.state;
 }
 
-function procTag(state: string | undefined): "success" | "warning" | "danger" | "default" {
+function procTag(
+  state: string | undefined,
+): "success" | "warning" | "danger" | "default" {
   if (state === "Running") return "success";
   if (state === "Starting" || state === "Stopping") return "warning";
   if (state?.startsWith("Crashed")) return "danger";
@@ -187,7 +241,9 @@ async function pickFile() {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({ multiple: false, title: "选择可执行文件" });
     if (selected) newExec.value = selected;
-  } catch { /* not in tauri */ }
+  } catch {
+    /* not in tauri */
+  }
 }
 
 async function showPluginQr(plugin: PluginConfig) {
@@ -248,7 +304,7 @@ onMounted(async () => {
   background: var(--td-bg-color-container);
   border-radius: 10px;
   padding: 14px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .card-top {
   display: flex;
@@ -292,15 +348,22 @@ onMounted(async () => {
   justify-content: flex-end;
 }
 .qr-center {
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 .qr-img {
-  width: 240px; height: 240px;
+  width: 240px;
+  height: 240px;
   border: 1px solid var(--td-component-stroke);
-  border-radius: 8px; padding: 8px;
+  border-radius: 8px;
+  padding: 8px;
 }
 .qr-hint {
-  font-size: 13px; color: var(--td-text-color-placeholder); text-align: center;
+  font-size: 13px;
+  color: var(--td-text-color-placeholder);
+  text-align: center;
 }
 .qr-addr {
   font-size: 12px;
@@ -309,19 +372,29 @@ onMounted(async () => {
   text-align: center;
 }
 .qr-overlay {
-  position: fixed; inset: 0; z-index: 9999;
-  background: rgba(0,0,0,0.5);
-  display: flex; align-items: center; justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 32px;
 }
 .qr-card {
   background: var(--td-bg-color-container);
-  border-radius: 12px; padding: 20px;
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  max-width: 320px; width: 100%;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  width: 100%;
 }
 .qr-card-header {
-  font-size: 16px; font-weight: 600;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--td-text-color-primary);
 }
 
@@ -333,7 +406,7 @@ onMounted(async () => {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 .fab-icon {
   font-size: 24px;
@@ -346,6 +419,8 @@ onMounted(async () => {
   }
 }
 @media (min-width: 768px) {
-  .plugin-page .t-card { margin: 16px; }
+  .plugin-page .t-card {
+    margin: 16px;
+  }
 }
 </style>

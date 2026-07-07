@@ -18,7 +18,12 @@
     <!-- Contact + Chat split -->
     <div class="chat-body">
       <!-- Contact panel -->
-      <div :class="['contact-panel', { 'contact-overlay': isMobile && selectedContact }]">
+      <div
+        :class="[
+          'contact-panel',
+          { 'contact-overlay': isMobile && selectedContact },
+        ]"
+      >
         <div class="panel-header">
           <span class="panel-title">联系人</span>
         </div>
@@ -35,7 +40,10 @@
           <div
             v-for="c in filteredContacts"
             :key="c.address"
-            :class="['contact-item', { active: selectedContact === c.address, hidden: c.hidden }]"
+            :class="[
+              'contact-item',
+              { active: selectedContact === c.address, hidden: c.hidden },
+            ]"
             @click="selectContact(c.address)"
             @contextmenu.prevent="onContactContext($event, c)"
             @touchstart.passive="onTouchStart($event, c)"
@@ -48,19 +56,26 @@
               <div class="contact-sub">{{ subLabel(c) }}</div>
             </div>
           </div>
-          <t-empty v-if="filteredContacts.length === 0" description="暂无联系人" />
+          <t-empty
+            v-if="filteredContacts.length === 0"
+            description="暂无联系人"
+          />
 
           <!-- Hidden section -->
           <div v-if="hiddenContacts.length > 0" class="hidden-section">
             <div class="hidden-toggle" @click="showHidden = !showHidden">
               <span>隐藏对话 ({{ hiddenContacts.length }})</span>
-              <span class="toggle-arrow">{{ showHidden ? '▼' : '▶' }}</span>
+              <span class="toggle-arrow">{{ showHidden ? "▼" : "▶" }}</span>
             </div>
             <template v-if="showHidden">
               <div
                 v-for="c in hiddenContacts"
                 :key="c.address"
-                :class="['contact-item', 'hidden-item', { active: selectedContact === c.address }]"
+                :class="[
+                  'contact-item',
+                  'hidden-item',
+                  { active: selectedContact === c.address },
+                ]"
                 @click="selectContact(c.address)"
                 @contextmenu.prevent="onContactContext($event, c)"
                 @touchstart.passive="onTouchStart($event, c)"
@@ -79,40 +94,76 @@
       </div>
 
       <!-- Chat area -->
-      <div :class="['chat-panel', { 'chat-full': isMobile }]" v-if="selectedContact || !isMobile">
+      <div
+        :class="['chat-panel', { 'chat-full': isMobile }]"
+        v-if="selectedContact || !isMobile"
+      >
         <template v-if="selectedContact">
           <div class="chat-topbar">
-            <span v-if="isMobile" class="back-btn" @click="selectedContact = ''">←</span>
+            <span v-if="isMobile" class="back-btn" @click="selectedContact = ''"
+              >←</span
+            >
             <span class="topbar-name">{{ displayName(selectedContact) }}</span>
           </div>
           <div class="message-area" ref="messagesContainer">
+            <div
+              v-for="msg in conversation"
+              :key="msg.id"
+              :class="[
+                'msg-row',
+                msg.from === ownAddress ? 'row-self' : 'row-other',
+              ]"
+            >
               <div
-                v-for="msg in conversation"
-                :key="msg.id"
-                :class="['msg-row', msg.from === ownAddress ? 'row-self' : 'row-other']"
+                class="msg-bubble"
+                @contextmenu.prevent="onBubbleContext($event, msg)"
               >
-                <div class="msg-bubble" @contextmenu.prevent="onBubbleContext($event, msg)">
-                  <div class="msg-text" v-if="msg.text" v-html="renderMarkdown(msg.text)"></div>
-                  <PluginComponent
-                    v-if="(msg.meta as PluginMeta)?.plugin?.component"
-                    :comp="(msg.meta as PluginMeta)!.plugin!.component!"
-                    @respond="(value: string) => handleComponentResponse(msg, value)"
-                  />
-                  <div class="msg-files" v-if="msg.files?.length">
-                    <t-link v-for="f in msg.files" :key="f.enc_name" theme="primary" size="small">
-                      {{ f.name }} ({{ formatSize(f.size) }})
-                    </t-link>
-                  </div>
-                  <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
+                <div
+                  class="msg-text"
+                  v-if="msg.text"
+                  v-html="renderMarkdown(msg.text)"
+                ></div>
+                <PluginComponent
+                  v-if="(msg.meta as PluginMeta)?.plugin?.component"
+                  :comp="(msg.meta as PluginMeta)!.plugin!.component!"
+                  @respond="
+                    (value: string) => handleComponentResponse(msg, value)
+                  "
+                />
+                <div class="msg-files" v-if="msg.files?.length">
+                  <t-link
+                    v-for="f in msg.files"
+                    :key="f.enc_name"
+                    theme="primary"
+                    size="small"
+                  >
+                    {{ f.name }} ({{ formatSize(f.size) }})
+                  </t-link>
                 </div>
-                <!-- Pending status indicators (outside bubble, left side for self) -->
-                <div v-if="(msg as any).__pending" class="msg-indicator">
-                  <span v-if="(msg as any).__status === 'sending'" class="msg-spinner"></span>
-                  <span v-else-if="(msg as any).__status === 'failed'" class="msg-retry" @click.stop="retryMessage(msg as any)" title="点击重试">⚠</span>
-                </div>
+                <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
               </div>
+              <!-- Pending status indicators (outside bubble, left side for self) -->
+              <div v-if="(msg as any).__pending" class="msg-indicator">
+                <span
+                  v-if="(msg as any).__status === 'sending'"
+                  class="msg-spinner"
+                ></span>
+                <span
+                  v-else-if="(msg as any).__status === 'failed'"
+                  class="msg-retry"
+                  @click.stop="retryMessage(msg as any)"
+                  title="点击重试"
+                  >⚠</span
+                >
+              </div>
+            </div>
           </div>
-          <div class="input-area">
+          <div
+            :class="[
+              'input-area',
+              { 'keyboard-open': isKeyboardOpen && isMobile },
+            ]"
+          >
             <textarea
               ref="inputRef"
               v-model="inputText"
@@ -121,9 +172,16 @@
               class="chat-textarea"
               @keydown="onInputKeydown"
               @focus="onInputFocus"
+              @blur="onInputBlur"
               @input="autoResizeTextarea"
             ></textarea>
-            <t-button class="send-btn" :disabled="!inputText.trim()" size="small" @click="handleSend">发送</t-button>
+            <t-button
+              class="send-btn"
+              :disabled="!inputText.trim()"
+              size="small"
+              @click="handleSend"
+              >发送</t-button
+            >
           </div>
         </template>
         <div class="chat-panel chat-empty" v-else>
@@ -138,11 +196,21 @@
       class="context-menu"
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
     >
-      <div class="ctx-item" @click="copyCtxText">{{ ctxContact ? '复制地址' : '复制' }}</div>
+      <div class="ctx-item" @click="copyCtxText">
+        {{ ctxContact ? "复制地址" : "复制" }}
+      </div>
       <div class="ctx-sep"></div>
-      <div class="ctx-item" @click="toggleCtxHide">{{ ctxContact?.hidden ? '取消隐藏' : '隐藏对话' }}</div>
+      <div class="ctx-item" @click="toggleCtxHide">
+        {{ ctxContact?.hidden ? "取消隐藏" : "隐藏对话" }}
+      </div>
       <div v-if="ctxContact" class="ctx-sep"></div>
-      <div v-if="ctxContact" class="ctx-item ctx-danger" @click="deleteCtxConversation">删除对话</div>
+      <div
+        v-if="ctxContact"
+        class="ctx-item ctx-danger"
+        @click="deleteCtxConversation"
+      >
+        删除对话
+      </div>
     </div>
   </div>
 </template>
@@ -167,7 +235,9 @@ function highlightCode(str: string, lang: string): string {
   if (lang && hljs.getLanguage(lang)) {
     try {
       return `<pre class="hljs"><code>${hljs.highlight(str, { language: lang, ignoreIllegals: true }).value}</code></pre>`;
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
   return `<pre class="hljs"><code>${escapeHtml(str)}</code></pre>`;
 }
@@ -213,7 +283,9 @@ const inputText = ref("");
 const selectedContact = ref("");
 
 // On mobile, track if a chat is open to hide the tab bar
-const chatOpenOnMobile = computed(() => isMobile.value && !!selectedContact.value);
+const chatOpenOnMobile = computed(
+  () => isMobile.value && !!selectedContact.value,
+);
 
 // Intercept hardware back — clear selected contact instead of navigating away
 function onPopState() {
@@ -230,7 +302,13 @@ onMounted(() => {
 onUnmounted(() => window.removeEventListener("popstate", onPopState));
 
 // Sync mobileChatOpen so App.vue can hide the tab bar
-watch(selectedContact, (v) => { mobileChatOpen.value = isMobile.value && !!v; }, { immediate: true });
+watch(
+  selectedContact,
+  (v) => {
+    mobileChatOpen.value = isMobile.value && !!v;
+  },
+  { immediate: true },
+);
 
 const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -239,16 +317,30 @@ const selectedKey = ref("all");
 const showHidden = ref(false);
 const ctxContact = ref<{ address: string; hidden: boolean } | null>(null);
 
+// Track keyboard visibility for mobile safe area handling
+const isKeyboardOpen = ref(false);
+
 const ctxMenu = ref<{ visible: boolean; x: number; y: number; text: string }>({
-  visible: false, x: 0, y: 0, text: "",
+  visible: false,
+  x: 0,
+  y: 0,
+  text: "",
 });
 
 function onBubbleContext(e: MouseEvent, msg: { text?: string }) {
-  ctxMenu.value = { visible: true, x: e.clientX, y: e.clientY, text: msg.text ?? "" };
+  ctxMenu.value = {
+    visible: true,
+    x: e.clientX,
+    y: e.clientY,
+    text: msg.text ?? "",
+  };
   ctxContact.value = null;
 }
 
-function onContactContext(e: MouseEvent, c: { address: string; hidden: boolean }) {
+function onContactContext(
+  e: MouseEvent,
+  c: { address: string; hidden: boolean },
+) {
   ctxMenu.value = { visible: true, x: e.clientX, y: e.clientY, text: "" };
   ctxContact.value = { address: c.address, hidden: c.hidden };
 }
@@ -288,7 +380,11 @@ function onTouchStart(e: TouchEvent, c: { address: string; hidden: boolean }) {
     if (longPressContact) {
       const touch = e.changedTouches?.[0] ?? e.touches[0];
       onContactContext(
-        { clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => {} } as MouseEvent,
+        {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          preventDefault: () => {},
+        } as MouseEvent,
         longPressContact,
       );
     }
@@ -378,13 +474,9 @@ const tabs = computed(() => {
   return result;
 });
 
-const visibleContacts = computed(() =>
-  contacts.value.filter((c) => !c.hidden),
-);
+const visibleContacts = computed(() => contacts.value.filter((c) => !c.hidden));
 
-const hiddenContacts = computed(() =>
-  contacts.value.filter((c) => c.hidden),
-);
+const hiddenContacts = computed(() => contacts.value.filter((c) => c.hidden));
 
 const filteredContacts = computed(() => {
   let list =
@@ -410,7 +502,13 @@ const conversation = computed(() => {
       (m.from === ownAddress.value && m.to === addr),
   );
   const pending = store.pendingMessages
-    .filter((p) => p.to === addr && (p.status === "sending" || p.status === "failed" || p.status === "sent"))
+    .filter(
+      (p) =>
+        p.to === addr &&
+        (p.status === "sending" ||
+          p.status === "failed" ||
+          p.status === "sent"),
+    )
     .map((p) => ({
       ...p,
       __pending: true,
@@ -422,9 +520,12 @@ const conversation = computed(() => {
     // Dedup sent pending: skip if a real message with same text+timestamp already exists
     .filter((p) => {
       if (p.__status !== "sent") return true;
-      return !real.some(r =>
-        r.text && p.text && r.text === p.text &&
-        Math.abs(r.timestamp - p.timestamp) < 5000
+      return !real.some(
+        (r) =>
+          r.text &&
+          p.text &&
+          r.text === p.text &&
+          Math.abs(r.timestamp - p.timestamp) < 5000,
       );
     });
   return [...real, ...pending];
@@ -451,17 +552,31 @@ function selectContact(addr: string) {
 }
 
 function onInputFocus() {
+  isKeyboardOpen.value = true;
   // On mobile, scroll the input area into view so it's not hidden by the keyboard
   setTimeout(() => {
-    document.querySelector(".input-area")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    document
+      .querySelector(".input-area")
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, 300);
+}
+
+function onInputBlur() {
+  // Small delay so the keyboard has time to start dismissing
+  setTimeout(() => {
+    isKeyboardOpen.value = false;
+  }, 150);
 }
 
 function formatTime(ts: number) {
   const d = new Date(ts);
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  if (sameDay)
+    return d.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }
 
@@ -497,7 +612,10 @@ async function handleSend() {
   }
 }
 
-async function handleComponentResponse(msg: { from: string; to: string }, value: string) {
+async function handleComponentResponse(
+  msg: { from: string; to: string },
+  value: string,
+) {
   const contact = msg.from === ownAddress.value ? msg.to : msg.from;
   await store.handlePluginResponse(contact, "", value);
   await scrollToBottom();
@@ -524,7 +642,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.chat-shell { display: flex; flex-direction: column; height: 100%; }
+.chat-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 
 /* ---- Hostname tabs ---- */
 .hostname-tabs {
@@ -540,7 +662,9 @@ onMounted(async () => {
   scrollbar-width: none;
   padding-bottom: 10px;
 }
-.tabs-track::-webkit-scrollbar { display: none; }
+.tabs-track::-webkit-scrollbar {
+  display: none;
+}
 .tab-chip {
   display: flex;
   align-items: center;
@@ -569,7 +693,9 @@ onMounted(async () => {
   color: #fff;
   box-shadow: 0 2px 8px rgba(var(--td-brand-color-rgb), 0.25);
 }
-.tab-label { line-height: 1; }
+.tab-label {
+  line-height: 1;
+}
 .tab-count {
   font-size: 11px;
   font-weight: 600;
@@ -580,150 +706,374 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.08);
+  background: rgba(0, 0, 0, 0.08);
   line-height: 1;
 }
 .tab-chip.active .tab-count {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* ---- Chat body ---- */
-.chat-body { flex: 1; display: flex; overflow: hidden; }
+.chat-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
 
 /* ---- Contact panel ---- */
 .contact-panel {
-  width: 280px; min-width: 280px;
-  display: flex; flex-direction: column;
+  width: 280px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
 }
 .panel-header {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px 12px 4px;
 }
-.panel-title { font-size: 16px; font-weight: 600; }
-.search-input { margin: 4px 8px; width: calc(100% - 16px); box-sizing: border-box; }
-.contact-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.panel-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.search-input {
+  margin: 4px 8px;
+  width: calc(100% - 16px);
+  box-sizing: border-box;
+}
+.contact-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
 .contact-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
   transition: background 0.1s;
 }
-.contact-item:hover { background: var(--td-bg-color-secondarycontainer); }
-.contact-item.active { background: var(--td-brand-color-light); }
-.contact-item.hidden { opacity: 0.5; }
-.contact-info { flex: 1; min-width: 0; }
+.contact-item:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.contact-item.active {
+  background: var(--td-brand-color-light);
+}
+.contact-item.hidden {
+  opacity: 0.5;
+}
+.contact-info {
+  flex: 1;
+  min-width: 0;
+}
 .contact-name {
-  font-size: 14px; font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .contact-sub {
-  font-size: 11px; color: var(--td-text-color-placeholder);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-top: 2px;
 }
 
-.hidden-section { border-top: 1px solid var(--td-component-stroke); margin-top: 4px; }
-.hidden-toggle {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--td-text-color-placeholder);
+.hidden-section {
+  border-top: 1px solid var(--td-component-stroke);
+  margin-top: 4px;
 }
-.hidden-toggle:hover { background: var(--td-bg-color-secondarycontainer); }
-.toggle-arrow { font-size: 10px; }
-.hidden-item { opacity: 0.55; }
-.hidden-item:hover { opacity: 0.8; }
+.hidden-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--td-text-color-placeholder);
+}
+.hidden-toggle:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.toggle-arrow {
+  font-size: 10px;
+}
+.hidden-item {
+  opacity: 0.55;
+}
+.hidden-item:hover {
+  opacity: 0.8;
+}
 
 /* ---- Chat panel ---- */
-.chat-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.chat-empty { align-items: center; justify-content: center; }
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat-empty {
+  align-items: center;
+  justify-content: center;
+}
 .chat-topbar {
-  padding: 12px 20px; font-size: 16px; font-weight: 600;
+  padding: 12px 20px;
+  font-size: 16px;
+  font-weight: 600;
   border-bottom: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
-  display: flex; align-items: center; gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.back-btn { font-size: 20px; cursor: pointer; line-height: 1; user-select: none; }
+.back-btn {
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  user-select: none;
+}
 .message-area {
-  flex: 1; overflow-y: auto;
+  flex: 1;
+  overflow-y: auto;
   padding: 16px 20px;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.msg-row { display: flex; align-items: flex-end; gap: 6px; }
-.row-self { flex-direction: row-reverse; }
-.row-other { justify-content: flex-start; }
+.msg-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.row-self {
+  flex-direction: row-reverse;
+}
+.row-other {
+  justify-content: flex-start;
+}
 .msg-bubble {
-  max-width: 70%; padding: 8px 12px;
-  border-radius: 12px; word-break: break-word; position: relative;
+  max-width: 70%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  word-break: break-word;
+  position: relative;
 }
 .row-self .msg-bubble {
-  background: var(--td-brand-color); color: #fff;
+  background: var(--td-brand-color);
+  color: #fff;
   border-bottom-right-radius: 4px;
 }
 .row-other .msg-bubble {
   background: var(--td-bg-color-secondarycontainer);
   border-bottom-left-radius: 4px;
 }
-.msg-text { font-size: 15px; line-height: 1.6; }
-.msg-text :deep(pre) { margin: 6px 0; padding: 8px 10px; border-radius: 6px; overflow-x: auto; font-size: 13px; background: var(--td-bg-color-component); }
-.msg-text :deep(code) { font-family: ui-monospace, monospace; font-size: 0.9em; }
-.msg-text :deep(p) { margin: 4px 0; }
-.msg-text :deep(ul), .msg-text :deep(ol) { margin: 4px 0; padding-left: 20px; }
-.msg-text :deep(table) { border-collapse: collapse; margin: 6px 0; font-size: 13px; width: 100%; }
-.msg-text :deep(th), .msg-text :deep(td) { border: 1px solid var(--td-component-stroke); padding: 4px 8px; text-align: left; }
-.msg-text :deep(th) { background: var(--td-bg-color-secondarycontainer); font-weight: 600; }
-.msg-text :deep(blockquote) { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--td-brand-color); color: var(--td-text-color-placeholder); }
-.msg-text :deep(a) { color: var(--td-brand-color); text-decoration: underline; }
-.msg-text :deep(img) { max-width: 100%; border-radius: 6px; }
-.msg-text :deep(input[type="checkbox"]) { margin-right: 4px; }
-.msg-files { margin-top: 4px; }
-.msg-time { font-size: 11px; margin-top: 4px; opacity: 0.65; text-align: right; }
-.msg-indicator { flex-shrink: 0; display: flex; align-items: center; padding-bottom: 8px; }
+.msg-text {
+  font-size: 15px;
+  line-height: 1.6;
+}
+.msg-text :deep(pre) {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 13px;
+  background: var(--td-bg-color-component);
+}
+.msg-text :deep(code) {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+.msg-text :deep(p) {
+  margin: 4px 0;
+}
+.msg-text :deep(ul),
+.msg-text :deep(ol) {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+.msg-text :deep(table) {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 13px;
+  width: 100%;
+}
+.msg-text :deep(th),
+.msg-text :deep(td) {
+  border: 1px solid var(--td-component-stroke);
+  padding: 4px 8px;
+  text-align: left;
+}
+.msg-text :deep(th) {
+  background: var(--td-bg-color-secondarycontainer);
+  font-weight: 600;
+}
+.msg-text :deep(blockquote) {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--td-brand-color);
+  color: var(--td-text-color-placeholder);
+}
+.msg-text :deep(a) {
+  color: var(--td-brand-color);
+  text-decoration: underline;
+}
+.msg-text :deep(img) {
+  max-width: 100%;
+  border-radius: 6px;
+}
+.msg-text :deep(input[type="checkbox"]) {
+  margin-right: 4px;
+}
+.msg-files {
+  margin-top: 4px;
+}
+.msg-time {
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.65;
+  text-align: right;
+}
+.msg-indicator {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-bottom: 8px;
+}
 .msg-spinner {
-  display: inline-block; width: 12px; height: 12px;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
   border: 2px solid var(--td-text-color-placeholder);
   border-top-color: var(--td-brand-color);
-  border-radius: 50%; animation: spin 0.6s linear infinite;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }
-.msg-retry { cursor: pointer; font-size: 14px; color: var(--td-warning-color); }
-@keyframes spin { to { transform: rotate(360deg); } }
+.msg-retry {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--td-warning-color);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- Input area ---- */
 .input-area {
-  display: flex; align-items: flex-start; gap: 8px;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-container);
+  transition: padding-bottom 0.2s ease;
 }
+
+/* When keyboard is open on mobile, remove safe area inset */
+.input-area.keyboard-open {
+  padding-bottom: 10px;
+}
+
 .chat-textarea {
-  flex: 1; resize: none; outline: none;
-  font-family: inherit; font-size: 16px; line-height: 1.5;
-  padding: 8px 12px; color: var(--td-text-color-primary);
-  min-height: 40px; max-height: 120px;
-  border: none; border-radius: 8px;
+  flex: 1;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  color: var(--td-text-color-primary);
+  min-height: 44px;
+  max-height: 120px;
+  border: none;
+  border-radius: 8px;
   background: var(--td-bg-color-secondarycontainer);
+  box-sizing: border-box;
 }
-.chat-textarea::placeholder { color: var(--td-text-color-placeholder); }
-.send-btn { align-self: flex-start; height: 40px; display: flex; align-items: center; }
+.chat-textarea::placeholder {
+  color: var(--td-text-color-placeholder);
+}
+
+/* ---- Send button ---- */
+.send-btn {
+  align-self: flex-start;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 18px;
+  font-weight: 500;
+  padding: 0 15px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
 
 .context-menu {
-  position: fixed; z-index: 9999;
+  position: fixed;
+  z-index: 9999;
   background: var(--td-bg-color-container);
   border: 1px solid var(--td-component-stroke);
-  border-radius: 8px; box-shadow: var(--td-shadow-2);
-  padding: 4px 0; min-width: 120px;
+  border-radius: 8px;
+  box-shadow: var(--td-shadow-2);
+  padding: 4px 0;
+  min-width: 120px;
 }
-.ctx-item { padding: 6px 16px; font-size: 14px; cursor: pointer; }
-.ctx-item:hover { background: var(--td-bg-color-secondarycontainer); }
-.ctx-danger { color: var(--td-error-color); }
-.ctx-danger:hover { background: var(--td-error-color-light, rgba(255,77,79,0.08)); }
-.ctx-sep { height: 1px; background: var(--td-component-stroke); margin: 4px 8px; }
+.ctx-item {
+  padding: 6px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ctx-item:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.ctx-danger {
+  color: var(--td-error-color);
+}
+.ctx-danger:hover {
+  background: var(--td-error-color-light, rgba(255, 77, 79, 0.08));
+}
+.ctx-sep {
+  height: 1px;
+  background: var(--td-component-stroke);
+  margin: 4px 8px;
+}
 
 /* Mobile */
 @media (max-width: 767px) {
-  .contact-panel { width: 100%; min-width: 0; }
-.chat-panel {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10;
-  padding-top: env(safe-area-inset-top, 0);
-  background: var(--td-bg-color-page);
-}
-  .message-area { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .contact-panel {
+    width: 100%;
+    min-width: 0;
+  }
+  .chat-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    padding-top: env(safe-area-inset-top, 0);
+    background: var(--td-bg-color-page);
+  }
+  .message-area {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .input-area {
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    gap: 10px;
+  }
+  .input-area.keyboard-open {
+    padding-bottom: 10px;
+  }
+  .send-btn {
+    padding: 0 16px;
+  }
 }
 </style>

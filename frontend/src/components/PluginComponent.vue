@@ -22,5 +22,7 @@ defineEmits<{ respond: [value: string] }>();
 </script>
 
 <style scoped>
-.plugin-component { margin-top: 8px; }
+.plugin-component {
+  margin-top: 8px;
+}
 </style>

@@ -12,7 +12,9 @@
     <p class="hint">{{ hintText }}</p>
     <div class="footer">
       <t-button size="small" @click="cancelScan">取消</t-button>
-      <t-button size="small" variant="outline" @click="pickImage">上传图片</t-button>
+      <t-button size="small" variant="outline" @click="pickImage"
+        >上传图片</t-button
+      >
     </div>
   </div>
 </template>
@@ -25,7 +27,8 @@ import { MessagePlugin } from "tdesign-vue-next";
 const router = useRouter();
 const route = useRoute();
 const scanType = (route.query.type as string) || "config";
-const hintText = scanType === "contact" ? "扫描对方的名片二维码" : "将二维码置于框内";
+const hintText =
+  scanType === "contact" ? "扫描对方的名片二维码" : "将二维码置于框内";
 
 let cancel: (() => void) | null = null;
 
@@ -42,11 +45,20 @@ onMounted(async () => {
         return;
       }
     }
-    cancel = () => { void mod.cancel().catch(() => {}); };
-    const result = await mod.scan({ windowed: true, formats: [mod.Format.QRCode], cameraDirection: "back" });
+    cancel = () => {
+      void mod.cancel().catch(() => {});
+    };
+    const result = await mod.scan({
+      windowed: true,
+      formats: [mod.Format.QRCode],
+      cameraDirection: "back",
+    });
     if (scanType === "contact") {
       const data = JSON.parse(result.content);
-      router.replace({ name: "contacts", query: { scanName: data.name, scanHostname: data.hostname } });
+      router.replace({
+        name: "contacts",
+        query: { scanName: data.name, scanHostname: data.hostname },
+      });
     } else {
       router.replace({ name: "config", query: { scanResult: result.content } });
     }
@@ -84,12 +96,17 @@ function pickImage() {
       const r = await c.scanFile(file, false);
       if (scanType === "contact") {
         const data = JSON.parse(r);
-        router.replace({ name: "contacts", query: { scanName: data.name, scanHostname: data.hostname } });
+        router.replace({
+          name: "contacts",
+          query: { scanName: data.name, scanHostname: data.hostname },
+        });
       } else {
         router.replace({ name: "config", query: { scanResult: r } });
       }
     } finally {
-      try { await c.clear(); } catch {}
+      try {
+        await c.clear();
+      } catch {}
     }
   };
   input.click();
@@ -98,61 +115,81 @@ function pickImage() {
 
 <style scoped>
 #scan-view {
-  position: fixed; inset: 0;
+  position: fixed;
+  inset: 0;
   z-index: 100000;
   background: transparent;
 }
 /* Four dark panels around the scan area */
 .dark-top {
-  position: fixed; left: 0; right: 0; top: 0;
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
   height: 25vh;
-  background: rgba(0,0,0,0.55);
+  background: rgba(0, 0, 0, 0.55);
 }
 .dark-bottom {
-  position: fixed; left: 0; right: 0;
+  position: fixed;
+  left: 0;
+  right: 0;
   top: calc(25vh + 280px);
   bottom: 0;
-  background: rgba(0,0,0,0.55);
+  background: rgba(0, 0, 0, 0.55);
 }
 .dark-left {
-  position: fixed; left: 0;
-  top: 25vh; bottom: calc(100% - 25vh - 280px);
+  position: fixed;
+  left: 0;
+  top: 25vh;
+  bottom: calc(100% - 25vh - 280px);
   width: calc(50% - 140px);
-  background: rgba(0,0,0,0.55);
+  background: rgba(0, 0, 0, 0.55);
 }
 .dark-right {
-  position: fixed; right: 0;
-  top: 25vh; bottom: calc(100% - 25vh - 280px);
+  position: fixed;
+  right: 0;
+  top: 25vh;
+  bottom: calc(100% - 25vh - 280px);
   width: calc(50% - 140px);
-  background: rgba(0,0,0,0.55);
+  background: rgba(0, 0, 0, 0.55);
 }
 /* Frame corners */
 .frame-corner {
   position: fixed;
-  width: 28px; height: 28px;
+  width: 28px;
+  height: 28px;
   border-color: var(--td-brand-color);
   border-style: solid;
 }
 .frame-corner.tl {
-  left: calc(50% - 140px - 3px); top: calc(25vh - 3px);
-  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0;
+  left: calc(50% - 140px - 3px);
+  top: calc(25vh - 3px);
+  border-width: 3px 0 0 3px;
+  border-radius: 4px 0 0 0;
 }
 .frame-corner.tr {
-  right: calc(50% - 140px - 3px); top: calc(25vh - 3px);
-  border-width: 3px 3px 0 0; border-radius: 0 4px 0 0;
+  right: calc(50% - 140px - 3px);
+  top: calc(25vh - 3px);
+  border-width: 3px 3px 0 0;
+  border-radius: 0 4px 0 0;
 }
 .frame-corner.bl {
-  left: calc(50% - 140px - 3px); top: calc(25vh + 280px - 3px);
-  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px;
+  left: calc(50% - 140px - 3px);
+  top: calc(25vh + 280px - 3px);
+  border-width: 0 0 3px 3px;
+  border-radius: 0 0 0 4px;
 }
 .frame-corner.br {
-  right: calc(50% - 140px - 3px); top: calc(25vh + 280px - 3px);
-  border-width: 0 3px 3px 0; border-radius: 0 0 4px 0;
+  right: calc(50% - 140px - 3px);
+  top: calc(25vh + 280px - 3px);
+  border-width: 0 3px 3px 0;
+  border-radius: 0 0 4px 0;
 }
 /* Scan line */
 .scan-line {
   position: fixed;
-  left: calc(50% - 132px); right: calc(50% - 132px);
+  left: calc(50% - 132px);
+  right: calc(50% - 132px);
   height: 2px;
   background: var(--td-brand-color);
   border-radius: 1px;
@@ -161,15 +198,22 @@ function pickImage() {
   animation: scanMove 2s ease-in-out infinite;
 }
 @keyframes scanMove {
-  0% { top: calc(25vh + 16px); }
-  50% { top: calc(25vh + 262px); }
-  100% { top: calc(25vh + 16px); }
+  0% {
+    top: calc(25vh + 16px);
+  }
+  50% {
+    top: calc(25vh + 262px);
+  }
+  100% {
+    top: calc(25vh + 16px);
+  }
 }
 /* Hint text */
 .hint {
   position: fixed;
   top: calc(25vh + 290px);
-  left: 0; right: 0;
+  left: 0;
+  right: 0;
   text-align: center;
   color: #fff;
   font-size: 14px;
@@ -179,8 +223,10 @@ function pickImage() {
 .footer {
   position: fixed;
   bottom: 40px;
-  left: 0; right: 0;
-  display: flex; justify-content: center;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
   gap: 12px;
   z-index: 2;
 }

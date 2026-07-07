@@ -29,7 +29,13 @@
           </div>
         </div>
       </div>
-      <t-button theme="primary" size="large" class="welcome-btn" @click="$router.push('/config')">开始配置</t-button>
+      <t-button
+        theme="primary"
+        size="large"
+        class="welcome-btn"
+        @click="$router.push('/config')"
+        >开始配置</t-button
+      >
       <p class="welcome-footer">本机主机名: {{ hostname }}</p>
     </div>
   </div>
@@ -44,37 +50,93 @@ const hostname = store.localHostname || "加载中...";
 
 <style scoped>
 .welcome {
-  height: 100%; display: flex; align-items: center; justify-content: center;
-  padding: 20px; box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
   background: var(--td-bg-color-page);
 }
 .welcome-card {
-  max-width: 400px; width: 100%;
-  display: flex; flex-direction: column; align-items: center; gap: 20px;
+  max-width: 400px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
 }
 .welcome-logo {
-  width: 72px; height: 72px; border-radius: 18px;
-  background: rgba(0,0,0,0.6);
-  display: flex; align-items: center; justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.welcome-img { width: 48px; height: 48px; }
-.welcome-title { font-size: 28px; font-weight: 700; margin: 0; color: var(--td-text-color-primary); }
-.welcome-sub { font-size: 14px; color: var(--td-text-color-placeholder); margin: -8px 0 0; }
-.welcome-steps { width: 100%; display: flex; flex-direction: column; gap: 16px; }
+.welcome-img {
+  width: 48px;
+  height: 48px;
+}
+.welcome-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--td-text-color-primary);
+}
+.welcome-sub {
+  font-size: 14px;
+  color: var(--td-text-color-placeholder);
+  margin: -8px 0 0;
+}
+.welcome-steps {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .step {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 14px; border-radius: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
   background: var(--td-bg-color-secondarycontainer);
 }
 .step-num {
-  width: 28px; height: 28px; border-radius: 50%;
-  background: var(--td-brand-color); color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 600; flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--td-brand-color);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
-.step-body { display: flex; flex-direction: column; gap: 2px; }
-.step-title { font-size: 15px; font-weight: 500; color: var(--td-text-color-primary); }
-.step-desc { font-size: 13px; color: var(--td-text-color-placeholder); }
-.welcome-btn { width: 100%; }
-.welcome-footer { font-size: 12px; color: var(--td-text-color-placeholder); margin: 0; }
+.step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.step-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.step-desc {
+  font-size: 13px;
+  color: var(--td-text-color-placeholder);
+}
+.welcome-btn {
+  width: 100%;
+}
+.welcome-footer {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  margin: 0;
+}
 </style>

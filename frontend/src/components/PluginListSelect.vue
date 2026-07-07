@@ -22,10 +22,13 @@ defineEmits<{ select: [value: string] }>();
 
 <style scoped>
 .list-select {
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .list-title {
-  font-size: 13px; font-weight: 600;
+  font-size: 13px;
+  font-weight: 600;
   margin-bottom: 4px;
   color: var(--td-text-color-primary);
 }
@@ -36,12 +39,20 @@ defineEmits<{ select: [value: string] }>();
   border: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-secondarycontainer);
   transition: all 0.15s;
-  display: flex; flex-direction: column; gap: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .list-option:hover {
   border-color: var(--td-brand-color);
   background: var(--td-brand-color-light);
 }
-.opt-label { font-size: 14px; font-weight: 500; }
-.opt-desc { font-size: 12px; color: var(--td-text-color-placeholder); }
+.opt-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+.opt-desc {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
 </style>

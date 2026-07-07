@@ -1,6 +1,13 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { Message, PluginConfig, YseConfig, LogEntry, ProcessInfo, SessionInfo } from "@/api/commands";
+import type {
+  Message,
+  PluginConfig,
+  YseConfig,
+  LogEntry,
+  ProcessInfo,
+  SessionInfo,
+} from "@/api/commands";
 import * as api from "@/api/commands";
 import { platform } from "@tauri-apps/plugin-os";
 
@@ -70,8 +77,9 @@ export const useYseStore = defineStore("yse", () => {
       // Clean up pending "sent" entries that have a matching real message
       pendingMessages.value = pendingMessages.value.filter((p) => {
         if (p.status !== "sent") return true;
-        return !messages.value.some((r) =>
-          r.text === p.text && Math.abs(r.timestamp - p.timestamp) < 5000
+        return !messages.value.some(
+          (r) =>
+            r.text === p.text && Math.abs(r.timestamp - p.timestamp) < 5000,
         );
       });
     } catch (e) {
@@ -108,7 +116,11 @@ export const useYseStore = defineStore("yse", () => {
     }
   }
 
-  async function sendMessage(to: string, text: string, meta?: Record<string, unknown>) {
+  async function sendMessage(
+    to: string,
+    text: string,
+    meta?: Record<string, unknown>,
+  ) {
     const own = config.value?.own_address ?? "";
     const pending: PendingMessage = {
       id: "pending_" + generateId(),
@@ -130,7 +142,11 @@ export const useYseStore = defineStore("yse", () => {
     }
   }
 
-  async function handlePluginResponse(to: string, componentId: string, value: string) {
+  async function handlePluginResponse(
+    to: string,
+    componentId: string,
+    value: string,
+  ) {
     await sendMessage(to, `[${componentId}] ${value}`, {
       plugin: { response: { component_id: componentId, value } },
     });
@@ -171,7 +187,9 @@ export const useYseStore = defineStore("yse", () => {
   async function initializeApp() {
     // Load configs and contact hashes, but don't auto-start plugins.
     // Plugins are started on demand by SessionRegistry when messages arrive.
-    await api.autoStartPlugins().catch((e) => console.error("autoStartPlugins failed:", e));
+    await api
+      .autoStartPlugins()
+      .catch((e) => console.error("autoStartPlugins failed:", e));
     await startPolling();
     await loadHostnames();
     await loadHiddenAddresses();
@@ -301,14 +319,40 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   return {
-    messages, pendingMessages, plugins, config, logs, connected, polling,
-    hostnames, selectedHostname, hiddenAddresses, processes, sessions, localHostname,
+    messages,
+    pendingMessages,
+    plugins,
+    config,
+    logs,
+    connected,
+    polling,
+    hostnames,
+    selectedHostname,
+    hiddenAddresses,
+    processes,
+    sessions,
+    localHostname,
     sortedMessages,
-    loadMessages, loadPlugins, loadConfig, saveConfigAndApply, loadLogs,
-    sendMessage, handlePluginResponse, retryMessage,
-    togglePlugin, startPolling, initializeApp, stopPolling,
-    listenForLogs, listenForMessages,
-    loadHostnames, loadHiddenAddresses, loadLocalHostname,
-    loadProcesses, loadSessions, toggleHide, deleteConversation,
+    loadMessages,
+    loadPlugins,
+    loadConfig,
+    saveConfigAndApply,
+    loadLogs,
+    sendMessage,
+    handlePluginResponse,
+    retryMessage,
+    togglePlugin,
+    startPolling,
+    initializeApp,
+    stopPolling,
+    listenForLogs,
+    listenForMessages,
+    loadHostnames,
+    loadHiddenAddresses,
+    loadLocalHostname,
+    loadProcesses,
+    loadSessions,
+    toggleHide,
+    deleteConversation,
   };
 });

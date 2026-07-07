@@ -26,14 +26,21 @@ export async function initBot(): Promise<BotState | null> {
   }
 }
 
-export function getUserState(state: BotState, userAddr: string): BotState["sessions"][string] {
+export function getUserState(
+  state: BotState,
+  userAddr: string,
+): BotState["sessions"][string] {
   if (!state.sessions[userAddr]) {
     state.sessions[userAddr] = { mode: "sdk", sessionId: null };
   }
   return state.sessions[userAddr];
 }
 
-export async function sendPrompt(client: any, sessionId: string, text: string): Promise<string> {
+export async function sendPrompt(
+  client: any,
+  sessionId: string,
+  text: string,
+): Promise<string> {
   try {
     const result = await client.session.prompt({
       path: { id: sessionId },
@@ -58,9 +65,9 @@ export async function sendTuiPrompt(client: any, text: string): Promise<void> {
   await client.tui.submitPrompt();
 }
 
-export async function listSessions(client: any): Promise<
-  { label: string; value: string; description: string }[]
-> {
+export async function listSessions(
+  client: any,
+): Promise<{ label: string; value: string; description: string }[]> {
   try {
     const result = await client.session.list();
     const sessions: any[] = result.data ?? [];
@@ -76,7 +83,10 @@ export async function listSessions(client: any): Promise<
   }
 }
 
-export async function getSessionInfo(client: any, sessionId: string): Promise<string> {
+export async function getSessionInfo(
+  client: any,
+  sessionId: string,
+): Promise<string> {
   try {
     const s = await client.session.get({ path: { id: sessionId } });
     const data = s.data as any;
@@ -84,7 +94,10 @@ export async function getSessionInfo(client: any, sessionId: string): Promise<st
     const lines: string[] = [];
     lines.push(`📋 会话: ${data.title ?? "(无标题)"}  (${data.id})`);
     if (data.worktree) lines.push(`📁 目录: ${data.worktree}`);
-    if (data.time?.createdAt) lines.push(`🕐 创建: ${new Date(data.time.createdAt).toLocaleString("zh-CN")}`);
+    if (data.time?.createdAt)
+      lines.push(
+        `🕐 创建: ${new Date(data.time.createdAt).toLocaleString("zh-CN")}`,
+      );
     return lines.join("\n");
   } catch {
     return "获取会话信息失败";
