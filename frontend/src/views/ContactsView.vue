@@ -81,34 +81,21 @@
         </t-form>
       </t-dialog>
 
-      <!-- Contact QR scanner overlay -->
-      <div v-if="contactScanVisible" class="contact-scanner-overlay">
-        <div id="contact-scanner-id" class="scanner-box-wrap">
-          <div class="scanner-frame">
-            <div class="frame-corner tl"></div>
-            <div class="frame-corner tr"></div>
-            <div class="frame-corner bl"></div>
-            <div class="frame-corner br"></div>
-          </div>
-          <div class="scanner-line"></div>
-        </div>
-        <p class="qr-hint-scanner">扫描对方的名片二维码</p>
-        <div class="qr-scanner-footer">
-          <t-button size="small" @click="stopContactScan">取消</t-button>
-        </div>
-      </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted } from "vue";
+import { ref, computed, nextTick, onMounted, watch } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { platform } from "@tauri-apps/plugin-os";
 import * as api from "@/api/commands";
 
+const router = useRouter();
+const route = useRoute();
 const isMobile = useIsMobile();
 const isMobilePlatform = platform() === "android";
 const store = useYseStore();
@@ -116,41 +103,18 @@ const newName = ref("");
 const newHostname = ref("");
 const newPlugin = ref("");
 const showAdd = ref(false);
-const contactScanVisible = ref(false);
 
 async function startContactScan() {
-  contactScanVisible.value = true;
-  await nextTick();
-  try {
-    const { scan, Format, requestPermissions, checkPermissions } = await import("@tauri-apps/plugin-barcode-scanner");
-    const perm = await checkPermissions();
-    if (perm !== "granted") {
-      const result = await requestPermissions();
-      if (result !== "granted") {
-        await MessagePlugin.warning("摄像头权限被拒绝");
-        contactScanVisible.value = false;
-        return;
-      }
-    }
-    const result = await scan({ windowed: true, formats: [Format.QRCode], cameraDirection: "back" });
-    const data = JSON.parse(result.content);
-    if (data.name) newPlugin.value = data.name;
-    if (data.hostname) newHostname.value = data.hostname;
-    await MessagePlugin.success("已从二维码读取联系人信息，请填写名称");
-  } catch (e) {
-    console.error("[ContactScan] error:", e);
-  } finally {
-    contactScanVisible.value = false;
-  }
+  router.push("/scan?type=contact");
 }
 
-async function stopContactScan() {
-  try {
-    const { cancel } = await import("@tauri-apps/plugin-barcode-scanner");
-    await cancel();
-  } catch { /* ignore */ }
-  contactScanVisible.value = false;
-}
+watch([() => route.query.scanName, () => route.query.scanHostname], ([name, hostname]) => {
+  if (name) {
+    newPlugin.value = name as string;
+    showAdd.value = true;
+    router.replace({ query: {} });
+  }
+});
 
 function parseAddress(addr: string) {
   const at = addr.lastIndexOf("@");
@@ -371,12 +335,6 @@ onMounted(async () => {
   line-height: 1;
 }
 
-/* Scanner overlay */
-.contact-scanner-overlay {
-  position: fixed; inset: 0; z-index: 9999;
-  background: transparent;
-  pointer-events: none;
-}
 .scanner-box-wrap {
   position: fixed; left: 50%; top: 25vh;
   width: 280px; height: 280px;
@@ -385,40 +343,6 @@ onMounted(async () => {
   background: transparent !important;
   box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
   pointer-events: auto;
-}
-.scanner-frame {
-  position: absolute; inset: 0; z-index: 2;
-  pointer-events: none;
-}
-.frame-corner {
-  position: absolute; width: 28px; height: 28px;
-  border-color: var(--td-brand-color);
-  border-style: solid;
-}
-.frame-corner.tl { top: 12px; left: 12px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
-.frame-corner.tr { top: 12px; right: 12px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
-.frame-corner.bl { bottom: 12px; left: 12px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
-.frame-corner.br { bottom: 12px; right: 12px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
-.scanner-line {
-  position: absolute; top: 0; left: 10%; right: 10%; height: 2px;
-  background: var(--td-brand-color); z-index: 3; border-radius: 1px;
-  opacity: 0.7;
-  animation: scanLine 2s ease-in-out infinite;
-}
-@keyframes scanLine {
-  0% { top: 16px; }
-  50% { top: calc(100% - 18px); }
-  100% { top: 16px; }
-}
-.qr-hint-scanner {
-  position: fixed; top: calc(25vh + 290px); left: 0; right: 0;
-  text-align: center; color: #fff; font-size: 14px;
-  z-index: 10001; pointer-events: none;
-}
-.qr-scanner-footer {
-  position: fixed; bottom: 40px; left: 0; right: 0;
-  display: flex; justify-content: center;
-  z-index: 10001; pointer-events: auto;
 }
 
 @media (max-width: 767px) {
@@ -429,7 +353,6 @@ onMounted(async () => {
     width: calc(100vw - 64px); height: calc(100vw - 64px);
     max-width: 300px; max-height: 300px;
   }
-  .qr-hint-scanner { top: calc(25vh + 10px); }
 }
 @media (min-width: 768px) {
   .contacts-page .t-card { margin: 16px; }

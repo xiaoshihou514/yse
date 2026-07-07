@@ -52,25 +52,6 @@
       </div>
     </t-dialog>
 
-    <!-- QR import dialog -->
-    <!-- QR scanner — windowed mode, camera preview via transparent scanner-box -->
-    <div v-if="qrImportVisible" class="qr-scanner-overlay">
-      <div class="scanner-box-wrap" id="qr-scanner-id">
-        <div class="scanner-frame">
-          <div class="frame-corner tl"></div>
-          <div class="frame-corner tr"></div>
-          <div class="frame-corner bl"></div>
-          <div class="frame-corner br"></div>
-        </div>
-        <div class="scanner-line"></div>
-      </div>
-      <p class="qr-hint-scanner">将二维码置于框内</p>
-      <div class="qr-scanner-footer">
-        <t-button size="small" @click="stopScanner">取消</t-button>
-        <t-button size="small" variant="outline" @click="uploadQrImage">上传图片</t-button>
-      </div>
-    </div>
-
     <t-card title="界面" :bordered="false" style="margin-bottom: 20px">
       <t-form-item label="主题模式">
         <t-radio-group :value="themeMode" @change="setTheme">
@@ -114,11 +95,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, watch, onUnmounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import * as api from "@/api/commands";
 import { platform } from "@tauri-apps/plugin-os";
 
+const router = useRouter();
+const route = useRoute();
 const store = useYseStore();
 const saving = ref(false);
 
@@ -178,9 +162,6 @@ const logContainer = ref<HTMLElement | null>(null);
 const qrExportVisible = ref(false);
 const qrDataUrl = ref("");
 
-// QR import
-const qrImportVisible = ref(false);
-const scanning = ref(false);
 const isMobilePlatform = platform() === "android";
 
 async function showExportQr() {
@@ -201,61 +182,9 @@ async function showExportQr() {
   }
 }
 
-async function showImportQr() {
-  qrImportVisible.value = true;
-  await nextTick();
-  scanning.value = true;
-  let mod: any = null;
-  try {
-    mod = await import("@tauri-apps/plugin-barcode-scanner");
-    console.log("[QR] module loaded");
-  } catch (e) {
-    console.error("[QR] import failed:", e);
-    await MessagePlugin.error(`扫码模块加载失败: ${e}`);
-    await uploadQrImage();
-    scanning.value = false;
-    qrImportVisible.value = false;
-    return;
-  }
-  try {
-    const perm = await mod.checkPermissions();
-    console.log("[QR] checkPermissions:", perm);
-    if (perm !== "granted") {
-      const result = await mod.requestPermissions();
-      console.log("[QR] requestPermissions result:", result);
-      if (result !== "granted") {
-        await MessagePlugin.warning("摄像头权限被拒绝");
-        qrImportVisible.value = false;
-        scanning.value = false;
-        return;
-      }
-    }
-    console.log("[QR] starting scan...");
-    const result = await mod.scan({ windowed: true, formats: [mod.Format.QRCode], cameraDirection: "back" });
-    console.log("[QR] scan result:", result);
-    applyQrConfig(result.content);
-  } catch (e) {
-    const msg = String(e);
-    console.error("[QR] scan failed:", msg);
-    await MessagePlugin.info(`扫码未成功: ${msg}，请选择二维码图片`);
-    await uploadQrImage();
-  } finally {
-    scanning.value = false;
-    qrImportVisible.value = false;
-  }
-}
-
-async function stopScanner() {
-  try {
-    const { cancel } = await import("@tauri-apps/plugin-barcode-scanner");
-    await cancel();
-  } catch { /* ignore */ }
-  qrImportVisible.value = false;
-}
-
 async function handleImportQr() {
   if (isMobilePlatform) {
-    await showImportQr();
+    router.push("/scan?type=config");
   } else {
     await uploadQrImage();
   }
@@ -295,15 +224,20 @@ function applyQrConfig(json: string) {
     if (cfg.email_password) form.email_password = cfg.email_password;
     if (cfg.own_address) form.own_address = cfg.own_address;
     if (cfg.crypto_password) form.crypto_password = cfg.crypto_password;
-    stopScanner();
     MessagePlugin.success("配置已从二维码导入，点击保存以生效");
   } catch (e) {
     MessagePlugin.error(`解析配置失败: ${e}`);
   }
 }
 
+watch(() => route.query.scanResult, (val) => {
+  if (val) {
+    applyQrConfig(val as string);
+    router.replace({ query: {} });
+  }
+});
+
 onUnmounted(() => {
-  stopScanner();
   unlistenSystemTheme();
 });
 
@@ -427,62 +361,7 @@ onMounted(async () => {
 .qr-hint {
   font-size: 13px; color: var(--td-text-color-placeholder); text-align: center;
 }
-.qr-scanner-overlay {
-  position: fixed; inset: 0; z-index: 9999;
-  /* No background — camera shows through completely.
-     Dark area around the scanner box is created by box-shadow below. */
-  background: transparent;
-  pointer-events: none;
-}
-.scanner-box-wrap {
-  position: fixed; left: 50%; top: 25vh;
-  width: 280px; height: 280px;
-  transform: translateX(-50%);
-  border-radius: 12px;
-  background: transparent !important;
-  /* Dark overlay around the camera area — camera shows through the box */
-  box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
-  pointer-events: auto;
-}
-.qr-scanner-footer {
-  position: fixed; bottom: 40px; left: 0; right: 0;
-  display: flex; justify-content: center;
-  gap: 12px;
-  z-index: 10001;
-  pointer-events: auto;
-}
-.qr-hint-scanner {
-  position: fixed; top: calc(25vh + 290px); left: 0; right: 0;
-  text-align: center;
-  color: #fff;
-  font-size: 14px;
-  z-index: 10001;
-  pointer-events: none;
-}
-.scanner-frame {
-  position: absolute; inset: 0; z-index: 2;
-  pointer-events: none;
-}
-.frame-corner {
-  position: absolute; width: 28px; height: 28px;
-  border-color: var(--td-brand-color);
-  border-style: solid;
-}
-.frame-corner.tl { top: 12px; left: 12px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
-.frame-corner.tr { top: 12px; right: 12px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
-.frame-corner.bl { bottom: 12px; left: 12px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
-.frame-corner.br { bottom: 12px; right: 12px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
-.scanner-line {
-  position: absolute; left: 12px; right: 12px; height: 2px;
-  background: var(--td-brand-color); z-index: 3;
-  animation: scanLine 2s ease-in-out infinite;
-  border-radius: 1px; opacity: 0.7;
-}
-@keyframes scanLine {
-  0% { top: 16px; }
-  50% { top: calc(100% - 18px); }
-  100% { top: 16px; }
-}
+
 .log-container {
   max-height: 600px;
   overflow-y: auto;
@@ -539,13 +418,6 @@ onMounted(async () => {
   .config-page :deep(.t-form__item:last-child .t-space .t-button) {
     flex: 1 1 auto;
     min-width: 0;
-  }
-  .scanner-box-wrap {
-    width: calc(100vw - 64px); height: calc(100vw - 64px);
-    max-width: 300px; max-height: 300px;
-  }
-  .qr-hint-scanner {
-    top: calc(25vh + 10px);
   }
   .log-container {
     max-height: none;

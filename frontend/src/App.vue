@@ -1,5 +1,6 @@
 <template>
-  <div class="app-layout">
+  <router-view v-if="route.meta?.fullscreen" />
+  <div v-else class="app-layout">
     <div v-if="!isMobile" class="titlebar" data-tauri-drag-region>
       <div class="titlebar-controls">
         <button class="titlebar-btn" id="titlebar-minimize" title="最小化">

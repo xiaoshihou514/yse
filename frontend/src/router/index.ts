@@ -4,6 +4,7 @@ import PluginView from "@/views/PluginView.vue";
 import ContactsView from "@/views/ContactsView.vue";
 import ConfigView from "@/views/ConfigView.vue";
 import WelcomeView from "@/views/WelcomeView.vue";
+import ScanView from "@/views/ScanView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -13,6 +14,7 @@ const router = createRouter({
     { path: "/contacts", name: "contacts", component: ContactsView },
     { path: "/config", name: "config", component: ConfigView },
     { path: "/welcome", name: "welcome", component: WelcomeView },
+    { path: "/scan", name: "scan", component: ScanView, meta: { fullscreen: true } },
   ],
 });
 
