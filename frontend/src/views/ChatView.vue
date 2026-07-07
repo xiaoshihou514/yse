@@ -115,6 +115,7 @@
               rows="1"
               class="chat-textarea"
               @keydown="onInputKeydown"
+              @focus="onInputFocus"
             ></textarea>
             <div class="input-actions">
               <span class="input-hint">Enter 发送</span>
@@ -424,6 +425,13 @@ function subLabel(c: Contact) {
 
 function selectContact(addr: string) {
   selectedContact.value = addr;
+}
+
+function onInputFocus() {
+  // On mobile, scroll the input area into view so it's not hidden by the keyboard
+  setTimeout(() => {
+    document.querySelector(".input-area")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, 300);
 }
 
 function formatTime(ts: number) {

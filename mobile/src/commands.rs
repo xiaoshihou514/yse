@@ -117,6 +117,11 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Notify frontend immediately so the sent message shows up
+    if let Some(h) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = h.emit("new-message", &msg);
+    }
+
     if let Some(sender) = state.core.sender.read().await.as_ref() {
         let payload = msg.to_json().map_err(|e| e.to_string())?;
         let encrypted = yse_core::crypto::encrypt(key, &payload).map_err(|e| e.to_string())?;
