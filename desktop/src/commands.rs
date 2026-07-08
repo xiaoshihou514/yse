@@ -67,68 +67,48 @@ fn log_emit(
 }
 
 pub struct YseState {
-    pub store: Arc<dyn Storage>,
-    pub config: Arc<RwLock<YseConfig>>,
-    pub crypto_key: Arc<RwLock<Option<chacha20poly1305::Key>>>,
-    pub sender: Arc<RwLock<Option<SmtpSender>>>,
-    pub poller_running: Arc<std::sync::atomic::AtomicBool>,
-    pub process_manager: Arc<PluginProcessManager>,
-    pub session_registry: Arc<SessionRegistry>,
+    pub core: yse_core::app::CoreState,
     pub log_buffer: Arc<std::sync::Mutex<Vec<LogEntry>>>,
-    pub event_tx: EventSender,
     pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
 }
 
 impl YseState {
     pub fn new(db_path: std::path::PathBuf) -> Result<Self, String> {
-        let store: Arc<dyn Storage> =
-            Arc::new(SqliteStorage::open(db_path).map_err(|e| e.to_string())?);
-        let (event_tx, _) = yse_core::event::event_channel();
-        let process_manager = Arc::new(PluginProcessManager::new());
-        let session_registry = Arc::new(SessionRegistry::new("me"));
-
         Ok(Self {
-            store,
-            config: Arc::new(RwLock::new(YseConfig::default())),
-            crypto_key: Arc::new(RwLock::new(None)),
-            sender: Arc::new(RwLock::new(None)),
-            poller_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            process_manager,
-            session_registry,
+            core: yse_core::app::CoreState::new(db_path, "me")?,
             log_buffer: Arc::new(std::sync::Mutex::new(Vec::new())),
-            event_tx,
             app_handle: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 
     /// Load persisted config from DB, called from Tauri setup (tokio runtime available).
     pub async fn load_config(&self) {
-        if let Ok(Some(json)) = self.store.get_config_value("config").await {
+        if let Ok(Some(json)) = self.core.store.get_config_value("config").await {
             if let Ok(cfg) = serde_json::from_str::<YseConfig>(&json) {
                 let password = cfg.crypto_password.clone();
                 let own_name = cfg.own_address.clone();
-                let mut w = self.config.write().await;
+                let mut w = self.core.config.write().await;
                 *w = cfg;
                 drop(w);
 
-                self.session_registry.set_local_name(&own_name);
+                self.core.session_registry.set_local_name(&own_name);
 
                 // Load contact hashes into session registry
-                if let Ok(hashes) = self.store.get_contact_hashes().await {
+                if let Ok(hashes) = self.core.store.get_contact_hashes().await {
                     let map: HashMap<String, String> = hashes.into_iter().collect();
-                    self.session_registry.set_contact_hashes(map);
+                    self.core.session_registry.set_contact_hashes(map);
                 }
 
                 if !password.is_empty() {
                     let key = derive_key(&password).map_err(|e| e.to_string()).ok();
                     if let Some(k) = key {
-                        *self.crypto_key.write().await = Some(k);
+                        *self.core.crypto_key.write().await = Some(k);
                         self.log("info", "crypto key restored from saved password".into());
                     }
                 }
                 // Initialize SMTP sender so it's ready without re-saving
                 {
-                    let cfg = self.config.read().await;
+                    let cfg = self.core.config.read().await;
                     let smtp_cfg = SmtpConfig {
                         server: cfg.email_smtp_server.clone(),
                         port: cfg.email_smtp_port,
@@ -136,7 +116,7 @@ impl YseState {
                         password: cfg.email_password.clone(),
                     };
                     if !smtp_cfg.server.is_empty() && !smtp_cfg.username.is_empty() {
-                        *self.sender.write().await = Some(SmtpSender::new(smtp_cfg));
+                        *self.core.sender.write().await = Some(SmtpSender::new(smtp_cfg));
                         self.log("info", "SMTP sender initialized from saved config".into());
                     }
                 }
@@ -151,20 +131,20 @@ impl YseState {
             username: cfg.email_username.clone(),
             password: cfg.email_password.clone(),
         };
-        *self.sender.write().await = Some(SmtpSender::new(smtp_cfg));
+        *self.core.sender.write().await = Some(SmtpSender::new(smtp_cfg));
 
         // Auto-derive crypto key if password changed
         if !cfg.crypto_password.is_empty() {
             let new_key = derive_key(&cfg.crypto_password).map_err(|e| e.to_string())?;
-            *self.crypto_key.write().await = Some(new_key);
+            *self.core.crypto_key.write().await = Some(new_key);
         }
 
-        self.store
+        self.core.store
             .set_config_value("config", &serde_json::to_string(&cfg).unwrap())
             .await
             .map_err(|e| e.to_string())?;
 
-        *self.config.write().await = cfg;
+        *self.core.config.write().await = cfg;
         Ok(())
     }
 
@@ -174,10 +154,10 @@ impl YseState {
         use yse_core::crypto::encrypt;
         use yse_core::plugin::protocol::PluginRequest;
 
-        let store = self.store.clone();
-        let config = self.config.clone();
-        let crypto_key = self.crypto_key.clone();
-        let sender = self.sender.clone();
+        let store = self.core.store.clone();
+        let config = self.core.config.clone();
+        let crypto_key = self.core.crypto_key.clone();
+        let sender = self.core.sender.clone();
         let log_buffer = self.log_buffer.clone();
         let app_handle = self.app_handle.clone();
 
@@ -295,7 +275,7 @@ impl YseState {
             }
         });
 
-        self.process_manager.set_request_handler(handler);
+        self.core.process_manager.set_request_handler(handler);
     }
 
     pub fn log(&self, level: &str, message: String) {
@@ -307,7 +287,7 @@ impl YseState {
                 .unwrap()
                 .as_millis() as u64,
         };
-        let _ = self.event_tx.send(CoreEvent::Log {
+        let _ = self.core.event_tx.send(CoreEvent::Log {
             level: entry.level.clone(),
             message: entry.message.clone(),
         });
@@ -338,13 +318,13 @@ pub async fn send_message(
     _files: Option<Vec<String>>,
     meta: Option<serde_json::Value>,
 ) -> Result<(), String> {
-    let key = state.crypto_key.read().await;
+    let key = state.core.crypto_key.read().await;
     let key = key.as_ref().ok_or("crypto key not set")?;
 
-    let email_username = state.config.read().await.email_username.clone();
+    let email_username = state.core.config.read().await.email_username.clone();
 
     // Format sender address using session registry (name#hash@hostname)
-    let from_addr = state.session_registry.format_sender_address(&to);
+    let from_addr = state.core.session_registry.format_sender_address(&to);
 
     let msg = match meta {
         Some(m) => Message::new(from_addr, to.clone(), Some(text)).with_meta(m),
@@ -352,16 +332,14 @@ pub async fn send_message(
     };
 
     // Save message
-    state
-        .store
+    state.core.store
         .save_message(&msg)
         .await
         .map_err(|e| e.to_string())?;
 
     // Route to local plugin if addressed to this machine
-    let plugin_configs = state.store.list_plugins().await.unwrap_or_default();
-    let _ = state
-        .session_registry
+    let plugin_configs = state.core.store.list_plugins().await.unwrap_or_default();
+    let _ = state.core.session_registry
         .route(
             &msg.to_addr,
             &msg.from_addr,
@@ -369,13 +347,13 @@ pub async fn send_message(
             msg.meta.as_ref(),
             msg.files.as_ref(),
             &plugin_configs,
-            &state.process_manager,
+            &state.core.process_manager,
         )
         .await;
 
     // Send via SMTP — fail the command if delivery fails so the frontend
     // shows the message as unsent (with retry button).
-    if let Some(sender) = state.sender.read().await.as_ref() {
+    if let Some(sender) = state.core.sender.read().await.as_ref() {
         let payload = msg.to_json().map_err(|e| e.to_string())?;
         let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
         let d = disguise::disguise();
@@ -399,7 +377,7 @@ pub async fn send_message(
     }
 
     // Only mark processed after successful send (prevents IMAP re-route of local copy)
-    let _ = state.store.mark_processed(&msg.id).await;
+    let _ = state.core.store.mark_processed(&msg.id).await;
 
     state.log("info", format!("sent message to {}", to));
     Ok(())
@@ -411,8 +389,7 @@ pub async fn get_messages(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<Vec<Message>, String> {
-    state
-        .store
+    state.core.store
         .list_messages(limit.unwrap_or(50), offset.unwrap_or(0))
         .await
         .map_err(|e| e.to_string())
@@ -420,7 +397,7 @@ pub async fn get_messages(
 
 #[tauri::command]
 pub async fn get_config(state: State<'_, YseState>) -> Result<YseConfig, String> {
-    Ok(state.config.read().await.clone())
+    Ok(state.core.config.read().await.clone())
 }
 
 #[tauri::command]
@@ -433,10 +410,10 @@ impl YseState {
     pub async fn start_polling_inner(&self, app_handle: tauri::AppHandle) -> Result<(), String> {
         use tauri::Emitter;
 
-        let sender = self.sender.clone();
-        let crypto_key = self.crypto_key.clone();
+        let sender = self.core.sender.clone();
+        let crypto_key = self.core.crypto_key.clone();
         let (imap_cfg, key, store, own_addr, session_registry, process_manager, yse_cfg) = {
-            let cfg = self.config.read().await;
+            let cfg = self.core.config.read().await;
             let imap = ImapConfig {
                 server: cfg.email_imap_server.clone(),
                 port: cfg.email_imap_port,
@@ -446,27 +423,27 @@ impl YseState {
             drop(cfg);
 
             let key = {
-                let guard = self.crypto_key.read().await;
+                let guard = self.core.crypto_key.read().await;
                 guard.as_ref().copied().ok_or("crypto key not set")?
             };
 
             (
                 imap,
                 key,
-                self.store.clone(),
-                self.config.read().await.own_address.clone(),
-                self.session_registry.clone(),
-                self.process_manager.clone(),
-                self.config.clone(),
+                self.core.store.clone(),
+                self.core.config.read().await.own_address.clone(),
+                self.core.session_registry.clone(),
+                self.core.process_manager.clone(),
+                self.core.config.clone(),
             )
         };
 
         self.log("info", "IMAP polling started".into());
-        self.poller_running
+        self.core.poller_running
             .store(true, std::sync::atomic::Ordering::SeqCst);
 
         let mut poller = ImapPoller::new(imap_cfg);
-        poller.set_running_flag(self.poller_running.clone());
+        poller.set_running_flag(self.core.poller_running.clone());
         let state_app_handle = self.app_handle.clone();
         let state_log_buffer = self.log_buffer.clone();
 
@@ -623,7 +600,7 @@ impl YseState {
     /// Load plugin configs into memory (no auto-start).
     /// Plugins are started on demand by SessionRegistry when messages arrive.
     pub async fn auto_start_plugins(&self) {
-        let plugins = match self.store.list_plugins().await {
+        let plugins = match self.core.store.list_plugins().await {
             Ok(p) => p,
             Err(_) => return,
         };
@@ -678,8 +655,7 @@ pub async fn auto_start_plugins(state: State<'_, YseState>) -> Result<(), String
 
 #[tauri::command]
 pub async fn stop_polling(state: State<'_, YseState>) -> Result<(), String> {
-    state
-        .poller_running
+    state.core.poller_running
         .store(false, std::sync::atomic::Ordering::SeqCst);
     state.log("info", "IMAP polling stopped".into());
     Ok(())
@@ -687,7 +663,7 @@ pub async fn stop_polling(state: State<'_, YseState>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn list_plugins(state: State<'_, YseState>) -> Result<Vec<PluginConfig>, String> {
-    state.store.list_plugins().await.map_err(|e| e.to_string())
+    state.core.store.list_plugins().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -708,14 +684,12 @@ pub async fn add_plugin(
         args: vec![],
         enabled: true,
     };
-    state
-        .store
+    state.core.store
         .save_plugin(&pc)
         .await
         .map_err(|e| e.to_string())?;
 
-    state
-        .process_manager
+    state.core.process_manager
         .start(&id, &name, &exec_path, &[])
         .await?;
 
@@ -725,9 +699,8 @@ pub async fn add_plugin(
 
 #[tauri::command]
 pub async fn remove_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
-    let _ = state.process_manager.stop(&id).await;
-    state
-        .store
+    let _ = state.core.process_manager.stop(&id).await;
+    state.core.store
         .delete_plugin(&id)
         .await
         .map_err(|e| e.to_string())?;
@@ -742,8 +715,7 @@ pub async fn toggle_plugin(
     enabled: bool,
 ) -> Result<(), String> {
     if enabled {
-        let plugins = state
-            .store
+        let plugins = state.core.store
             .list_plugins()
             .await
             .map_err(|e| e.to_string())?;
@@ -751,15 +723,13 @@ pub async fn toggle_plugin(
             .iter()
             .find(|p| p.id == id)
             .ok_or("plugin not found")?;
-        state
-            .process_manager
+        state.core.process_manager
             .start(&id, &p.name, &p.exec_path, &p.args)
             .await?;
     } else {
-        state.process_manager.stop(&id).await?;
+        state.core.process_manager.stop(&id).await?;
     }
-    state
-        .store
+    state.core.store
         .save_plugin(&PluginConfig {
             id,
             name: String::new(),
@@ -775,8 +745,7 @@ pub async fn toggle_plugin(
 
 #[tauri::command]
 pub async fn start_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
-    let plugins = state
-        .store
+    let plugins = state.core.store
         .list_plugins()
         .await
         .map_err(|e| e.to_string())?;
@@ -784,8 +753,7 @@ pub async fn start_plugin(state: State<'_, YseState>, id: String) -> Result<(), 
         .iter()
         .find(|p| p.id == id)
         .ok_or("plugin not found")?;
-    state
-        .process_manager
+    state.core.process_manager
         .start(&id, &p.name, &p.exec_path, &p.args)
         .await?;
     state.log("info", format!("plugin started: {}", id));
@@ -794,7 +762,7 @@ pub async fn start_plugin(state: State<'_, YseState>, id: String) -> Result<(), 
 
 #[tauri::command]
 pub async fn stop_plugin(state: State<'_, YseState>, id: String) -> Result<(), String> {
-    match state.process_manager.stop(&id).await {
+    match state.core.process_manager.stop(&id).await {
         Ok(_) => state.log("info", format!("plugin stopped: {}", id)),
         Err(_) => state.log("info", format!("plugin {} not running, skipping", id)),
     }
@@ -803,17 +771,17 @@ pub async fn stop_plugin(state: State<'_, YseState>, id: String) -> Result<(), S
 
 #[tauri::command]
 pub async fn list_running_plugins(state: State<'_, YseState>) -> Result<Vec<String>, String> {
-    Ok(state.process_manager.running_ids().await)
+    Ok(state.core.process_manager.running_ids().await)
 }
 
 #[tauri::command]
 pub async fn list_processes(state: State<'_, YseState>) -> Result<Vec<ProcessInfo>, String> {
-    Ok(state.process_manager.list_all().await)
+    Ok(state.core.process_manager.list_all().await)
 }
 
 #[tauri::command]
 pub async fn list_sessions(state: State<'_, YseState>) -> Result<Vec<yse_core::plugin::session::Session>, String> {
-    Ok(state.session_registry.list_sessions().await)
+    Ok(state.core.session_registry.list_sessions().await)
 }
 
 #[tauri::command]
@@ -826,7 +794,7 @@ pub async fn set_local_hostname(
     state: State<'_, YseState>,
     hostname: String,
 ) -> Result<(), String> {
-    state.session_registry.set_local_hostname(&hostname);
+    state.core.session_registry.set_local_hostname(&hostname);
     Ok(())
 }
 
@@ -836,8 +804,7 @@ pub async fn toggle_hide_conversation(
     address: String,
     hidden: bool,
 ) -> Result<(), String> {
-    state
-        .store
+    state.core.store
         .set_hidden(&address, hidden)
         .await
         .map_err(|e| e.to_string())
@@ -848,8 +815,7 @@ pub async fn delete_conversation(
     state: State<'_, YseState>,
     address: String,
 ) -> Result<(), String> {
-    state
-        .store
+    state.core.store
         .delete_messages_for_address(&address)
         .await
         .map_err(|e| e.to_string())
@@ -857,8 +823,7 @@ pub async fn delete_conversation(
 
 #[tauri::command]
 pub async fn get_hidden_addresses(state: State<'_, YseState>) -> Result<Vec<String>, String> {
-    state
-        .store
+    state.core.store
         .get_hidden_addresses()
         .await
         .map_err(|e| e.to_string())
@@ -868,8 +833,7 @@ pub async fn get_hidden_addresses(state: State<'_, YseState>) -> Result<Vec<Stri
 pub async fn get_contact_hashes(
     state: State<'_, YseState>,
 ) -> Result<Vec<(String, String)>, String> {
-    state
-        .store
+    state.core.store
         .get_contact_hashes()
         .await
         .map_err(|e| e.to_string())
@@ -877,8 +841,7 @@ pub async fn get_contact_hashes(
 
 #[tauri::command]
 pub async fn get_known_hostnames(state: State<'_, YseState>) -> Result<Vec<String>, String> {
-    let addrs = state
-        .store
+    let addrs = state.core.store
         .get_unique_addresses()
         .await
         .map_err(|e| e.to_string())?;
