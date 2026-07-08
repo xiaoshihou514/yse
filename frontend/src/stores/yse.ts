@@ -16,10 +16,10 @@ function generateId(): string {
 }
 
 function deviceModel(): string {
-  // Android WebView userAgent: "24069RA21C Build/AP2A.240805.005" → "24069RA21C"
-  const m = navigator.userAgent.match(/Android\s+\d+(?:\.\d+)*;\s*([^;)]+)/);
+  // Android WebView userAgent: "...; 24069RA21C Build/AP2A.240805.005; ..." → "24069RA21C"
+  const m = navigator.userAgent.match(/Android\s+\d+(?:\.\d+)?;\s*([^\s;)\/]+)/);
   if (!m) return "";
-  return m[1].split("/")[0].trim();
+  return m[1];
 }
 
 function resolveHostname(backendHostname: string): string {

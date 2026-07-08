@@ -431,8 +431,8 @@ interface Contact {
 const contacts = computed<Contact[]>(() => {
   const ownName = ownAddress.value;
   const map = new Map<string, Contact>();
-  // 文件传输助手 — always present, address = ownName@hostname
-  const selfAddr = `${ownName}@${store.localHostname || "localhost"}`;
+  // 文件传输助手 — always present, address = ownName (no hostname, shared across devices)
+  const selfAddr = ownName;
   for (const m of store.sortedMessages) {
     const addr = nameFromAddr(m.from) === ownName ? m.to : m.from;
     if (nameFromAddr(addr) === ownName) {
