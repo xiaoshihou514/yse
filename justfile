@@ -14,17 +14,6 @@ check-core:
 test-core:
     cargo test -p yse-core
 
-# 全 workspace 检查
-check:
-    cd desktop && {{ tauri }} icon ../icon.png 2>/dev/null; true
-    cd mobile && {{ tauri }} icon ../icon.png 2>/dev/null; true
-    cp desktop/icons/32x32.png frontend/public/icon.png 2>/dev/null; true
-    cargo check
-
-# 全 workspace 测试
-test:
-    cargo test -p yse-core
-
 # ── 前端 ────────────────────────────────────────────────────────────────
 
 # 构建前端
@@ -84,7 +73,7 @@ clippy:
     cargo clippy -- -D warnings
 
 # 前端 + Rust 全部检查
-check-all: fe-typecheck check clippy
+check-all: fe-typecheck check-core clippy
 
 # ── 其他 ────────────────────────────────────────────────────────────────
 
@@ -92,7 +81,3 @@ check-all: fe-typecheck check clippy
 clean:
     cargo clean
     cd frontend && rm -rf dist node_modules/.vite
-
-# 帮助
-help:
-    @just --list
