@@ -39,12 +39,12 @@ impl YseState {
         if let Ok(Some(json)) = self.core.store.get_config_value("config").await {
             if let Ok(cfg) = serde_json::from_str::<YseConfig>(&json) {
                 let password = cfg.crypto_password.clone();
-                let own_name = cfg.own_address.clone();
                 let mut w = self.core.config.write().await;
                 *w = cfg;
+                w.own_address = "me".into();
                 drop(w);
 
-                self.core.session_registry.set_local_name(&own_name);
+                self.core.session_registry.set_local_name("me");
 
                 // Load contact hashes into session registry
                 if let Ok(hashes) = self.core.store.get_contact_hashes().await {
