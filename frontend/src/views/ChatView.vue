@@ -42,10 +42,19 @@
             @touchend="onTouchEnd"
             @touchmove="onTouchMove"
           >
-            <t-avatar size="40px">{{ initial(c.address) }}</t-avatar>
+            <div class="contact-avatar">
+              <t-avatar size="40px">{{ initial(c.address) }}</t-avatar>
+              <span v-if="c.hasNew" class="new-dot"></span>
+            </div>
             <div class="contact-info">
-              <div class="contact-name">{{ displayName(c.address) }}</div>
-              <div class="contact-sub">{{ subLabel(c) }}</div>
+              <div class="contact-row1">
+                <span class="contact-name">{{ displayName(c.address) }}</span>
+                <span class="contact-hostname">{{ hostnameLabel(c) }}</span>
+              </div>
+              <div class="contact-row2">
+                <span class="contact-text">{{ c.lastText || "" }}</span>
+                <span class="contact-time">{{ c.lastTime ? formatTime(c.lastTime) : "" }}</span>
+              </div>
             </div>
           </div>
           <t-empty
@@ -74,10 +83,19 @@
                 @touchend="onTouchEnd"
                 @touchmove="onTouchMove"
               >
-                <t-avatar size="40px">{{ initial(c.address) }}</t-avatar>
+                <div class="contact-avatar">
+                  <t-avatar size="40px">{{ initial(c.address) }}</t-avatar>
+                  <span v-if="c.hasNew" class="new-dot"></span>
+                </div>
                 <div class="contact-info">
-                  <div class="contact-name">{{ displayName(c.address) }}</div>
-                  <div class="contact-sub">{{ subLabel(c) }}</div>
+                  <div class="contact-row1">
+                    <span class="contact-name">{{ displayName(c.address) }}</span>
+                    <span class="contact-hostname">{{ hostnameLabel(c) }}</span>
+                  </div>
+                  <div class="contact-row2">
+                    <span class="contact-text">{{ c.lastText || "" }}</span>
+                    <span class="contact-time">{{ c.lastTime ? formatTime(c.lastTime) : "" }}</span>
+                  </div>
                 </div>
               </div>
             </template>
@@ -272,7 +290,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { useRoute } from "vue-router";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
@@ -498,7 +516,10 @@ interface Contact {
   lastTime: number;
   hostname: string;
   hidden: boolean;
+  hasNew?: boolean;
 }
+
+const readTimestamps = reactive<Record<string, number>>({});
 
 const contacts = computed<Contact[]>(() => {
   const ownName = ownAddress.value;
@@ -551,7 +572,16 @@ const contacts = computed<Contact[]>(() => {
       });
     }
   }
-  return Array.from(map.values()).sort((a, b) => b.lastTime - a.lastTime);
+  const result = Array.from(map.values()).map((c) => ({
+    ...c,
+    hasNew:
+      selectedContact.value !== c.address &&
+      c.lastTime > (readTimestamps[c.address] ?? 0),
+  }));
+  return result.sort((a, b) => {
+    if (a.hasNew !== b.hasNew) return a.hasNew ? -1 : 1;
+    return b.lastTime - a.lastTime;
+  });
 });
 
 const hostnameOptions = computed(() => {
@@ -657,14 +687,13 @@ function displayName(addr: string) {
   return resolveDisplayName(addr);
 }
 
-function subLabel(c: Contact) {
-  const p = parseAddress(c.address);
-  if (p.hostname) return `@${p.hostname}`;
-  return c.lastText;
+function hostnameLabel(c: Contact) {
+  return c.hostname ? `@${c.hostname}` : "";
 }
 
 function selectContact(addr: string) {
   selectedContact.value = addr;
+  readTimestamps[addr] = Date.now();
 }
 
 function onInputFocus() {
@@ -839,14 +868,62 @@ onMounted(async () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
-.contact-sub {
-  font-size: 11px;
+.contact-row1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.contact-row2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 3px;
+}
+.contact-hostname {
+  font-size: 10px;
   color: var(--td-text-color-placeholder);
+  white-space: nowrap;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.contact-text {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.contact-time {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.contact-avatar {
+  position: relative;
+  flex-shrink: 0;
+}
+.new-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--td-brand-color);
+  box-shadow: 0 0 6px 2px var(--td-brand-color);
+}
+.contact-item.hasNew {
+  background: var(--td-brand-color-light);
 }
 
 .hidden-section {
