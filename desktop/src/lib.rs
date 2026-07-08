@@ -5,13 +5,6 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "yse=info".into()),
-        )
-        .init();
-
     let app_data_dir = dirs_next::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("yse");
@@ -26,12 +19,21 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_os::init());
+        .plugin(tauri_plugin_os::init())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ))
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Webview,
+                ))
+                .build(),
+        );
 
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
-    #[cfg(mobile)]
-    let builder = builder.plugin(tauri_plugin_log::Builder::new().build());
 
     builder
         .manage(state)
@@ -76,7 +78,6 @@ pub fn run() {
             commands::delete_conversation,
             commands::get_contact_hashes,
             commands::get_known_hostnames,
-            commands::get_logs,
             commands::test_email,
         ])
         .run(tauri::generate_context!())

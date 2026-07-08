@@ -1,3 +1,4 @@
+use log::{info, warn};
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::AtomicU64;
@@ -5,7 +6,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command as TokioCommand};
 use tokio::sync::Mutex;
-use tracing::{info, warn};
 
 use super::protocol::*;
 
@@ -76,7 +76,7 @@ impl ManagedPlugin {
                 let val: serde_json::Value = match serde_json::from_str(&line) {
                     Ok(v) => v,
                     Err(e) => {
-                        warn!(plugin = %my_id, "invalid JSON: {} | {}", e, line);
+                        warn!("[plugin={}] invalid JSON: {} | {}", my_id, e, line);
                         continue;
                     }
                 };
@@ -109,7 +109,7 @@ impl ManagedPlugin {
                             if let Some(p) = params {
                                 let level = p["level"].as_str().unwrap_or("info");
                                 let msg = p["msg"].as_str().unwrap_or("");
-                                info!(plugin = %pid, "[{}] {}", level, msg);
+                                info!("[plugin={}] [{}] {}", pid, level, msg);
                                 if let Some(h) = handler {
                                     h(PluginRequest::Log {
                                         level: level.to_string(),
@@ -119,12 +119,12 @@ impl ManagedPlugin {
                             }
                         }
                         _ => {
-                            info!(plugin = %pid, "unhandled request: {}", method);
+                            info!("[plugin={}] unhandled request: {}", pid, method);
                         }
                     }
                 });
             }
-            warn!(plugin = %my_id, "stdout closed");
+            warn!("[plugin={}] stdout closed", my_id);
             if let Some(cb) = exit_cb {
                 cb(my_id);
             }

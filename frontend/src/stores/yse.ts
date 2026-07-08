@@ -5,7 +5,6 @@ import type {
   Message,
   PluginConfig,
   YseConfig,
-  LogEntry,
   ProcessInfo,
   SessionInfo,
 } from "@/api/commands";
@@ -65,7 +64,13 @@ export const useYseStore = defineStore("yse", () => {
   const pendingMessages = ref<PendingMessage[]>([]);
   const plugins = ref<PluginConfig[]>([]);
   const config = ref<YseConfig | null>(null);
-  const logs = ref<LogEntry[]>([]);
+  interface LogEntry {
+  level: string;
+  message: string;
+  timestamp: number;
+}
+
+const logs = ref<LogEntry[]>([]);
   const connected = ref(false);
   const polling = ref(false);
   const hostnames = ref<string[]>([]);
@@ -121,7 +126,8 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function loadLogs() {
-    logs.value = await withLog("loadLogs", () => api.getLogs(200)) || logs.value;
+    // Logs are fed by tauri-plugin-log Webview target events;
+    // the frontend buffer holds up to 500 entries in memory.
   }
 
   async function sendMessage(
@@ -297,12 +303,19 @@ export const useYseStore = defineStore("yse", () => {
     if (unlistenLogs) unlistenLogs();
     try {
       const { listen } = await import("@tauri-apps/api/event");
-      unlistenLogs = await listen<LogEntry>("log-entry", (event) => {
-        logs.value.push(event.payload);
-        if (logs.value.length > 500) {
-          logs.value = logs.value.slice(logs.value.length - 500);
-        }
-      });
+      unlistenLogs = await listen<{ message: string; level: string }>(
+        "log://log",
+        (event) => {
+          logs.value.push({
+            level: event.payload.level,
+            message: event.payload.message,
+            timestamp: Date.now(),
+          });
+          if (logs.value.length > 500) {
+            logs.value = logs.value.slice(logs.value.length - 500);
+          }
+        },
+      );
     } catch {
       // Not in Tauri environment
     }

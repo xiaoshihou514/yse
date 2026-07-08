@@ -1,7 +1,7 @@
+use log::{info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
 
 use super::process_manager::PluginProcessManager;
 use super::protocol::CoreNotification;
@@ -114,11 +114,16 @@ impl SessionRegistry {
 
         let our_host = self.local_hostname.lock().unwrap().clone();
         if hostname != our_host {
-            info!("route: message for another host: {} (we are {})", hostname, our_host);
+            info!(
+                "route: message for another host: {} (we are {})",
+                hostname, our_host
+            );
             return RouteResult::WrongHost;
         }
 
-        let plugin_id = self.resolve_plugin(name, hash, plugin_configs, process_manager).await;
+        let plugin_id = self
+            .resolve_plugin(name, hash, plugin_configs, process_manager)
+            .await;
 
         match plugin_id {
             Some(pid) => {
@@ -133,13 +138,19 @@ impl SessionRegistry {
                 RouteResult::Dispatched
             }
             None => {
-                let known = plugin_configs.iter().any(|p| p.id == name || p.name == name);
+                let known = plugin_configs
+                    .iter()
+                    .any(|p| p.id == name || p.name == name);
                 if known {
                     warn!("route: plugin {} failed to start", name);
-                    RouteResult::PluginStartFailed { plugin_name: name.to_string() }
+                    RouteResult::PluginStartFailed {
+                        plugin_name: name.to_string(),
+                    }
                 } else {
                     warn!("route: no plugin found for name={} hash={}", name, hash);
-                    RouteResult::PluginNotFound { plugin_name: name.to_string() }
+                    RouteResult::PluginNotFound {
+                        plugin_name: name.to_string(),
+                    }
                 }
             }
         }
@@ -167,7 +178,9 @@ impl SessionRegistry {
             .or_else(|| {
                 // Fallback: try stripping -hostname suffix (e.g., "echo-bot-fedora" -> "echo-bot")
                 let (prefix, _) = name.rsplit_once('-')?;
-                plugin_configs.iter().find(|p| p.id == prefix || p.name == prefix)
+                plugin_configs
+                    .iter()
+                    .find(|p| p.id == prefix || p.name == prefix)
             })?
             .clone();
         let plugin_id = config.id.clone();
@@ -183,7 +196,10 @@ impl SessionRegistry {
                     name: name.to_string(),
                 },
             );
-            info!("session registered for existing process: name={} hash={}", name, hash);
+            info!(
+                "session registered for existing process: name={} hash={}",
+                name, hash
+            );
             return Some(plugin_id);
         }
 
@@ -206,7 +222,10 @@ impl SessionRegistry {
             },
         );
 
-        info!("session registered: name={} hash={} plugin_id={}", name, hash, plugin_id);
+        info!(
+            "session registered: name={} hash={} plugin_id={}",
+            name, hash, plugin_id
+        );
         Some(plugin_id)
     }
 

@@ -79,11 +79,6 @@ export interface PendingDisplayMessage {
   error?: string;
 }
 
-export interface LogEntry {
-  level: "info" | "warn" | "error" | "debug";
-  message: string;
-  timestamp: number;
-}
 
 // --- Tauri commands -------------------------------------------------------
 
@@ -130,10 +125,6 @@ export async function startPlugin(id: string): Promise<void> {
 
 export async function stopPlugin(id: string): Promise<void> {
   return invoke("stop_plugin", { id });
-}
-
-export async function getLogs(limit = 100): Promise<LogEntry[]> {
-  return invoke("get_logs", { limit });
 }
 
 export async function testEmail(

@@ -5,11 +5,19 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt().init();
-
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ))
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Webview,
+                ))
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init());
 
     #[cfg(mobile)]
@@ -26,8 +34,7 @@ pub fn run() {
             let db_path = app_dir.join("yse.db");
             eprintln!("yse: using app_dir={:?} db_path={:?}", app_dir, db_path);
 
-            let state = AppState::new(&db_path)
-                .expect("yse mobile: AppState::new failed");
+            let state = AppState::new(&db_path).expect("yse mobile: AppState::new failed");
             *state.app_handle.lock().unwrap() = Some(app.handle().clone());
 
             if let Ok(rt) = tokio::runtime::Runtime::new() {
@@ -54,7 +61,6 @@ pub fn run() {
             commands::delete_conversation,
             commands::get_contact_hashes,
             commands::get_known_hostnames,
-            commands::get_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running yse mobile");

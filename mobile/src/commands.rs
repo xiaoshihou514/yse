@@ -5,24 +5,11 @@ use yse_core::{
     config::YseConfig,
     email::imap::{ImapConfig, ImapPoller},
     identity,
-    logging,
     message::Message,
 };
 
-fn emit_log_entry(
-    app_handle: &Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
-    log_buffer: &logging::LogBuffer,
-    entry: logging::LogEntry,
-) {
-    if let Some(h) = app_handle.lock().unwrap().as_ref() {
-        let _ = h.emit("log-entry", &entry);
-    }
-    logging::log_buffer_push(log_buffer, entry);
-}
-
 pub struct AppState {
     pub core: CoreState,
-    pub log_buffer: logging::LogBuffer,
     pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
 }
 
@@ -31,17 +18,8 @@ impl AppState {
         let core = CoreState::new(db_path, "me")?;
         Ok(Self {
             core,
-            log_buffer: logging::log_buffer_new(),
             app_handle: Arc::new(std::sync::Mutex::new(None)),
         })
-    }
-
-    pub fn log(&self, level: &str, message: String) {
-        emit_log_entry(
-            &self.app_handle,
-            &self.log_buffer,
-            logging::LogEntry::new(level, message),
-        );
     }
 }
 
@@ -70,10 +48,7 @@ pub async fn set_local_hostname(
 }
 
 #[tauri::command]
-pub async fn get_messages(
-    state: State<'_, AppState>,
-    limit: u32,
-) -> Result<Vec<Message>, String> {
+pub async fn get_messages(state: State<'_, AppState>, limit: u32) -> Result<Vec<Message>, String> {
     state
         .core
         .store
@@ -109,10 +84,10 @@ pub async fn send_message(
     }
 
     if let Err(e) = state.core.send_encrypted(&msg).await {
-        state.log("error", e);
+        log::error!("{}", e);
     }
 
-    state.log("info", format!("sent message to {}", to));
+    log::info!("sent message to {}", to);
     Ok(())
 }
 
@@ -148,16 +123,9 @@ pub async fn start_polling(
 
     let poller_flag = state.core.poller_running.clone();
     let emit_handle = state.app_handle.clone();
-    let msg_log = state.log_buffer.clone();
-    let sys_handle = state.app_handle.clone();
-    let sys_log = state.log_buffer.clone();
     let save_store = store.clone();
 
-    emit_log_entry(
-        &emit_handle,
-        &msg_log,
-        logging::LogEntry::new("info", "IMAP polling starting on mobile"),
-    );
+    log::info!("IMAP polling starting on mobile");
 
     tokio::spawn(async move {
         let mut poller = ImapPoller::new(imap_cfg, last_uid);
@@ -180,29 +148,20 @@ pub async fn start_polling(
         let sr = yse_core::plugin::session::SessionRegistry::new(&own_addr);
         let pm = yse_core::plugin::process_manager::PluginProcessManager::new();
         let eh = emit_handle.clone();
-        let ml = msg_log.clone();
         poller
             .run_with_log(
                 move |raw_email| {
                     let parsed = match yse_core::email::parser::parse_incoming(&raw_email) {
                         Ok(p) => p,
                         Err(e) => {
-                            emit_log_entry(
-                                &eh,
-                                &ml,
-                                logging::LogEntry::new("warn", format!("IMAP parse failed: {}", e)),
-                            );
+                            log::warn!("IMAP parse failed: {}", e);
                             return;
                         }
                     };
                     let decrypted = match yse_core::crypto::decrypt(&key, &parsed.encrypted_body) {
                         Ok(d) => d,
                         Err(e) => {
-                            emit_log_entry(
-                                &eh,
-                                &ml,
-                                logging::LogEntry::new("error", format!("decrypt failed: {}", e)),
-                            );
+                            log::error!("decrypt failed: {}", e);
                             return;
                         }
                     };
@@ -210,20 +169,14 @@ pub async fn start_polling(
                     let msg = match Message::from_json(&decrypted) {
                         Ok(m) => m,
                         Err(e) => {
-                            emit_log_entry(
-                                &eh,
-                                &ml,
-                                logging::LogEntry::new("error", format!("message parse failed: {}", e)),
-                            );
+                            log::error!("message parse failed: {}", e);
                             return;
                         }
                     };
 
                     let result = rt.block_on(async {
                         let s: &dyn yse_core::store::Storage = &*store;
-                        yse_core::imap_ingest::ingest_message(
-                            &msg, s, &own_addr, &sr, &pm,
-                        ).await
+                        yse_core::imap_ingest::ingest_message(&msg, s, &own_addr, &sr, &pm).await
                     });
 
                     if result.show_in_chat {
@@ -231,21 +184,17 @@ pub async fn start_polling(
                             let _ = h.emit("new-message", &msg);
                         }
                     }
-                    emit_log_entry(
-                        &eh,
-                        &ml,
-                        logging::LogEntry::new("info", format!(
-                            "new message from {} (show_in_chat={})",
-                            msg.from_addr, result.show_in_chat
-                        )),
+                    log::info!(
+                        "new message from {} (show_in_chat={})",
+                        msg.from_addr,
+                        result.show_in_chat
                     );
                 },
-                Arc::new(move |level: &str, msg: String| {
-                    emit_log_entry(
-                        &sys_handle,
-                        &sys_log,
-                        logging::LogEntry::new(level, msg),
-                    );
+                Arc::new(move |level: &str, msg: String| match level {
+                    "warn" => log::warn!("{}", msg),
+                    "error" => log::error!("{}", msg),
+                    "debug" => log::debug!("{}", msg),
+                    _ => log::info!("{}", msg),
                 }),
             )
             .await;
@@ -264,8 +213,8 @@ pub async fn stop_polling(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn auto_start_plugins(state: State<'_, AppState>) -> Result<(), String> {
-    state.log("info", "auto_start_plugins: no plugins on mobile".into());
+pub async fn auto_start_plugins(_state: State<'_, AppState>) -> Result<(), String> {
+    log::info!("auto_start_plugins: no plugins on mobile");
     Ok(())
 }
 
@@ -333,18 +282,4 @@ pub async fn get_contact_hashes(
         .get_contact_hashes()
         .await
         .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_logs(
-    state: State<'_, AppState>,
-    limit: u32,
-) -> Result<Vec<logging::LogEntry>, String> {
-    let buf = state.log_buffer.lock().unwrap();
-    let len = buf.len();
-    Ok(buf
-        .iter()
-        .skip(len.saturating_sub(limit as usize))
-        .cloned()
-        .collect())
 }

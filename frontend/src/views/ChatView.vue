@@ -578,10 +578,7 @@ const contacts = computed<Contact[]>(() => {
       selectedContact.value !== c.address &&
       c.lastTime > (readTimestamps[c.address] ?? 0),
   }));
-  return result.sort((a, b) => {
-    if (a.hasNew !== b.hasNew) return a.hasNew ? -1 : 1;
-    return b.lastTime - a.lastTime;
-  });
+  return result.sort((a, b) => b.lastTime - a.lastTime);
 });
 
 const hostnameOptions = computed(() => {
@@ -913,14 +910,15 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .new-dot {
+  --yse-dot-color: #2A52BE;
   position: absolute;
   top: -2px;
   right: -2px;
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--td-brand-color);
-  box-shadow: 0 0 6px 2px var(--td-brand-color);
+  background: var(--yse-dot-color);
+  box-shadow: 0 0 6px 2px var(--yse-dot-color);
 }
 .contact-item.hasNew {
   background: var(--td-brand-color-light);

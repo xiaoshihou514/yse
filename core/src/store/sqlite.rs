@@ -1,8 +1,8 @@
 use async_trait::async_trait;
+use log::debug;
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
-use tracing::debug;
 
 use crate::message::Message;
 
@@ -85,7 +85,7 @@ impl SqliteStorage {
 #[async_trait]
 impl Storage for SqliteStorage {
     async fn save_message(&self, msg: &Message) -> Result<(), StoreError> {
-        debug!(id = %msg.id, from = %msg.from_addr, to = %msg.to_addr, "sql: save_message");
+        debug!("sql: save_message id={} from={} to={}", msg.id, msg.from_addr, msg.to_addr);
         let conn = self
             .conn
             .lock()
@@ -142,7 +142,9 @@ impl Storage for SqliteStorage {
             })
             .map_err(|e| StoreError::Db(e.to_string()))?;
 
-        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StoreError::Db(e.to_string()))?)
     }
 
     async fn is_processed(&self, msg_id: &str) -> Result<bool, StoreError> {
@@ -153,7 +155,8 @@ impl Storage for SqliteStorage {
         let mut stmt = conn
             .prepare("SELECT 1 FROM processed_ids WHERE id = ?1")
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        let exists = stmt.exists(rusqlite::params![msg_id])
+        let exists = stmt
+            .exists(rusqlite::params![msg_id])
             .map_err(|e| StoreError::Db(e.to_string()))?;
         Ok(exists)
     }
@@ -191,7 +194,9 @@ impl Storage for SqliteStorage {
                 })
             })
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StoreError::Db(e.to_string()))?)
     }
 
     async fn save_plugin(&self, plugin: &PluginConfig) -> Result<(), StoreError> {
@@ -247,11 +252,7 @@ impl Storage for SqliteStorage {
         Ok(())
     }
 
-    async fn save_contact_hash(
-        &self,
-        recipient: &str,
-        local_hash: &str,
-    ) -> Result<(), StoreError> {
+    async fn save_contact_hash(&self, recipient: &str, local_hash: &str) -> Result<(), StoreError> {
         let conn = self
             .conn
             .lock()
@@ -275,7 +276,9 @@ impl Storage for SqliteStorage {
         let rows = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StoreError::Db(e.to_string()))?)
     }
 
     async fn set_hidden(&self, addr: &str, hidden: bool) -> Result<(), StoreError> {
@@ -310,7 +313,9 @@ impl Storage for SqliteStorage {
         let rows = stmt
             .query_map([], |row| row.get(0))
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StoreError::Db(e.to_string()))?)
     }
 
     async fn delete_messages_for_address(&self, addr: &str) -> Result<(), StoreError> {
@@ -343,7 +348,9 @@ impl Storage for SqliteStorage {
         let rows = stmt
             .query_map([], |row| row.get(0))
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StoreError::Db(e.to_string()))?)
     }
 }
 
@@ -407,7 +414,9 @@ mod tests {
             db.mark_processed(&msg.id).await.unwrap();
             assert!(db.is_processed(&msg.id).await.unwrap());
 
-            db.delete_messages_for_address("alice#abc@host").await.unwrap();
+            db.delete_messages_for_address("alice#abc@host")
+                .await
+                .unwrap();
 
             assert!(
                 db.is_processed(&msg.id).await.unwrap(),

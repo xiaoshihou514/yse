@@ -68,7 +68,7 @@ import { useRouter, useRoute } from "vue-router";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { mobileChatOpen } from "@/composables/useChatOpen";
-import { trace, debug, info, warn, error } from "@tauri-apps/plugin-log";
+import { trace, debug, info, warn, error, attachConsole } from "@tauri-apps/plugin-log";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { setLocalHostname } from "@/api/commands";
 import appRouter, { setConfigState } from "@/router";
@@ -134,6 +134,7 @@ onMounted(async () => {
   forwardConsole("info", info);
   forwardConsole("warn", warn);
   forwardConsole("error", error);
+  attachConsole().catch(() => {});
   await nextTick();
   setupTitlebar();
   await store.loadConfig();

@@ -1,13 +1,13 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::config::YseConfig;
 use crate::crypto::{derive_key, encrypt};
 use crate::disguise;
 use crate::email::smtp::{SmtpConfig, SmtpSender};
-use crate::event::{EventSender, event_channel};
+use crate::event::{event_channel, EventSender};
 use crate::plugin::process_manager::PluginProcessManager;
 use crate::plugin::session::SessionRegistry;
 use crate::store::{sqlite::SqliteStorage, Storage};
@@ -112,7 +112,12 @@ impl CoreState {
         if let Some(sender) = self.sender.read().await.as_ref() {
             let d = disguise::disguise();
             sender
-                .send((&email_user, &d.display_name), &email_user, encrypted, vec![])
+                .send(
+                    (&email_user, &d.display_name),
+                    &email_user,
+                    encrypted,
+                    vec![],
+                )
                 .await
                 .map_err(|e| format!("SMTP send failed: {}", e))
         } else {

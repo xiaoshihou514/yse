@@ -1,9 +1,9 @@
+use log::{debug, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use thiserror::Error;
 use tokio::time::{interval, Duration};
-use tracing::{debug, info, warn};
 
 type LogFn = Arc<dyn Fn(&str, String) + Send + Sync>;
 
@@ -72,7 +72,10 @@ impl ImapPoller {
             .connect()
             .map_err(|e| ImapError::Connect(e.to_string()))?;
 
-        log_fn("debug", format!("IMAP: connected to {}", self.config.server));
+        log_fn(
+            "debug",
+            format!("IMAP: connected to {}", self.config.server),
+        );
 
         let mut session = client
             .login(&self.config.username, &self.config.password)

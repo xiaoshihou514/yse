@@ -1,8 +1,8 @@
+use log::info;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
-use tracing::info;
 
 use crate::message::Message;
 use crate::plugin::process::PluginManager;

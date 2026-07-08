@@ -2,7 +2,7 @@ use crate::identity;
 use crate::message::Message;
 use crate::plugin::session::RouteResult;
 use crate::store::Storage;
-use tracing::{info, warn};
+use log::{info, warn};
 
 /// Result of processing an incoming IMAP message.
 pub struct IngestResult {
@@ -16,18 +16,16 @@ pub struct IngestResult {
 fn classify(msg: &Message, own_addr: &str) -> (/*for_self*/ bool, /*for_user*/ bool) {
     let own_name = own_addr.split('@').next().unwrap_or(own_addr);
     let to_name = identity::parse_address(&msg.to_addr)
-        .map(|(n, _, _)| n).unwrap_or("");
+        .map(|(n, _, _)| n)
+        .unwrap_or("");
     let from_name = identity::parse_address(&msg.from_addr)
-        .map(|(n, _, _)| n).unwrap_or("");
+        .map(|(n, _, _)| n)
+        .unwrap_or("");
 
-    let for_self = to_name == own_name
-        || msg.to_addr == own_name
-        || msg.to_addr == own_addr;
+    let for_self = to_name == own_name || msg.to_addr == own_name || msg.to_addr == own_addr;
 
-    let for_user = for_self
-        || from_name == own_name
-        || msg.from_addr == own_name
-        || msg.from_addr == own_addr;
+    let for_user =
+        for_self || from_name == own_name || msg.from_addr == own_name || msg.from_addr == own_addr;
 
     (for_self, for_user)
 }
@@ -89,14 +87,17 @@ pub async fn ingest_message(
         warn!("imap: mark_processed failed for {}: {}", msg.id, e);
     }
 
-    IngestResult { show_in_chat: for_user, route_result }
+    IngestResult {
+        show_in_chat: for_user,
+        route_result,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::message::Message;
-    use crate::store::{Storage, StoreError, PluginConfig};
+    use crate::store::{PluginConfig, Storage, StoreError};
     use async_trait::async_trait;
     use std::sync::Mutex;
 
@@ -122,17 +123,39 @@ mod tests {
             self.processed.lock().unwrap().push(msg_id.to_string());
             Ok(())
         }
-        async fn list_plugins(&self) -> Result<Vec<PluginConfig>, StoreError> { Ok(vec![]) }
-        async fn save_plugin(&self, _: &PluginConfig) -> Result<(), StoreError> { Ok(()) }
-        async fn delete_plugin(&self, _: &str) -> Result<(), StoreError> { Ok(()) }
-        async fn get_config_value(&self, _: &str) -> Result<Option<String>, StoreError> { Ok(None) }
-        async fn set_config_value(&self, _: &str, _: &str) -> Result<(), StoreError> { Ok(()) }
-        async fn get_contact_hashes(&self) -> Result<Vec<(String, String)>, StoreError> { Ok(vec![]) }
-        async fn save_contact_hash(&self, _: &str, _: &str) -> Result<(), StoreError> { Ok(()) }
-        async fn get_unique_addresses(&self) -> Result<Vec<String>, StoreError> { Ok(vec![]) }
-        async fn set_hidden(&self, _: &str, _: bool) -> Result<(), StoreError> { Ok(()) }
-        async fn get_hidden_addresses(&self) -> Result<Vec<String>, StoreError> { Ok(vec![]) }
-        async fn delete_messages_for_address(&self, _: &str) -> Result<(), StoreError> { Ok(()) }
+        async fn list_plugins(&self) -> Result<Vec<PluginConfig>, StoreError> {
+            Ok(vec![])
+        }
+        async fn save_plugin(&self, _: &PluginConfig) -> Result<(), StoreError> {
+            Ok(())
+        }
+        async fn delete_plugin(&self, _: &str) -> Result<(), StoreError> {
+            Ok(())
+        }
+        async fn get_config_value(&self, _: &str) -> Result<Option<String>, StoreError> {
+            Ok(None)
+        }
+        async fn set_config_value(&self, _: &str, _: &str) -> Result<(), StoreError> {
+            Ok(())
+        }
+        async fn get_contact_hashes(&self) -> Result<Vec<(String, String)>, StoreError> {
+            Ok(vec![])
+        }
+        async fn save_contact_hash(&self, _: &str, _: &str) -> Result<(), StoreError> {
+            Ok(())
+        }
+        async fn get_unique_addresses(&self) -> Result<Vec<String>, StoreError> {
+            Ok(vec![])
+        }
+        async fn set_hidden(&self, _: &str, _: bool) -> Result<(), StoreError> {
+            Ok(())
+        }
+        async fn get_hidden_addresses(&self) -> Result<Vec<String>, StoreError> {
+            Ok(vec![])
+        }
+        async fn delete_messages_for_address(&self, _: &str) -> Result<(), StoreError> {
+            Ok(())
+        }
     }
 
     fn make_msg(from: &str, to: &str) -> Message {

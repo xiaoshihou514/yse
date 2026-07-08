@@ -1,8 +1,8 @@
+use log::{info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
 
 use super::process::ManagedPlugin;
 use super::protocol::{CoreNotification, PluginRequest};
@@ -113,9 +113,7 @@ impl PluginProcessManager {
         let handler = self.get_request_handler();
         let on_exit = Some(Self::make_on_exit(self.processes.clone(), id.to_string()));
 
-        match ManagedPlugin::spawn_with_exit_handler(
-            id.into(), exec_path, args, handler, on_exit,
-        ) {
+        match ManagedPlugin::spawn_with_exit_handler(id.into(), exec_path, args, handler, on_exit) {
             Ok(plugin) => {
                 map.insert(
                     id.into(),
@@ -148,10 +146,7 @@ impl PluginProcessManager {
             .ok_or_else(|| format!("plugin {} not found", id))?;
 
         if entry.state != ProcessState::Running {
-            return Err(format!(
-                "plugin {} is not running ({:?})",
-                id, entry.state
-            ));
+            return Err(format!("plugin {} is not running ({:?})", id, entry.state));
         }
 
         entry.state = ProcessState::Stopping;
@@ -190,9 +185,8 @@ impl PluginProcessManager {
         let handler = self.get_request_handler();
         let on_exit = Some(Self::make_on_exit(self.processes.clone(), id.to_string()));
 
-        match ManagedPlugin::spawn_with_exit_handler(
-            id.into(), &exec_path, &args, handler, on_exit,
-        ) {
+        match ManagedPlugin::spawn_with_exit_handler(id.into(), &exec_path, &args, handler, on_exit)
+        {
             Ok(plugin) => {
                 map.insert(
                     id.into(),
@@ -296,10 +290,7 @@ impl PluginProcessManager {
                     Err(format!("plugin {} has no process handle", plugin_id))
                 }
             }
-            None => Err(format!(
-                "plugin {} not found in process manager",
-                plugin_id
-            )),
+            None => Err(format!("plugin {} not found in process manager", plugin_id)),
         }
     }
 }
