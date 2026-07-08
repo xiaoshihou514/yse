@@ -65,7 +65,7 @@ export interface YseConfig {
   email_password: string;
   own_address: string;
   crypto_password: string;
-  plugin_mappings: { virtual_addr: string; plugin_id: string }[];
+  plugin_mappings: { virtual_addr: string; plugin_id: string; display_name?: string }[];
 }
 
 export interface LogEntry {

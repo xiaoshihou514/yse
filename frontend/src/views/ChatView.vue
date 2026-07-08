@@ -1,20 +1,5 @@
 <template>
   <div class="chat-shell">
-    <!-- Hostname tabs -->
-    <div class="hostname-tabs" v-if="tabs.length > 0">
-      <div class="tabs-track">
-        <div
-          v-for="tab in tabs"
-          :key="tab.key"
-          :class="['tab-chip', { active: selectedKey === tab.key }]"
-          @click="selectedKey = tab.key"
-        >
-          <span class="tab-label">{{ tab.label }}</span>
-          <span class="tab-count">{{ tab.count }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- Contact + Chat split -->
     <div class="chat-body">
       <!-- Contact panel -->
@@ -26,6 +11,13 @@
       >
         <div class="panel-header">
           <span class="panel-title">联系人</span>
+          <t-select
+            v-model="selectedKey"
+            :options="hostnameOptions"
+            size="small"
+            :style="{ width: '130px' }"
+            placeholder="全部对话"
+          />
         </div>
 
         <t-input
@@ -104,6 +96,9 @@
               >←</span
             >
             <span class="topbar-name">{{ displayName(selectedContact) }}</span>
+            <span class="topbar-more" @click="openContactActions"
+              ><t-icon name="ellipsis"
+            /></span>
           </div>
           <div class="message-area" ref="messagesContainer">
             <div
@@ -212,6 +207,67 @@
         删除对话
       </div>
     </div>
+
+    <!-- Rename dialog -->
+    <t-dialog
+      v-model:visible="renameDialog.visible"
+      header="修改显示名称"
+      :close-on-overlay-click="true"
+      @confirm="confirmRename"
+    >
+      <t-input
+        v-model="renameDialog.name"
+        placeholder="联系人显示名称"
+        @keydown.enter="confirmRename"
+      />
+    </t-dialog>
+
+    <!-- Chat settings panel: right sidebar (desktop) / full-page (mobile) -->
+    <div v-if="showSettings" class="settings-backdrop" @click.self="showSettings = false">
+      <div
+        :class="[
+          'settings-panel',
+          { 'settings-mobile': isMobile },
+        ]"
+      >
+        <div class="settings-header">
+          <span class="settings-back" @click="showSettings = false">
+            {{ isMobile ? "← 返回" : "✕" }}
+          </span>
+          <span class="settings-title">{{ resolveDisplayName(selectedContact!) }}</span>
+          <span class="settings-spacer"></span>
+        </div>
+        <div class="settings-body">
+          <div class="settings-group">
+            <div class="settings-group-label">信息</div>
+            <div
+              class="settings-item"
+              @click="openRenameDialog(selectedContact!)"
+            >
+              <span class="settings-item-label">显示名称</span>
+              <span class="settings-item-value">{{
+                resolveDisplayName(selectedContact!)
+              }}</span>
+              <span class="settings-item-arrow">›</span>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-group-label">操作</div>
+            <div class="settings-item" @click="toggleSettingsHide">
+              <span class="settings-item-label">{{
+                isContactHidden ? "取消隐藏" : "隐藏对话"
+              }}</span>
+            </div>
+            <div
+              class="settings-item settings-item-danger"
+              @click="deleteSettingsConversation"
+            >
+              <span class="settings-item-label">删除对话</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -303,6 +359,13 @@ const ctxContact = ref<{ address: string; hidden: boolean } | null>(null);
 // Track keyboard visibility for mobile safe area handling
 const isKeyboardOpen = ref(false);
 
+const renameDialog = ref({ visible: false, name: "" });
+const showSettings = ref(false);
+
+const isContactHidden = computed(() =>
+  selectedContact.value ? store.hiddenAddresses.has(selectedContact.value) : false,
+);
+
 const ctxMenu = ref<{ visible: boolean; x: number; y: number; text: string }>({
   visible: false,
   x: 0,
@@ -361,15 +424,8 @@ function onTouchStart(e: TouchEvent, c: { address: string; hidden: boolean }) {
   touchStartY = e.touches[0].clientY;
   longPressTimer = setTimeout(() => {
     if (longPressContact) {
-      const touch = e.changedTouches?.[0] ?? e.touches[0];
-      onContactContext(
-        {
-          clientX: touch.clientX,
-          clientY: touch.clientY,
-          preventDefault: () => {},
-        } as MouseEvent,
-        longPressContact,
-      );
+      selectContact(longPressContact.address);
+      showSettings.value = true;
     }
     longPressTimer = null;
   }, 500);
@@ -389,6 +445,43 @@ function onTouchMove(e: TouchEvent) {
     longPressTimer = null;
     longPressContact = null;
   }
+}
+
+function openContactActions() {
+  showSettings.value = true;
+}
+
+function openRenameDialog(addr: string) {
+  const mapping = (store.config?.plugin_mappings ?? []).find(
+    (m) => m.virtual_addr === addr,
+  );
+  renameDialog.value = {
+    visible: true,
+    name: mapping?.display_name || parseAddress(addr).name,
+  };
+}
+
+async function confirmRename() {
+  if (!selectedContact.value || !renameDialog.value.name.trim()) return;
+  await store.renameContactDisplayName(
+    selectedContact.value,
+    renameDialog.value.name.trim(),
+  );
+  renameDialog.value.visible = false;
+}
+
+async function toggleSettingsHide() {
+  if (!selectedContact.value) return;
+  await store.toggleHide(selectedContact.value);
+  showSettings.value = false;
+}
+
+async function deleteSettingsConversation() {
+  if (!selectedContact.value) return;
+  const addr = selectedContact.value;
+  showSettings.value = false;
+  selectedContact.value = "";
+  await store.deleteConversation(addr);
 }
 
 document.addEventListener("click", () => {
@@ -460,22 +553,17 @@ const contacts = computed<Contact[]>(() => {
   return Array.from(map.values()).sort((a, b) => b.lastTime - a.lastTime);
 });
 
-const tabs = computed(() => {
+const hostnameOptions = computed(() => {
   const groups = new Map<string, number>();
   for (const c of visibleContacts.value) {
     const h = c.hostname || "未知";
     groups.set(h, (groups.get(h) || 0) + 1);
   }
-  // Always show "all" tab
-  const allCount = Array.from(groups.values()).reduce((a, b) => a + b, 0);
-  const result: { key: string; label: string; count: number }[] = [
-    { key: "all", label: "全部对话", count: allCount },
+  const result: { label: string; value: string }[] = [
+    { label: `全部对话 (${visibleContacts.value.length})`, value: "all" },
   ];
-  // Only show hostname tabs that have contacts
   for (const [key, count] of groups) {
-    if (count > 0) {
-      result.push({ key, label: key, count });
-    }
+    result.push({ label: `${key} (${count})`, value: key });
   }
   return result;
 });
@@ -546,14 +634,26 @@ const conversation = computed(() => {
   return [...real, ...pending].sort((a, b) => a.timestamp - b.timestamp);
 });
 
+function resolveDisplayName(addr: string) {
+  const mapping = (store.config?.plugin_mappings ?? []).find(
+    (m) => m.virtual_addr === addr,
+  );
+  if (mapping?.display_name) return mapping.display_name;
+  const p = parseAddress(addr);
+  return p.name || addr;
+}
+
 function initial(addr: string) {
   const p = parseAddress(addr);
-  return (p.name.charAt(0) || "?").toUpperCase();
+  const mapping = (store.config?.plugin_mappings ?? []).find(
+    (m) => m.virtual_addr === addr,
+  );
+  const name = mapping?.display_name || p.name;
+  return (name.charAt(0) || "?").toUpperCase();
 }
 
 function displayName(addr: string) {
-  const p = parseAddress(addr);
-  return p.name || addr;
+  return resolveDisplayName(addr);
 }
 
 function subLabel(c: Contact) {
@@ -668,71 +768,6 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-
-/* ---- Hostname tabs ---- */
-.hostname-tabs {
-  padding: 10px 16px 0;
-  border-bottom: 1px solid var(--td-component-stroke);
-  background: var(--td-bg-color-container);
-  flex-shrink: 0;
-}
-.tabs-track {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 10px;
-}
-.tabs-track::-webkit-scrollbar {
-  display: none;
-}
-.tab-chip {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border-radius: 20px;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1px solid var(--td-component-stroke);
-  background: var(--td-bg-color-secondarycontainer);
-  color: var(--td-text-color-secondary);
-  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  flex-shrink: 0;
-}
-.tab-chip:hover {
-  border-color: var(--td-brand-color);
-  color: var(--td-brand-color);
-  background: var(--td-brand-color-light);
-}
-.tab-chip.active {
-  background: var(--td-brand-color);
-  border-color: var(--td-brand-color);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(var(--td-brand-color-rgb), 0.25);
-}
-.tab-label {
-  line-height: 1;
-}
-.tab-count {
-  font-size: 11px;
-  font-weight: 600;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.08);
-  line-height: 1;
-}
-.tab-chip.active .tab-count {
-  background: rgba(255, 255, 255, 0.2);
 }
 
 /* ---- Chat body ---- */
@@ -1104,5 +1139,128 @@ onMounted(async () => {
     font-size: 16px;
     padding: 0 16px;
   }
+}
+
+/* ---- Topbar more button ---- */
+.topbar-more {
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 6px;
+  font-size: 18px;
+  color: var(--td-text-color-secondary);
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  transition: background 0.2s;
+}
+.topbar-more:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+
+/* ---- Settings panel ---- */
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  justify-content: flex-end;
+}
+.settings-panel {
+  width: 340px;
+  max-width: 85vw;
+  height: 100%;
+  background: var(--td-bg-color-container);
+  display: flex;
+  flex-direction: column;
+  animation: slideRight 0.25s ease;
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.1);
+}
+.settings-panel.settings-mobile {
+  width: 100%;
+  max-width: 100%;
+  animation: slideUp 0.3s ease;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid var(--td-component-stroke);
+  flex-shrink: 0;
+}
+.settings-back {
+  cursor: pointer;
+  color: var(--td-brand-color);
+  font-size: 16px;
+  padding: 4px 0;
+}
+.settings-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  text-align: center;
+}
+.settings-spacer {
+  width: 60px;
+}
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+.settings-group {
+  margin-bottom: 8px;
+}
+.settings-group-label {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  padding: 8px 16px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.settings-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  background: var(--td-bg-color-container);
+}
+.settings-item:active {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.settings-item-label {
+  font-size: 16px;
+  color: var(--td-text-color-primary);
+  flex: 1;
+}
+.settings-item-value {
+  font-size: 14px;
+  color: var(--td-text-color-placeholder);
+  margin-right: 8px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-item-arrow {
+  font-size: 20px;
+  color: var(--td-text-color-placeholder);
+}
+.settings-item-danger .settings-item-label {
+  color: var(--td-error-color);
+}
+@keyframes slideRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 </style>

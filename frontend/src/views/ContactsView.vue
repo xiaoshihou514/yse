@@ -234,11 +234,12 @@ async function scanContactQr() {
 
 function displayAddress(row: {
   virtual_addr: string;
+  display_name?: string;
   _parsed: ReturnType<typeof parseAddress>;
 }) {
-  const p = row._parsed;
-  if (p.hostname) return `${p.name}@${p.hostname}`;
-  return p.name;
+  const name = row.display_name || row._parsed.name;
+  if (row._parsed.hostname) return `${name}@${row._parsed.hostname}`;
+  return name;
 }
 
 function pluginName(id: string): string | undefined {
@@ -276,6 +277,7 @@ async function handleAdd() {
   cfg.plugin_mappings.push({
     virtual_addr: vaddr,
     plugin_id: pluginId,
+    display_name: name,
   });
   try {
     await api.saveConfig(cfg);

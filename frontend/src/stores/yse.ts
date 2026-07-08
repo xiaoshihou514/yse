@@ -106,6 +106,18 @@ export const useYseStore = defineStore("yse", () => {
     config.value = cfg;
   }
 
+  async function renameContactDisplayName(addr: string, newName: string) {
+    const cfg = config.value;
+    if (!cfg) return;
+    const mapping = cfg.plugin_mappings.find((m) => m.virtual_addr === addr);
+    if (!mapping) {
+      cfg.plugin_mappings.push({ virtual_addr: addr, plugin_id: "", display_name: newName });
+    } else {
+      mapping.display_name = newName;
+    }
+    await saveConfigAndApply(cfg);
+  }
+
   async function loadLogs() {
     logs.value = await withLog("loadLogs", () => api.getLogs(200)) || logs.value;
   }
@@ -351,5 +363,6 @@ export const useYseStore = defineStore("yse", () => {
     loadSessions,
     toggleHide,
     deleteConversation,
+    renameContactDisplayName,
   };
 });

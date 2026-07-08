@@ -7,6 +7,9 @@ pub struct PluginMapping {
     pub virtual_addr: String,
     /// Plugin id that handles this address
     pub plugin_id: String,
+    /// Human-readable display name (local-only, never sent over the wire)
+    #[serde(default)]
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
