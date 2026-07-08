@@ -130,6 +130,8 @@ export const useYseStore = defineStore("yse", () => {
   async function saveConfigAndApply(cfg: YseConfig) {
     await api.saveConfig(cfg);
     config.value = cfg;
+    await stopPolling();
+    await startPolling();
   }
 
   async function renameContactDisplayName(addr: string, newName: string) {
