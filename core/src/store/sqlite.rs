@@ -63,9 +63,21 @@ impl SqliteStorage {
             CREATE TABLE IF NOT EXISTS hidden_addresses (
                 address TEXT PRIMARY KEY
             );
+
+            CREATE TABLE IF NOT EXISTS processed_ids (
+                id TEXT PRIMARY KEY
+            );
             ",
         )
         .map_err(|e| StoreError::Db(e.to_string()))?;
+
+        // Migrate: copy existing processed marks from messages table to processed_ids
+        conn.execute(
+            "INSERT OR IGNORE INTO processed_ids (id) SELECT id FROM messages WHERE processed = 1",
+            [],
+        )
+        .map_err(|e| StoreError::Db(e.to_string()))?;
+
         Ok(())
     }
 }
@@ -143,12 +155,11 @@ impl Storage for SqliteStorage {
             .lock()
             .map_err(|e| StoreError::Db(e.to_string()))?;
         let mut stmt = conn
-            .prepare("SELECT processed FROM messages WHERE id = ?1")
+            .prepare("SELECT 1 FROM processed_ids WHERE id = ?1")
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        let result: Option<bool> = stmt
-            .query_row(rusqlite::params![msg_id], |row| row.get(0))
-            .ok();
-        Ok(result.unwrap_or(false))
+        let exists = stmt.exists(rusqlite::params![msg_id])
+            .map_err(|e| StoreError::Db(e.to_string()))?;
+        Ok(exists)
     }
 
     async fn mark_processed(&self, msg_id: &str) -> Result<(), StoreError> {
@@ -157,7 +168,7 @@ impl Storage for SqliteStorage {
             .lock()
             .map_err(|e| StoreError::Db(e.to_string()))?;
         conn.execute(
-            "UPDATE messages SET processed = 1 WHERE id = ?1",
+            "INSERT OR IGNORE INTO processed_ids (id) VALUES (?1)",
             rusqlite::params![msg_id],
         )
         .map_err(|e| StoreError::Db(e.to_string()))?;

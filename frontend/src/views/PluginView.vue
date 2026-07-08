@@ -121,6 +121,7 @@ import { MessagePlugin } from "tdesign-vue-next";
 import { QrcodeIcon, DeleteIcon } from "tdesign-icons-vue-next";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
+import { error } from "@tauri-apps/plugin-log";
 import * as api from "@/api/commands";
 import type { PluginConfig } from "@/api/commands";
 
@@ -217,7 +218,7 @@ async function showPluginQr(plugin: PluginConfig) {
       color: { dark: "#000000", light: "#ffffff" },
     });
   } catch (e) {
-    console.error("[PluginView] QR gen failed:", e);
+    error(`[PluginView] QR gen failed: ${String(e)}`);
   }
 }
 

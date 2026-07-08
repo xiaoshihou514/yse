@@ -34,16 +34,20 @@ pub struct ImapPoller {
 }
 
 impl ImapPoller {
-    pub fn new(config: ImapConfig) -> Self {
+    pub fn new(config: ImapConfig, last_uid: Option<u32>) -> Self {
         Self {
             config,
             running: Arc::new(AtomicBool::new(false)),
-            last_uid: Arc::new(Mutex::new(None)),
+            last_uid: Arc::new(Mutex::new(last_uid)),
         }
     }
 
     pub fn running_flag(&self) -> Arc<AtomicBool> {
         self.running.clone()
+    }
+
+    pub fn last_uid_arc(&self) -> Arc<Mutex<Option<u32>>> {
+        self.last_uid.clone()
     }
 
     /// Replace the internal running flag with an externally-owned one,

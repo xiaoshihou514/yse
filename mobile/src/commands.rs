@@ -175,6 +175,13 @@ pub async fn start_polling(
         (imap, key, state.core.store.clone(), cfg.own_address.clone())
     };
 
+    let last_uid = store
+        .get_config_value("imap_last_uid")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok());
+
     state
         .core
         .poller_running
@@ -185,10 +192,25 @@ pub async fn start_polling(
     let lb1 = state.log_buffer.clone();
     let ah2 = state.app_handle.clone();
     let lb2 = state.log_buffer.clone();
+    let save_store = store.clone();
 
     tokio::spawn(async move {
-        let mut poller = ImapPoller::new(imap_cfg);
+        let mut poller = ImapPoller::new(imap_cfg, last_uid);
         poller.set_running_flag(poller_flag);
+
+        let last_uid_arc = poller.last_uid_arc();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                let uid = *last_uid_arc.lock().unwrap();
+                if let Some(u) = uid {
+                    let _ = save_store
+                        .set_config_value("imap_last_uid", &u.to_string())
+                        .await;
+                }
+            }
+        });
+
         poller
             .run_with_log(
                 move |raw_email| {

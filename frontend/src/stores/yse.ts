@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
+import { MessagePlugin } from "tdesign-vue-next";
 import type {
   Message,
   PluginConfig,
@@ -10,6 +11,7 @@ import type {
 } from "@/api/commands";
 import * as api from "@/api/commands";
 import { platform } from "@tauri-apps/plugin-os";
+import { error } from "@tauri-apps/plugin-log";
 import { hostnameFromAddr } from "@/utils/address";
 
 function generateId(): string {
@@ -55,7 +57,7 @@ export interface PendingMessage {
 
 async function withLog<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
   try { return await fn(); }
-  catch (e) { console.error(`${label} failed:`, e); }
+  catch (e) { error(`${label} failed: ${String(e)}`); }
 }
 
 export const useYseStore = defineStore("yse", () => {
@@ -89,7 +91,7 @@ export const useYseStore = defineStore("yse", () => {
         );
       });
     } catch (e) {
-      console.error("loadMessages failed:", e);
+      error(`loadMessages failed: ${String(e)}`);
     }
   }
 
@@ -186,7 +188,8 @@ export const useYseStore = defineStore("yse", () => {
       polling.value = true;
       connected.value = true;
     } catch (e) {
-      console.error("startPolling failed:", e);
+      error(`startPolling failed: ${String(e)}`);
+      MessagePlugin.error(`IMAP 连接失败: ${e}`).catch(() => {});
     }
   }
 
@@ -195,7 +198,7 @@ export const useYseStore = defineStore("yse", () => {
     // Plugins are started on demand by SessionRegistry when messages arrive.
     await api
       .autoStartPlugins()
-      .catch((e) => console.error("autoStartPlugins failed:", e));
+      .catch((e) => error(`autoStartPlugins failed: ${String(e)}`));
     await startPolling();
     await loadHostnames();
     await loadHiddenAddresses();
@@ -210,7 +213,7 @@ export const useYseStore = defineStore("yse", () => {
       polling.value = false;
       connected.value = false;
     } catch (e) {
-      console.error("stopPolling failed:", e);
+      error(`stopPolling failed: ${String(e)}`);
     }
   }
 
@@ -218,7 +221,7 @@ export const useYseStore = defineStore("yse", () => {
     try {
       hostnames.value = await api.getKnownHostnames();
     } catch (e) {
-      console.error("loadHostnames failed:", e);
+      error(`loadHostnames failed: ${String(e)}`);
     }
   }
 
@@ -227,7 +230,7 @@ export const useYseStore = defineStore("yse", () => {
       const addrs = await api.getHiddenAddresses();
       hiddenAddresses.value = new Set(addrs);
     } catch (e) {
-      console.error("loadHiddenAddresses failed:", e);
+      error(`loadHiddenAddresses failed: ${String(e)}`);
     }
   }
 
@@ -237,7 +240,7 @@ export const useYseStore = defineStore("yse", () => {
       localHostname.value = resolveHostname(backend);
     } catch (e) {
       localHostname.value = resolveHostname("");
-      console.error("loadLocalHostname failed:", e);
+      error(`loadLocalHostname failed: ${String(e)}`);
     }
   }
 
@@ -245,7 +248,7 @@ export const useYseStore = defineStore("yse", () => {
     try {
       processes.value = await api.listProcesses();
     } catch (e) {
-      console.error("loadProcesses failed:", e);
+      error(`loadProcesses failed: ${String(e)}`);
     }
   }
 
@@ -253,7 +256,7 @@ export const useYseStore = defineStore("yse", () => {
     try {
       sessions.value = await api.listSessions();
     } catch (e) {
-      console.error("loadSessions failed:", e);
+      error(`loadSessions failed: ${String(e)}`);
     }
   }
 

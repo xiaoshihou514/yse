@@ -413,15 +413,39 @@ impl YseState {
         };
 
         self.log("info", "IMAP polling started".into());
-        self.core.poller_running
+        self.core
+            .poller_running
             .store(true, std::sync::atomic::Ordering::SeqCst);
 
-        let mut poller = ImapPoller::new(imap_cfg);
-        poller.set_running_flag(self.core.poller_running.clone());
+        let last_uid = store
+            .get_config_value("imap_last_uid")
+            .await
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok());
+
         let state_app_handle = self.app_handle.clone();
         let state_log_buffer = self.log_buffer.clone();
+        let save_store = store.clone();
 
+        let poller_flag = self.core.poller_running.clone();
         tokio::spawn(async move {
+            let mut poller = ImapPoller::new(imap_cfg, last_uid);
+            poller.set_running_flag(poller_flag);
+
+            let last_uid_arc = poller.last_uid_arc();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    let uid = *last_uid_arc.lock().unwrap();
+                    if let Some(u) = uid {
+                        let _ = save_store
+                            .set_config_value("imap_last_uid", &u.to_string())
+                            .await;
+                    }
+                }
+            });
+
             poller
                 .run_with_log(
                     move |raw_email| {
@@ -861,7 +885,7 @@ pub async fn test_email(
         port,
         username,
         password,
-    });
+    }, None);
     let _session = p
         .connect_sync()
         .map_err(|e| format!("IMAP 连接失败: {}", e))?;
