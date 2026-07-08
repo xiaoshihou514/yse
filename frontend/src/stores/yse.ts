@@ -226,6 +226,7 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function initializeApp() {
+    const isMobile = platform() === "android";
     // Load configs and contact hashes, but don't auto-start plugins.
     // Plugins are started on demand by SessionRegistry when messages arrive.
     await api
@@ -235,8 +236,11 @@ export const useYseStore = defineStore("yse", () => {
     await loadHostnames();
     await loadHiddenAddresses();
     await loadLocalHostname();
-    await loadProcesses();
-    await loadSessions();
+    // Plugins/sessions are desktop-only; mobile has no plugin system.
+    if (!isMobile) {
+      await loadProcesses();
+      await loadSessions();
+    }
   }
 
   async function stopPolling() {
