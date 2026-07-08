@@ -70,6 +70,7 @@ import { useIsMobile } from "@/composables/useIsMobile";
 import { mobileChatOpen } from "@/composables/useChatOpen";
 import { trace, debug, info, warn, error } from "@tauri-apps/plugin-log";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { setLocalHostname } from "@/api/commands";
 import appRouter, { setConfigState } from "@/router";
 import {
   ChatIcon,
@@ -137,6 +138,10 @@ onMounted(async () => {
   store.listenForLogs();
   store.listenForMessages();
   await store.initializeApp();
+  // Sync the resolved hostname to the backend so format_sender_address uses it
+  if (store.localHostname) {
+    setLocalHostname(store.localHostname).catch(() => {});
+  }
   await store.loadProcesses();
   await store.loadSessions();
 });

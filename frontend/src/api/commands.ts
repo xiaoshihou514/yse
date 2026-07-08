@@ -143,7 +143,11 @@ export async function listSessions(): Promise<SessionInfo[]> {
 }
 
 export async function getHostname(): Promise<string> {
-  return invoke("get_hostname");
+return invoke("get_hostname");
+}
+
+export async function setLocalHostname(hostname: string): Promise<void> {
+return invoke("set_local_hostname", { hostname });
 }
 
 export async function toggleHideConversation(

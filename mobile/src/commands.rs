@@ -78,6 +78,15 @@ pub async fn get_hostname() -> Result<String, String> {
 }
 
 #[tauri::command]
+pub async fn set_local_hostname(
+    state: State<'_, AppState>,
+    hostname: String,
+) -> Result<(), String> {
+    state.core.session_registry.set_local_hostname(&hostname);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_messages(
     state: State<'_, AppState>,
     limit: u32,

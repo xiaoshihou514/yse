@@ -70,6 +70,7 @@ pub fn run() {
             commands::list_processes,
             commands::list_sessions,
             commands::get_hostname,
+            commands::set_local_hostname,
             commands::toggle_hide_conversation,
             commands::get_hidden_addresses,
             commands::delete_conversation,

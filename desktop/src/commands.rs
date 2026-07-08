@@ -852,6 +852,15 @@ pub async fn get_hostname() -> Result<String, String> {
 }
 
 #[tauri::command]
+pub async fn set_local_hostname(
+    state: State<'_, YseState>,
+    hostname: String,
+) -> Result<(), String> {
+    state.session_registry.set_local_hostname(&hostname);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn toggle_hide_conversation(
     state: State<'_, YseState>,
     address: String,

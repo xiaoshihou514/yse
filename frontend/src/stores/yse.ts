@@ -308,6 +308,13 @@ export const useYseStore = defineStore("yse", () => {
     try {
       const { listen } = await import("@tauri-apps/api/event");
       unlistenMessages = await listen<Message>("new-message", (event) => {
+        // Remove any pending message that matches this real message right away,
+        // before loadMessages runs. Prevents brief double-display when the
+        // event arrives before the send() promise resolves.
+        const p = event.payload;
+        pendingMessages.value = pendingMessages.value.filter(
+          (x) => !(x.text === p.text && Math.abs(x.timestamp - p.timestamp) < 30000),
+        );
         // Incremental hostname update
         ingestHostnamesFromMessage(event.payload);
         if (messageReloadTimer) clearTimeout(messageReloadTimer);

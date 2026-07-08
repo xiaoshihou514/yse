@@ -45,6 +45,7 @@ pub struct SessionRegistry {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
     contact_hashes: std::sync::Mutex<HashMap<String, String>>,
     local_name: std::sync::Mutex<String>,
+    local_hostname: std::sync::Mutex<String>,
 }
 
 impl SessionRegistry {
@@ -53,11 +54,16 @@ impl SessionRegistry {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             contact_hashes: std::sync::Mutex::new(HashMap::new()),
             local_name: std::sync::Mutex::new(local_name.to_string()),
+            local_hostname: std::sync::Mutex::new(identity::local_hostname()),
         }
     }
 
     pub fn set_local_name(&self, name: &str) {
         *self.local_name.lock().unwrap() = name.to_string();
+    }
+
+    pub fn set_local_hostname(&self, hostname: &str) {
+        *self.local_hostname.lock().unwrap() = hostname.to_string();
     }
 
     pub fn set_contact_hashes(&self, hashes: HashMap<String, String>) {
@@ -81,7 +87,7 @@ impl SessionRegistry {
     pub fn format_sender_address(&self, recipient: &str) -> String {
         let hash = self.get_or_create_sender_hash(recipient);
         let name = self.local_name.lock().unwrap().clone();
-        let hostname = identity::local_hostname();
+        let hostname = self.local_hostname.lock().unwrap().clone();
         identity::format_address(&name, &hash, &hostname)
     }
 
@@ -105,7 +111,7 @@ impl SessionRegistry {
             }
         };
 
-        let our_host = identity::local_hostname();
+        let our_host = self.local_hostname.lock().unwrap().clone();
         if hostname != our_host {
             info!("route: message for another host: {} (we are {})", hostname, our_host);
             return RouteResult::WrongHost;

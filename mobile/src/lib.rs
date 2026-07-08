@@ -46,6 +46,7 @@ pub fn run() {
             commands::auto_start_plugins,
             commands::stop_polling,
             commands::get_hostname,
+            commands::set_local_hostname,
             commands::toggle_hide_conversation,
             commands::get_hidden_addresses,
             commands::delete_conversation,

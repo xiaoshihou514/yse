@@ -429,10 +429,23 @@ interface Contact {
 }
 
 const contacts = computed<Contact[]>(() => {
+  const ownName = ownAddress.value;
   const map = new Map<string, Contact>();
+  // 文件传输助手 — always present, address = ownName@hostname
+  const selfAddr = `${ownName}@${store.localHostname || "localhost"}`;
   for (const m of store.sortedMessages) {
-    const addr = nameFromAddr(m.from) === ownAddress.value ? m.to : m.from;
-    if (nameFromAddr(addr) === ownAddress.value) continue;
+    const addr = nameFromAddr(m.from) === ownName ? m.to : m.from;
+    if (nameFromAddr(addr) === ownName) {
+      // Self-addressed messages go into the 文件传输助手 conversation
+      map.set(selfAddr, {
+        address: selfAddr,
+        lastText: m.text ?? "(文件)",
+        lastTime: m.timestamp,
+        hostname: "文件传输助手",
+        hidden: store.hiddenAddresses.has(selfAddr),
+      });
+      continue;
+    }
     if (!map.has(addr) || m.timestamp > map.get(addr)!.lastTime) {
       map.set(addr, {
         address: addr,
@@ -442,6 +455,16 @@ const contacts = computed<Contact[]>(() => {
         hidden: store.hiddenAddresses.has(addr),
       });
     }
+  }
+  // Ensure 文件传输助手 always has an entry
+  if (!map.has(selfAddr)) {
+    map.set(selfAddr, {
+      address: selfAddr,
+      lastText: "",
+      lastTime: 0,
+      hostname: "文件传输助手",
+      hidden: store.hiddenAddresses.has(selfAddr),
+    });
   }
   // Include contacts from plugin_mappings that have no messages yet
   for (const m of store.config?.plugin_mappings ?? []) {
@@ -501,11 +524,20 @@ const filteredContacts = computed(() => {
 const conversation = computed(() => {
   const addr = selectedContact.value;
   if (!addr) return [];
-  const real = store.sortedMessages.filter(
-    (m) =>
-      (m.from === addr && nameFromAddr(m.to) === ownAddress.value) ||
-      (nameFromAddr(m.from) === ownAddress.value && m.to === addr),
-  );
+  const ownName = ownAddress.value;
+  const isSelf = nameFromAddr(addr) === ownName;
+  const real = store.sortedMessages.filter((m) => {
+    const mFrom = nameFromAddr(m.from);
+    const mTo = nameFromAddr(m.to);
+    if (isSelf) {
+      // 文件传输助手 — show messages where either side is self
+      return mFrom === ownName || mTo === ownName;
+    }
+    return (
+      (m.from === addr && mTo === ownName) ||
+      (mFrom === ownName && m.to === addr)
+    );
+  });
   const pending = store.pendingMessages
     .filter(
       (p) =>
