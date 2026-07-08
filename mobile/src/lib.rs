@@ -10,13 +10,15 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
-                .clear_format()
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Stdout,
                 ))
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::Webview,
-                ))
+                .target(
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview)
+                        .format(|out, _message, record| {
+                            out.finish(format_args!("{}", record.args()))
+                        }),
+                )
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init());

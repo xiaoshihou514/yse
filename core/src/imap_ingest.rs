@@ -17,10 +17,10 @@ fn classify(msg: &Message, own_addr: &str) -> (/*for_self*/ bool, /*for_user*/ b
     let own_name = own_addr.split('@').next().unwrap_or(own_addr);
     let to_name = identity::parse_address(&msg.to_addr)
         .map(|(n, _, _)| n)
-        .unwrap_or("");
+        .unwrap_or_else(|| msg.to_addr.split('@').next().unwrap_or(""));
     let from_name = identity::parse_address(&msg.from_addr)
         .map(|(n, _, _)| n)
-        .unwrap_or("");
+        .unwrap_or_else(|| msg.from_addr.split('@').next().unwrap_or(""));
 
     let for_self = to_name == own_name || msg.to_addr == own_name || msg.to_addr == own_addr;
 
