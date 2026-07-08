@@ -5738,6 +5738,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-os",
  "tauri-plugin-shell",
+ "time",
  "tokio",
  "yse-core",
 ]

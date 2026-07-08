@@ -2,6 +2,8 @@ pub mod commands;
 
 use commands::YseState;
 use tauri::Manager;
+use time::macros::format_description;
+use time::OffsetDateTime;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +18,8 @@ pub fn run() {
     let state = YseState::new(db_path).expect("failed to initialize 盐水鹅 application state");
     state.setup_plugin_handler();
 
+    let fmt = format_description!("[[[year]-[month]-[day]][[[hour]:[minute]:[second]]");
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -23,9 +27,21 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::Stdout,
-                ))
+                .clear_format()
+                .target(
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
+                        .format(move |out, message, record| {
+                            let now = OffsetDateTime::now_local()
+                                .unwrap_or_else(|_| OffsetDateTime::now_utc());
+                            let ts = now.format(&fmt).unwrap_or_default();
+                            out.finish(format_args!(
+                                "{ts}[{}][{}] {}",
+                                record.level(),
+                                record.target(),
+                                message,
+                            ))
+                        }),
+                )
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Webview,
                 ))
