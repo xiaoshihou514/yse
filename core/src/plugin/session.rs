@@ -175,6 +175,20 @@ impl SessionRegistry {
             .start(&plugin_id, &config.name, &config.exec_path, &config.args)
             .await
         {
+            if process_manager.is_running(&plugin_id).await {
+                // 同名插件已在运行（来自不同 hash），复用进程、注册新会话
+                let mut sessions = self.sessions.lock().await;
+                sessions.insert(
+                    hash.to_string(),
+                    Session {
+                        hash: hash.to_string(),
+                        plugin_id: plugin_id.clone(),
+                        name: name.to_string(),
+                    },
+                );
+                info!("session registered for existing process: name={} hash={}", name, hash);
+                return Some(plugin_id);
+            }
             warn!("resolve_plugin: start failed for {}: {}", plugin_id, e);
             return None;
         }

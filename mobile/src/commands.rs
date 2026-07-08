@@ -162,7 +162,7 @@ pub async fn start_polling(
     state: State<'_, AppState>,
     _app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let (imap_cfg, key, store) = {
+    let (imap_cfg, key, store, own_addr) = {
         let cfg = state.core.config.read().await;
         let imap = ImapConfig {
             server: cfg.email_imap_server.clone(),
@@ -172,7 +172,7 @@ pub async fn start_polling(
         };
         let key = state.core.crypto_key.read().await;
         let key = key.as_ref().copied().ok_or("crypto key not set")?;
-        (imap, key, state.core.store.clone())
+        (imap, key, state.core.store.clone(), cfg.own_address.clone())
     };
 
     state
@@ -231,27 +231,27 @@ pub async fn start_polling(
                     };
 
                     let rt = tokio::runtime::Runtime::new().unwrap();
-                    let processed = rt.block_on(async {
-                        if let Ok(false) = store.is_processed(&msg.id).await {
-                            let _ = store.mark_processed(&msg.id).await;
-                            let _ = store.save_message(&msg).await;
-                            true
-                        } else {
-                            false
-                        }
+                    let result = rt.block_on(async {
+                        let s: &dyn yse_core::store::Storage = &*store;
+                        yse_core::imap_ingest::ingest_message(
+                            &msg, s, &own_addr,
+                        ).await
                     });
 
-                    if processed {
+                    if result.show_in_chat {
                         if let Some(h) = ah1.lock().unwrap().as_ref() {
                             let _ = h.emit("new-message", &msg);
                         }
-                        log_emit(
-                            &ah1,
-                            &lb1,
-                            "info",
-                            format!("new message from {}", msg.from_addr),
-                        );
                     }
+                    log_emit(
+                        &ah1,
+                        &lb1,
+                        "info",
+                        format!(
+                            "new message from {} (show_in_chat={})",
+                            msg.from_addr, result.show_in_chat
+                        ),
+                    );
                 },
                 Arc::new(move |level: &str, msg: String| {
                     log_emit(&ah2, &lb2, level, msg);

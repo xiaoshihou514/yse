@@ -546,102 +546,66 @@ impl YseState {
                         let ck = crypto_key.clone();
 
                         tokio::spawn(async move {
-                            let _ = store.save_message(&msg).await;
+                            let s: &dyn yse_core::store::Storage = &*store;
+                            let result = yse_core::imap_ingest::ingest_message(
+                                &msg, s, &own, &sr, &pm,
+                            ).await;
 
-                            let already = store.is_processed(&msg.id).await.unwrap_or(false);
-                            if !already {
-                                // Extract the name part (before @ or #) for comparison
-                                let own_name = own.split('@').next().unwrap_or(&own);
-                                let to_name = yse_core::identity::parse_address(&msg.to_addr)
-                                    .map(|(n, _, _)| n).unwrap_or("");
-                                // 文件传输助手地址是 bare name（如 "me"），parse_address 无法解析
-                                // 需要额外检查 bare name 匹配
-                                let for_self = to_name == own_name
-                                    || msg.to_addr == own
-                                    || msg.to_addr == own_name;
-                                if for_self {
-                                    let _ = store.mark_processed(&msg.id).await;
-                                } else {
-                                    let plugin_configs = store.list_plugins().await.unwrap_or_default();
-                                    // Route via session registry (starts plugin if needed)
-                                    let result = sr
-                                        .route(
-                                            &msg.to_addr,
-                                            &msg.from_addr,
-                                            msg.text.as_deref(),
-                                            msg.meta.as_ref(),
-                                            msg.files.as_ref(),
-                                            &plugin_configs,
-                                            &pm,
-                                        )
-                                        .await;
-                                    let _ = store.mark_processed(&msg.id).await;
-
-                                    // If the message was for a plugin that doesn't exist here,
-                                    // send a helpful error reply back to the sender.
-                                    if matches!(&result, yse_core::plugin::session::RouteResult::PluginNotFound { .. }) {
-                                        if let Some(plugin_name) = result.plugin_name() {
-                                            let available: Vec<String> = plugin_configs.iter()
-                                                .filter(|p| p.enabled)
-                                                .map(|p| p.name.clone())
-                                                .collect();
-                                            let reply_text = if available.is_empty() {
-                                                format!("错误: 插件「{}」在此机器上不存在。\n\n当前没有可用插件。", plugin_name)
-                                            } else {
-                                                format!(
-                                                    "错误: 插件「{}」在此机器上不存在。\n\n可用插件: {}",
-                                                    plugin_name,
-                                                    available.join(", ")
-                                                )
-                                            };
-                                            let ck_guard = ck.read().await;
-                                            if let Some(ref k) = *ck_guard {
-                                                if let Err(e) = send_plugin_error_reply(
-                                                    &msg.from_addr, &reply_text,
-                                                    &snd, k, &cfg,
-                                                ).await {
-                                                    warn!("send_plugin_error_reply failed: {}", e);
-                                                }
+                            // Error reply for plugin-not-found
+                            if let Some(ref route_result) = result.route_result {
+                                if matches!(route_result, yse_core::plugin::session::RouteResult::PluginNotFound { .. }) {
+                                    if let Some(plugin_name) = route_result.plugin_name() {
+                                        let plugin_configs = store.list_plugins().await.unwrap_or_default();
+                                        let available: Vec<String> = plugin_configs.iter()
+                                            .filter(|p| p.enabled)
+                                            .map(|p| p.name.clone())
+                                            .collect();
+                                        let reply_text = if available.is_empty() {
+                                            format!("错误: 插件「{}」在此机器上不存在。\n\n当前没有可用插件。", plugin_name)
+                                        } else {
+                                            format!(
+                                                "错误: 插件「{}」在此机器上不存在。\n\n可用插件: {}",
+                                                plugin_name, available.join(", ")
+                                            )
+                                        };
+                                        let ck_guard = ck.read().await;
+                                        if let Some(ref k) = *ck_guard {
+                                            if let Err(e) = send_plugin_error_reply(
+                                                &msg.from_addr, &reply_text,
+                                                &snd, k, &cfg,
+                                            ).await {
+                                                warn!("send_plugin_error_reply failed: {}", e);
                                             }
                                         }
                                     }
-
-                                    let log_msg = match &result {
-                                        yse_core::plugin::session::RouteResult::Dispatched =>
-                                            format!("session-routed msg {} via session registry", msg.id),
-                                        _ => format!("msg {}: not routed locally ({:?})", msg.id, result),
-                                    };
-                                    let log = LogEntry {
-                                        level: "info".into(),
-                                        message: log_msg,
-                                        timestamp: std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap()
-                                            .as_millis() as u64,
-                                    };
-                                    let _ = handle.emit("log-entry", &log);
                                 }
+                            }
+
+                            // Log
+                            if let Some(ref route_result) = result.route_result {
+                                let log_msg = match route_result {
+                                    yse_core::plugin::session::RouteResult::Dispatched =>
+                                        format!("session-routed msg {} via session registry", msg.id),
+                                    _ => format!("msg {}: not routed locally ({:?})", msg.id, route_result),
+                                };
+                                let log = LogEntry {
+                                    level: "info".into(),
+                                    message: log_msg,
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
+                                };
+                                let _ = handle.emit("log-entry", &log);
                             }
 
                             let entry = LogEntry {
                                 level: "debug".into(),
                                 message: format!("received msg {} from {} to {}", msg.id, msg.from_addr, msg.to_addr),
                                 timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() as u64,
+                                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
                             };
                             let _ = handle.emit("log-entry", &entry);
 
-                            let own_name = own.split('@').next().unwrap_or(&own);
-                            let to_name = yse_core::identity::parse_address(&msg.to_addr)
-                                .map(|(n, _, _)| n).unwrap_or("");
-                            let from_name = yse_core::identity::parse_address(&msg.from_addr)
-                                .map(|(n, _, _)| n).unwrap_or("");
-                            if to_name == own_name || from_name == own_name
-                                || msg.to_addr == own || msg.from_addr == own
-                                || msg.to_addr == own_name || msg.from_addr == own_name
-                            {
+                            if result.show_in_chat {
                                 let _ = handle.emit("new-message", &msg);
                             }
                         });

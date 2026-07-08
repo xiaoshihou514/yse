@@ -5,6 +5,7 @@ pub mod disguise;
 pub mod email;
 pub mod event;
 pub mod identity;
+pub mod imap_ingest;
 pub mod message;
 pub mod plugin;
 pub mod router;
