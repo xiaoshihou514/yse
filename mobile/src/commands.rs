@@ -144,7 +144,6 @@ pub async fn start_polling(
             }
         });
 
-        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
         let sr = yse_core::plugin::session::SessionRegistry::new(&own_addr);
         let pm = yse_core::plugin::process_manager::PluginProcessManager::new();
         let eh = emit_handle.clone();
@@ -174,9 +173,14 @@ pub async fn start_polling(
                         }
                     };
 
-                    let result = rt.block_on(async {
-                        let s: &dyn yse_core::store::Storage = &*store;
-                        yse_core::imap_ingest::ingest_message(&msg, s, &own_addr, &sr, &pm).await
+                    let result = tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            let s: &dyn yse_core::store::Storage = &*store;
+                            yse_core::imap_ingest::ingest_message(
+                                &msg, s, &own_addr, &sr, &pm,
+                            )
+                            .await
+                        })
                     });
 
                     if result.show_in_chat {
