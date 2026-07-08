@@ -117,13 +117,13 @@
           </t-form-item>
           <t-form-item>
             <div class="addr-preview">
-              地址:
-              <code
-                >{{ newName || "名称" }}#8位随机码@{{
-                  newHostname || "主机名"
-                }}</code
-              >
-            </div>
+               地址:
+               <code
+                 >{{ newPlugin?.trim() || newName || "名称" }}#8位随机码@{{
+                   newHostname || "主机名"
+                 }}</code
+               >
+             </div>
           </t-form-item>
           <t-form-item>
             <t-button block @click="handleAdd">添加</t-button>
@@ -274,7 +274,10 @@ async function handleAdd() {
     hostname = store.localHostname || (await api.getHostname());
   }
   const hash = generateHash();
-  const vaddr = `${name}#${hash}@${hostname}`;
+  // Use the plugin ID as the address name so routing matches the actual plugin,
+  // not the display name. Fall back to the display name if no plugin is bound.
+  const addrName = newPlugin.value?.trim() || name;
+  const vaddr = `${addrName}#${hash}@${hostname}`;
 
   if (!store.config) return;
   const cfg = { ...store.config };
