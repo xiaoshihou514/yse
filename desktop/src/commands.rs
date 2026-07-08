@@ -145,7 +145,7 @@ impl YseState {
                         let key = match crypto_key.read().await.as_ref() {
                             Some(crypto_key) => *crypto_key,
                             None => {
-                                log::warn!("plugin Send skipped: crypto key not set");
+                                log::info!("plugin Send skipped: crypto key not set");
                                 return;
                             }
                         };

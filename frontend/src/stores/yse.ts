@@ -216,6 +216,11 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function startPolling() {
+    if (!config.value?.email_username) {
+      polling.value = false;
+      connected.value = false;
+      return;
+    }
     try {
       await api.startPolling();
       polling.value = true;
