@@ -117,6 +117,7 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function loadPlugins() {
+    if (platform() === "android") return;
     plugins.value =
       (await withLog("loadPlugins", () => api.listPlugins())) || plugins.value;
   }
@@ -226,9 +227,7 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function initializeApp() {
-    const isMobile = platform() === "android";
-    // Load configs and contact hashes, but don't auto-start plugins.
-    // Plugins are started on demand by SessionRegistry when messages arrive.
+    // Plugins/sessions are desktop-only; individual loaders handle mobile skip.
     await api
       .autoStartPlugins()
       .catch((e) => error(`autoStartPlugins failed: ${String(e)}`));
@@ -236,11 +235,8 @@ export const useYseStore = defineStore("yse", () => {
     await loadHostnames();
     await loadHiddenAddresses();
     await loadLocalHostname();
-    // Plugins/sessions are desktop-only; mobile has no plugin system.
-    if (!isMobile) {
-      await loadProcesses();
-      await loadSessions();
-    }
+    await loadProcesses();
+    await loadSessions();
   }
 
   async function stopPolling() {
@@ -281,6 +277,7 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function loadProcesses() {
+    if (platform() === "android") return;
     try {
       processes.value = await api.listProcesses();
     } catch (e) {
@@ -289,6 +286,7 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function loadSessions() {
+    if (platform() === "android") return;
     try {
       sessions.value = await api.listSessions();
     } catch (e) {
