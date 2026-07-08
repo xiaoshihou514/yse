@@ -10,7 +10,7 @@ import type {
 } from "@/api/commands";
 import * as api from "@/api/commands";
 import { platform } from "@tauri-apps/plugin-os";
-import { error } from "@tauri-apps/plugin-log";
+import { error, LogLevel } from "@tauri-apps/plugin-log";
 import { hostnameFromAddr } from "@/utils/address";
 
 function generateId(): string {
@@ -325,7 +325,7 @@ export const useYseStore = defineStore("yse", () => {
         "log://log",
         (event) => {
           logs.value.push({
-            level: event.payload.level,
+            level: (LogLevel[event.payload.level as unknown as number] ?? String(event.payload.level)).toLowerCase(),
             message: event.payload.message,
             timestamp: Date.now(),
           });
