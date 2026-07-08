@@ -548,9 +548,12 @@ impl YseState {
 
                             let already = store.is_processed(&msg.id).await.unwrap_or(false);
                             if !already {
-                                let for_self = msg.to_addr == own
-                                    || msg.to_addr.starts_with(&format!("{}@", own))
-                                    || msg.to_addr.starts_with(&format!("{}#", own));
+                                // Extract the name part (before @ or #) for comparison
+                                let own_name = own.split('@').next().unwrap_or(&own);
+                                let to_name = yse_core::identity::parse_address(&msg.to_addr)
+                                    .map(|(n, _, _)| n).unwrap_or("");
+                                let for_self = to_name == own_name
+                                    || msg.to_addr == own;
                                 if for_self {
                                     let _ = store.mark_processed(&msg.id).await;
                                 } else {
@@ -625,11 +628,13 @@ impl YseState {
                             };
                             let _ = handle.emit("log-entry", &entry);
 
-                            if msg.to_addr == own || msg.from_addr == own
-                                || msg.to_addr.starts_with(&format!("{}@", own))
-                                || msg.to_addr.starts_with(&format!("{}#", own))
-                                || msg.from_addr.starts_with(&format!("{}@", own))
-                                || msg.from_addr.starts_with(&format!("{}#", own))
+                            let own_name = own.split('@').next().unwrap_or(&own);
+                            let to_name = yse_core::identity::parse_address(&msg.to_addr)
+                                .map(|(n, _, _)| n).unwrap_or("");
+                            let from_name = yse_core::identity::parse_address(&msg.from_addr)
+                                .map(|(n, _, _)| n).unwrap_or("");
+                            if to_name == own_name || from_name == own_name
+                                || msg.to_addr == own || msg.from_addr == own
                             {
                                 let _ = handle.emit("new-message", &msg);
                             }
