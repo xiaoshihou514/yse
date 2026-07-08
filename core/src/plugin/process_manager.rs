@@ -69,6 +69,29 @@ impl PluginProcessManager {
         self.request_handler.lock().unwrap().clone()
     }
 
+    /// Shared crash handler — used by both start() and restart().
+    fn make_on_exit(
+        processes: Arc<Mutex<HashMap<String, ProcessEntry>>>,
+        id: String,
+    ) -> Box<dyn FnOnce(String) + Send> {
+        Box::new(move |_| {
+            let procs = processes;
+            tokio::spawn(async move {
+                let mut map = procs.lock().await;
+                if let Some(entry) = map.get_mut(&id) {
+                    let msg = if entry.restart_count < 3 {
+                        format!("crashed (restart {}/3 possible)", entry.restart_count)
+                    } else {
+                        "crashed (max restarts)".to_string()
+                    };
+                    warn!("process {}: {}", id, msg);
+                    entry.state = ProcessState::Crashed(msg.clone());
+                    entry.last_exit = Some(msg);
+                }
+            });
+        })
+    }
+
     pub async fn start(
         &self,
         id: &str,
@@ -79,33 +102,19 @@ impl PluginProcessManager {
         let mut map = self.processes.lock().await;
         if let Some(entry) = map.get(id) {
             if entry.state == ProcessState::Running || entry.state == ProcessState::Starting {
-                return Err(format!("plugin {} is already active ({:?})", id, entry.state));
+                return Err(format!(
+                    "plugin {} is already active ({:?})",
+                    id, entry.state
+                ));
             }
         }
 
         let handler = self.get_request_handler();
-        let processes = self.processes.clone();
-        let pid = id.to_string();
-        let on_exit: Option<Box<dyn FnOnce(String) + Send>> = Some(Box::new(move |_| {
-            // Mark as crashed; the actual restart is triggered by the
-            // caller (e.g. SessionRegistry) via a separate start() call.
-            let procs = processes;
-            tokio::spawn(async move {
-                let mut map = procs.lock().await;
-                if let Some(entry) = map.get_mut(&pid) {
-                    let msg = if entry.restart_count < 3 {
-                        format!("crashed (restart {}/3 possible)", entry.restart_count)
-                    } else {
-                        "crashed (max restarts)".to_string()
-                    };
-                    warn!("process {}: {}", pid, msg);
-                    entry.state = ProcessState::Crashed(msg.clone());
-                    entry.last_exit = Some(msg);
-                }
-            });
-        }));
+        let on_exit = Some(Self::make_on_exit(self.processes.clone(), id.to_string()));
 
-        match ManagedPlugin::spawn_with_exit_handler(id.into(), exec_path, args, handler, on_exit) {
+        match ManagedPlugin::spawn_with_exit_handler(
+            id.into(), exec_path, args, handler, on_exit,
+        ) {
             Ok(plugin) => {
                 map.insert(
                     id.into(),
@@ -133,10 +142,15 @@ impl PluginProcessManager {
 
     pub async fn stop(&self, id: &str) -> Result<(), String> {
         let mut map = self.processes.lock().await;
-        let entry = map.get_mut(id).ok_or_else(|| format!("plugin {} not found", id))?;
+        let entry = map
+            .get_mut(id)
+            .ok_or_else(|| format!("plugin {} not found", id))?;
 
         if entry.state != ProcessState::Running {
-            return Err(format!("plugin {} is not running ({:?})", id, entry.state));
+            return Err(format!(
+                "plugin {} is not running ({:?})",
+                id, entry.state
+            ));
         }
 
         entry.state = ProcessState::Stopping;
@@ -156,10 +170,11 @@ impl PluginProcessManager {
     }
 
     pub async fn restart(&self, id: &str) -> Result<(), String> {
-        // Get current entry data, then stop and re-start
         let (name, exec_path, args) = {
             let map = self.processes.lock().await;
-            let entry = map.get(id).ok_or_else(|| format!("plugin {} not found", id))?;
+            let entry = map
+                .get(id)
+                .ok_or_else(|| format!("plugin {} not found", id))?;
             (
                 entry.name.clone(),
                 entry.exec_path.clone(),
@@ -167,49 +182,32 @@ impl PluginProcessManager {
             )
         };
 
-        // Stop gracefully (ignore errors if not running)
         let _ = self.stop(id).await;
 
-        // Re-start with incremented restart count
         let mut map = self.processes.lock().await;
+        let restart_count = map.get(id).map(|e| e.restart_count + 1).unwrap_or(0);
         let handler = self.get_request_handler();
-        let next_id = map
-            .get(id)
-            .map(|e| e.restart_count + 1)
-            .unwrap_or(0);
-        let processes = self.processes.clone();
-        let pid = id.to_string();
-        let on_exit: Option<Box<dyn FnOnce(String) + Send>> = Some(Box::new(move |_| {
-            let procs = processes;
-            tokio::spawn(async move {
-                let mut m = procs.lock().await;
-                if let Some(e) = m.get_mut(&pid) {
-                    let msg = if e.restart_count < 3 {
-                        format!("crashed (restart {}/3 possible)", e.restart_count)
-                    } else {
-                        "crashed (max restarts)".to_string()
-                    };
-                    e.state = ProcessState::Crashed(msg.clone());
-                    e.last_exit = Some(msg);
-                }
-            });
-        }));
+        let on_exit = Some(Self::make_on_exit(self.processes.clone(), id.to_string()));
 
-        match ManagedPlugin::spawn_with_exit_handler(id.into(), &exec_path, &args, handler, on_exit) {
+        match ManagedPlugin::spawn_with_exit_handler(
+            id.into(), &exec_path, &args, handler, on_exit,
+        ) {
             Ok(plugin) => {
-                let entry = ProcessEntry {
-                    id: id.into(),
-                    name,
-                    exec_path,
-                    args,
-                    state: ProcessState::Running,
-                    plugin: Some(plugin),
-                    start_time: Some(Instant::now()),
-                    restart_count: next_id,
-                    last_exit: None,
-                };
-                map.insert(id.into(), entry);
-                info!("process restarted: {} (attempt {})", id, next_id);
+                map.insert(
+                    id.into(),
+                    ProcessEntry {
+                        id: id.into(),
+                        name,
+                        exec_path,
+                        args,
+                        state: ProcessState::Running,
+                        plugin: Some(plugin),
+                        start_time: Some(Instant::now()),
+                        restart_count,
+                        last_exit: None,
+                    },
+                );
+                info!("process restarted: {} (attempt {})", id, restart_count);
                 Ok(())
             }
             Err(e) => {
@@ -297,7 +295,10 @@ impl PluginProcessManager {
                     Err(format!("plugin {} has no process handle", plugin_id))
                 }
             }
-            None => Err(format!("plugin {} not found in process manager", plugin_id)),
+            None => Err(format!(
+                "plugin {} not found in process manager",
+                plugin_id
+            )),
         }
     }
 }
