@@ -87,10 +87,13 @@ export const useYseStore = defineStore("yse", () => {
   const processes = ref<ProcessInfo[]>([]);
   const sessions = ref<SessionInfo[]>([]);
   const localHostname = ref("");
-  const readTimestamps = reactive<Record<string, number>>({});
+  const readTimestamps = reactive<Record<string, number>>(
+    JSON.parse(localStorage.getItem("yse-read-timestamps") || "{}"),
+  );
 
   function markRead(addr: string) {
     readTimestamps[addr] = Date.now();
+    localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));
   }
 
   const sortedMessages = computed(() =>
