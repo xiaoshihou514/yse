@@ -88,7 +88,12 @@ const isMobile = useIsMobile();
 
 const navItems = [
   { path: "/", label: "聊天", icon: markRaw(ChatIcon) },
-  { path: "/plugins", label: "插件", icon: markRaw(ExtensionIcon), mobile: false },
+  {
+    path: "/plugins",
+    label: "插件",
+    icon: markRaw(ExtensionIcon),
+    mobile: false,
+  },
   { path: "/contacts", label: "联系人", icon: markRaw(UserIcon) },
   { path: "/config", label: "配置", icon: markRaw(SettingIcon) },
 ];

@@ -1,5 +1,9 @@
 /** Parse `name#hash@hostname` into `{ name, hash, hostname }`. */
-export function parseAddress(addr: string): { name: string; hash: string; hostname: string } {
+export function parseAddress(addr: string): {
+  name: string;
+  hash: string;
+  hostname: string;
+} {
   const at = addr.lastIndexOf("@");
   if (at < 0) return { name: addr, hash: "", hostname: "" };
   const hostname = addr.slice(at + 1);

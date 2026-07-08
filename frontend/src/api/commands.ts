@@ -65,7 +65,11 @@ export interface YseConfig {
   email_password: string;
   own_address: string;
   crypto_password: string;
-  plugin_mappings: { virtual_addr: string; plugin_id: string; display_name?: string }[];
+  plugin_mappings: {
+    virtual_addr: string;
+    plugin_id: string;
+    display_name?: string;
+  }[];
 }
 
 export interface PendingDisplayMessage {
@@ -78,7 +82,6 @@ export interface PendingDisplayMessage {
   __status: "sending" | "failed";
   error?: string;
 }
-
 
 // --- Tauri commands -------------------------------------------------------
 
@@ -145,11 +148,11 @@ export async function listSessions(): Promise<SessionInfo[]> {
 }
 
 export async function getHostname(): Promise<string> {
-return invoke("get_hostname");
+  return invoke("get_hostname");
 }
 
 export async function setLocalHostname(hostname: string): Promise<void> {
-return invoke("set_local_hostname", { hostname });
+  return invoke("set_local_hostname", { hostname });
 }
 
 export async function toggleHideConversation(

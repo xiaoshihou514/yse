@@ -1,176 +1,126 @@
 # 盐水鹅
 
-Email-mediated chat + plugin automation system. Tauri 2 desktop (Linux AppImage/deb) + Android (APK via Tauri mobile).
+Email-mediated chat + plugin automation system. Tauri 2 desktop (AppImage/deb) + Android (APK).
 
 ## Quick commands
 
 ```sh
 cargo check -p yse-core          # fast: core only (no desktop deps)
-cargo test -p yse-core           # 16 tests (core only)
+cargo test -p yse-core           # 16 tests
 cargo clippy -- -D warnings      # lint (also generates icons)
-cargo fmt                        # format
+cargo fmt
 just check-all                    # fe-typecheck + cargo check + clippy
 just check                        # cargo check (full workspace, generates icons)
-just clean                        # cargo clean + rm -rf frontend dist/vite cache
-
-just dev                          # cargo tauri dev (starts Vite + Tauri)
+just dev                          # cargo tauri dev
 just fe-dev                       # Vite dev server at :1420
-just fe-build                     # npm run build (vue-tsc --noEmit && vite build)
-just build-appimage               # desktop AppImage bundle
-just build-deb                    # desktop deb bundle
-just android-init                 # first-time Android project init
-just android-build                # full Android APK (frontend + NDK + signing)
-just plugin-echo                  # compile plugins/echo-bot separately
+just fe-build                     # npm run build
+just android-build                # full APK (frontend + NDK + signing)
+just build-appimage               # desktop AppImage
 just help                         # list all just commands
 ```
 
-## Repo map
+## Repo
 
 ```
 Cargo workspace (resolver = "2")
 ├── core/       # yse-core: pure logic, no platform deps
-├── desktop/    # yse-desktop: Tauri 2 app (tray-icon feature, ~25 commands)
-├── mobile/     # yse-mobile: bare Tauri builder, no commands/state (openssl vendored)
+├── desktop/    # yse-desktop: Tauri 2 app (~25 commands + YseState)
+├── mobile/     # yse-mobile: bare Tauri, no commands/state
 ├── frontend/   # Vue 3 + Pinia + TDesign + vue-router
 └── plugins/    # standalone executables, outside workspace
 ```
 
-Key source:
+Key source: `desktop/src/commands.rs` (YseState + commands), `desktop/src/lib.rs` (builder + temp runtime),
+`frontend/src/stores/yse.ts` (Pinia store), `frontend/src/views/` (Chat, Plugins, Contacts, Config),
+`frontend/src/utils/address.ts` (parseAddress, hostnameFromAddr, nameFromAddr),
+`scripts/android-build.sh` (APK pipeline).
 
-- `desktop/src/lib.rs` — Tauri Builder, plugin registration, temp runtime in .setup()
-- `desktop/src/commands.rs` — ~25 Tauri commands + YseState
-- `mobile/src/lib.rs` — bare builder, registers tauri-plugin-os + barcode-scanner (`#[cfg(mobile)]`)
-- `frontend/src/stores/yse.ts` — Pinia store
-- `frontend/src/views/` — 4 views: Chat, Plugins, Contacts, Config
-- `frontend/src/composables/useIsMobile.ts` — reactive `isMobile` (width < 768px)
-- `scripts/android-build.sh` — full APK build pipeline
+## Gotchas
 
-## Critical gotchas
+### Address matching — most common bug
+
+`config.own_address` is just the name part (e.g. `me@yse.org`), but `format_sender_address(recipient)`
+produces `name#8char-hex@hostname`. **Never `==` against message addresses.** Use:
+- Rust: `addr.starts_with(&format!("{}#", own))` or `addr == own` (bare fallback)
+- Frontend: `nameFromAddr(addr)` from `@/utils/address` → compare against `ownAddress.value`
+
+Every comparison in `ChatView.vue` (bubble side, contacts dedup, conversation filter, component response)
+and `commands.rs` (new-message emit, `for_self` check, send_message route skip) must use name-based
+matching, not exact address comparison.
+
+### `is_processed` semantics
+
+- `processed` column defaults to `0`. `save_message()` does NOT set it.
+- IMAP poll checks `is_processed` before routing. To prevent re-route from SMTP copy, call
+  `mark_processed(msg.id)` after any local `route()` call (see `send_message` in `commands.rs`).
+- **Mobile bug**: `mark_processed` is called **before** `save_message` in IMAP callback
+  (`mobile/src/commands.rs:227-228`). UPDATE hits 0 rows, then INSERT creates row with `processed=0`.
+  Harmless on mobile (no plugins/route), but bad pattern to copy.
+
+### IMAP echo loop prevention
+
+Plugin→user messages MUST skip `route()` in IMAP callback. The `for_self` check in
+`desktop/src/commands.rs:548` catches `to_addr == own || starts_with("name#")`. Without this,
+PluginNotFound triggers error reply → plugin echoes → infinite loop.
+
+### `send_message` flow (order matters)
+
+`desktop/src/commands.rs` `send_message` Tauri command:
+1. `save_message` — persist to DB
+2. `route` — deliver to local plugin if addressed here
+3. `mark_processed` — prevent IMAP from re-routing the SMTP copy
+4. SMTP send — external delivery
+
+Same order applies in plugin Send handler (`PluginRequest::Send`): save_message BEFORE SMTP send.
 
 ### Setup runtime
 
-- Tauri `.setup()` hook runs **before** Tokio runtime is ready. Use temporary
-  `tokio::runtime::Runtime::new()` + `block_on` for one-time init (`desktop/src/lib.rs:46-49`).
-- Tasks spawned with `tokio::spawn` inside the temporary runtime are **cancelled** when
-  `block_on` returns. Long-lived tasks MUST use Tauri's permanent runtime.
+Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runtime::new()` +
+`block_on` for one-time init (`desktop/src/lib.rs:46-49`). Tasks spawned inside are cancelled when
+`block_on` returns — long-lived tasks use Tauri's permanent runtime.
 
 ### IMAP
 
 - `imap::Session` is **not `Send`** — never hold across `.await`.
-- 163/Coremail/QQ Mail requires `ID ("name" "yse" "version" "1.0")` before SELECT INBOX
-  (`session.run_command_and_check_ok(...)`, imap 3.0.0-alpha.15 native support).
-- First poll fetches ALL (last_uid starts None). Uses `UID SEARCH ALL` + Rust-side UID filter.
+- 163/Coremail/QQ Mail requires `ID ("name" "yse" "version" "1.0")` before SELECT INBOX.
+- First poll uses `UID SEARCH ALL` (last_uid starts None) + Rust-side filter.
   QQ Mail rejects `UID SEARCH UID N:*`.
+- `parse_address` (Rust) returns `None` for addresses without `#` (e.g. bare `me@yse.org`).
 
 ### Frontend
 
-- Tauri v2 has **no `__TAURI__` global** — always import from `@tauri-apps/api`.
+- Tauri v2 has **no `__TAURI__` global** — import from `@tauri-apps/api`.
 - `@` path alias → `src/` (vite.config.ts).
-- Theme stored in `localStorage` key `"yse-theme"` (one of `"light"`/`"dark"`/`"auto"`),
-  applied via `theme-mode` attribute on `<html>`.
-- Use `useIsMobile()` composable for responsive layouts (768px breakpoint).
-- Platform detection uses `@tauri-apps/plugin-os` → `platform() === "android"`.
-- `beforeBuildCommand` uses timestamp check: skips if `dist/` is newer than all `src/` files.
-  Does NOT skip in CI — frontend build runs as part of Tauri build command.
-  (`tauri.conf.json` in both `desktop/` and `mobile/`).
-
-### Address format
-
-- All virtual addresses: `name#8char-hex@hostname`.
-- `identity::parse_address(addr)` → `(name, hash, hostname)`.
-- Per-contact sender hash persistent in `contact_hashes` SQLite table.
-
-### Plugin lifecycle
-
-- **No auto-start on boot.** Plugins start on demand when a message arrives for a local address.
-- `SessionRegistry::route()` checks hostname match → hash→plugin_id → starts plugin if needed.
-- Crashed plugins auto-restart up to 3 times.
-
-### SMTP
-
-- `ContentType` parsing: use `"text/plain".parse::<ContentType>()` (FromStr), NOT `Header::parse`.
-- SMTP envelope sender must match authenticated user.
-
-### Encryption
-
-- Argon2id → 32B ChaCha20-Poly1305 key. Fixed salt `b"yse-argon2-salt-v1"`.
-- 12B random Nonce prefixed to ciphertext (split at index 12 on decrypt).
-
-### SQLite
-
-- `dirs_next::data_dir()/yse/yse.db`. Tables: `contact_hashes`, `hidden_addresses`, `config`.
+- Theme: `localStorage` key `"yse-theme"` → `"light"`/`"dark"`/`"auto"`, applied via
+  `theme-mode` attr on `<html>`.
+- Platform: `@tauri-apps/plugin-os` → `platform() === "android"`.
+- `beforeBuildCommand` skips if `dist/` newer than all `src/` files (timestamp check).
+  Does NOT skip in CI.
 
 ### Plugin system
 
-- Child process JSON-RPC over stdin/stdout. Plugin sends: `send`, `log`.
-  Core sends: `message`, `config`, `shutdown`.
-- Plugins **outside** workspace.
-  - `echo-bot`: Rust — `cd plugins/echo-bot && cargo build`
-  - `opencode-bot`: TypeScript — `cd plugins/opencode-bot && npm install && npm run build`
-- `opencode-bot` connects to local OpenCode server at port 4096 via `@opencode-ai/sdk/v2`.
-  Supports `/sessions` (list select), `/new`, `/select`, `/info`, `/abort`, `/undo`, `/redo`,
-  `/tui-connect`, `/tui-detach`, `/project`, `/dir`, `/help`.
-  Plain text messages go directly to the current session via `session.prompt()`.
-  List selection uses YSE's `PluginListSelect` component (`meta.plugin.component`).
-- `file-tree`: Rust — `cd plugins/file-tree && cargo build`
-  Commands: `cd`, `ls`, `tree`, `pwd`, `cat`, `stat`, `find`, `size`.
-  Per-user CWD tracked server-side.
+- Child processes, JSON-RPC over stdin/stdout. Plugin sends `send`/`log`. Core sends `message`/`config`/`shutdown`.
+- No auto-start on boot. `SessionRegistry::route()` starts plugin on demand.
+- Crashed plugins auto-restart up to 3 times.
+- Plugins outside workspace: `plugins/echo-bot` (Rust), `plugins/opencode-bot` (TypeScript), `plugins/file-tree` (Rust).
 
 ## Mobile (Android)
 
-### Build flow
+- `just android-build` → `scripts/android-build.sh`: fresh init → gen icons → patch launcher bg (`#262626`)
+  → Gradle mirror patch → `tauri android build --apk` → `zipalign` + `apksigner sign`.
+- Keystore: `mobile/yse-keystore.jks` (RSA 2048, alias=upload, password in `keystore.password`).
+- `~/.gradle/init.gradle` overrides all repos with Aliyun mirrors (GFW SSL issue).
+- Capabilities: `mobile/capabilities/default.json` (core+os), `mobile/capabilities/mobile.json` (barcode-scanner).
+- Barcode scanner: mobile shows "扫码导入", desktop shows "导入配置" (file upload).
 
-- `just android-build` → `scripts/android-build.sh`:
-  1. `rm -rf gen/android icons/android` — force fresh init (picks up plugin native code)
-  2. `tauri android init` — generates Android project (must run BEFORE icon gen)
-  3. `tauri icon ../icon.png` — generates icons, injects into Android project
-  4. Patches `ic_launcher_background.xml` to `#262626` (dark, matches desktop sidebar)
-  5. Patches Gradle distribution URL → Tencent Cloud mirror (China)
-  6. Creates `~/.gradle/init.gradle` → Aliyun Maven mirrors (bypasses GFW SSL issues)
-  7. `tauri android build --apk` → produces unsigned APK
-  8. `zipalign` + `apksigner sign` with `mobile/yse-keystore.jks` (committed, persistent key)
+## Desktop
 
-### Signing
+Requires: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`,
+`libjavascriptcoregtk-4.1-dev`, `libsoup-3.0-dev`.
 
-- Keystore at `mobile/yse-keystore.jks` (RSA 2048, alias=upload, password in `keystore.password`).
-- Generated once on first build, committed to repo. All builds use same key → upgrades work.
-- If regenerated, commit both files.
+## CI / Git
 
-### Capabilities (Tauri 2 permission model)
-
-- `mobile/capabilities/default.json` — `core:default` + `os:default` (common, all platforms).
-- `mobile/capabilities/mobile.json` — `barcode-scanner:default` (Android/iOS only, via `cargo tauri add barcode-scanner`).
-- `desktop/capabilities/default.json` — `core:default`, `shell:allow-open`, `dialog:default`, `os:default`.
-
-### Barcode scanner (camera)
-
-- Only works on Android/iOS (Tauri plugin does not support desktop).
-- Dependency in `mobile/Cargo.toml` under `[target.'cfg(android/ios)'.dependencies]`.
-- Frontend: `scan({ formats: [Format.QRCode] })` — uses native scanner UI (no `windowed: true`).
-- Mobile shows "扫码导入" button, desktop shows "导入配置" (file upload only).
-- Plugin's AndroidManifest.xml auto-injects `CAMERA` + `VIBRATE` permissions.
-
-### Gradle mirror (China only)
-
-- `~/.gradle/init.gradle` created by build script — overrides all repos with Aliyun mirrors.
-- Without this, `repo.maven.apache.org` fails with SSL cert mismatch (GFW interception).
-
-## Desktop (Linux AppImage)
-
-- Requires: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`,
-  `libjavascriptcoregtk-4.1-dev`, `libsoup-3.0-dev`.
-- `just build-appimage` → `target/release/bundle/appimage/*.AppImage`.
-
-## CI / Release
-
-- GitHub Actions (`.github/workflows/build.yml`): 4 jobs — desktop, android, check, release.
-- Android job is extremely slow (~30mins). Don't wait for it.
-- Release job runs on push to main after other 3 succeed.
-- APK signing uses repo keystore (same key every build).
-
-## Git conventions
-
-- Commit messages in Chinese, conventional-commits format: `fix:`, `feat:`, `refactor:`, `chore:`, `style:`.
-- AI-generated commits include `Co-authored-by: opencode <deepseek@opencode.com>`.
-- Author & committer: `xiaoshihou <xiaoshihou@tutamail.com>`.
-- Do not use `--author` flag (git config already set).
+- `.github/workflows/build.yml`: 4 jobs (desktop, android, check, release). Android ~30min. Pipeline may lack credits.
+- Commits: Chinese, conventional-commits (`fix:`/`feat:`/`refactor:`/`chore:`/`style:`).
+- AI commits include `Co-authored-by: opencode <deepseek@opencode.com>`.
+- Author: `xiaoshihou <xiaoshihou@tutamail.com>`. Do not use `--author` flag.

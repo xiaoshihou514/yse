@@ -85,7 +85,10 @@ impl SqliteStorage {
 #[async_trait]
 impl Storage for SqliteStorage {
     async fn save_message(&self, msg: &Message) -> Result<(), StoreError> {
-        debug!("sql: save_message id={} from={} to={}", msg.id, msg.from_addr, msg.to_addr);
+        debug!(
+            "sql: save_message id={} from={} to={}",
+            msg.id, msg.from_addr, msg.to_addr
+        );
         let conn = self
             .conn
             .lock()

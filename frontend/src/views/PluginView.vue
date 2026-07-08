@@ -248,7 +248,9 @@ onMounted(async () => {
   font-size: 14px;
   color: var(--td-text-color-secondary);
 }
-.mobile-hint-card p { margin: 0; }
+.mobile-hint-card p {
+  margin: 0;
+}
 
 .plugin-cards {
   display: flex;

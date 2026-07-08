@@ -65,6 +65,11 @@ plugin-file-tree:
 
 # ── Lint / 格式化 ───────────────────────────────────────────────────────
 
+# 格式化（frontend prettier + rustfmt）
+format:
+    cd frontend && npm run format
+    cargo fmt --all
+
 # Rust clippy 检查
 clippy:
     cd desktop && {{ tauri }} icon ../icon.png 2>/dev/null; true

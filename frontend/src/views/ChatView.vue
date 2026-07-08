@@ -53,7 +53,9 @@
               </div>
               <div class="contact-row2">
                 <span class="contact-text">{{ c.lastText || "" }}</span>
-                <span class="contact-time">{{ c.lastTime ? formatTime(c.lastTime) : "" }}</span>
+                <span class="contact-time">{{
+                  c.lastTime ? formatTime(c.lastTime) : ""
+                }}</span>
               </div>
             </div>
           </div>
@@ -89,12 +91,16 @@
                 </div>
                 <div class="contact-info">
                   <div class="contact-row1">
-                    <span class="contact-name">{{ displayName(c.address) }}</span>
+                    <span class="contact-name">{{
+                      displayName(c.address)
+                    }}</span>
                     <span class="contact-hostname">{{ hostnameLabel(c) }}</span>
                   </div>
                   <div class="contact-row2">
                     <span class="contact-text">{{ c.lastText || "" }}</span>
-                    <span class="contact-time">{{ c.lastTime ? formatTime(c.lastTime) : "" }}</span>
+                    <span class="contact-time">{{
+                      c.lastTime ? formatTime(c.lastTime) : ""
+                    }}</span>
                   </div>
                 </div>
               </div>
@@ -124,7 +130,9 @@
               :key="msg.id"
               :class="[
                 'msg-row',
-                 nameFromAddr(msg.from) === ownAddress ? 'row-self' : 'row-other',
+                nameFromAddr(msg.from) === ownAddress
+                  ? 'row-self'
+                  : 'row-other',
               ]"
             >
               <div
@@ -162,7 +170,9 @@
                   class="msg-spinner"
                 ></span>
                 <span
-                  v-else-if="(msg as PendingDisplayMessage).__status === 'failed'"
+                  v-else-if="
+                    (msg as PendingDisplayMessage).__status === 'failed'
+                  "
                   class="msg-retry"
                   @click.stop="retryMessage(msg as PendingDisplayMessage)"
                   title="点击重试"
@@ -241,18 +251,19 @@
     </t-dialog>
 
     <!-- Chat settings panel: right sidebar (desktop) / full-page (mobile) -->
-    <div v-if="showSettings" class="settings-backdrop" @click.self="showSettings = false">
-      <div
-        :class="[
-          'settings-panel',
-          { 'settings-mobile': isMobile },
-        ]"
-      >
+    <div
+      v-if="showSettings"
+      class="settings-backdrop"
+      @click.self="showSettings = false"
+    >
+      <div :class="['settings-panel', { 'settings-mobile': isMobile }]">
         <div class="settings-header">
           <span class="settings-back" @click="showSettings = false">
             {{ isMobile ? "← 返回" : "✕" }}
           </span>
-          <span class="settings-title">{{ resolveDisplayName(selectedContact!) }}</span>
+          <span class="settings-title">{{
+            resolveDisplayName(selectedContact!)
+          }}</span>
           <span class="settings-spacer"></span>
         </div>
         <div class="settings-body">
@@ -290,7 +301,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import {
+  ref,
+  reactive,
+  computed,
+  onMounted,
+  onUnmounted,
+  nextTick,
+  watch,
+} from "vue";
 import { useRoute } from "vue-router";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
@@ -382,7 +401,9 @@ const renameDialog = ref({ visible: false, name: "" });
 const showSettings = ref(false);
 
 const isContactHidden = computed(() =>
-  selectedContact.value ? store.hiddenAddresses.has(selectedContact.value) : false,
+  selectedContact.value
+    ? store.hiddenAddresses.has(selectedContact.value)
+    : false,
 );
 
 const ctxMenu = ref<{ visible: boolean; x: number; y: number; text: string }>({
@@ -765,13 +786,19 @@ async function handleComponentResponse(
   msg: { from: string; to: string },
   value: string,
 ) {
-  const contact = nameFromAddr(msg.from) === ownAddress.value ? msg.to : msg.from;
+  const contact =
+    nameFromAddr(msg.from) === ownAddress.value ? msg.to : msg.from;
   await store.handlePluginResponse(contact, "", value);
   await scrollToBottom();
 }
 
 function isPending(msg: unknown): msg is PendingDisplayMessage {
-  return typeof msg === 'object' && msg !== null && '__pending' in msg && (msg as PendingDisplayMessage).__pending === true;
+  return (
+    typeof msg === "object" &&
+    msg !== null &&
+    "__pending" in msg &&
+    (msg as PendingDisplayMessage).__pending === true
+  );
 }
 
 function retryMessage(msg: PendingDisplayMessage) {
@@ -910,7 +937,7 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .new-dot {
-  --yse-dot-color: #2A52BE;
+  --yse-dot-color: #2a52be;
   position: absolute;
   top: -2px;
   right: -2px;
@@ -1337,11 +1364,19 @@ onMounted(async () => {
   color: var(--td-error-color);
 }
 @keyframes slideRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 @keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 </style>

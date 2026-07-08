@@ -19,7 +19,9 @@ function generateId(): string {
 
 function deviceModel(): string {
   // Android WebView userAgent: "...; 24069RA21C Build/AP2A.240805.005; ..." → "24069RA21C"
-  const m = navigator.userAgent.match(/Android\s+\d+(?:\.\d+)?;\s*([^\s;)\/]+)/);
+  const m = navigator.userAgent.match(
+    /Android\s+\d+(?:\.\d+)?;\s*([^\s;)\/]+)/,
+  );
   if (!m) return "";
   return m[1];
 }
@@ -54,9 +56,15 @@ export interface PendingMessage {
   error?: string;
 }
 
-async function withLog<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
-  try { return await fn(); }
-  catch (e) { error(`${label} failed: ${String(e)}`); }
+async function withLog<T>(
+  label: string,
+  fn: () => Promise<T>,
+): Promise<T | undefined> {
+  try {
+    return await fn();
+  } catch (e) {
+    error(`${label} failed: ${String(e)}`);
+  }
 }
 
 export const useYseStore = defineStore("yse", () => {
@@ -65,12 +73,12 @@ export const useYseStore = defineStore("yse", () => {
   const plugins = ref<PluginConfig[]>([]);
   const config = ref<YseConfig | null>(null);
   interface LogEntry {
-  level: string;
-  message: string;
-  timestamp: number;
-}
+    level: string;
+    message: string;
+    timestamp: number;
+  }
 
-const logs = ref<LogEntry[]>([]);
+  const logs = ref<LogEntry[]>([]);
   const connected = ref(false);
   const polling = ref(false);
   const hostnames = ref<string[]>([]);
@@ -101,11 +109,13 @@ const logs = ref<LogEntry[]>([]);
   }
 
   async function loadPlugins() {
-    plugins.value = await withLog("loadPlugins", () => api.listPlugins()) || plugins.value;
+    plugins.value =
+      (await withLog("loadPlugins", () => api.listPlugins())) || plugins.value;
   }
 
   async function loadConfig() {
-    config.value = await withLog("loadConfig", () => api.getConfig()) || config.value;
+    config.value =
+      (await withLog("loadConfig", () => api.getConfig())) || config.value;
   }
 
   async function saveConfigAndApply(cfg: YseConfig) {
@@ -118,7 +128,11 @@ const logs = ref<LogEntry[]>([]);
     if (!cfg) return;
     const mapping = cfg.plugin_mappings.find((m) => m.virtual_addr === addr);
     if (!mapping) {
-      cfg.plugin_mappings.push({ virtual_addr: addr, plugin_id: "", display_name: newName });
+      cfg.plugin_mappings.push({
+        virtual_addr: addr,
+        plugin_id: "",
+        display_name: newName,
+      });
     } else {
       mapping.display_name = newName;
     }
@@ -148,7 +162,9 @@ const logs = ref<LogEntry[]>([]);
     try {
       await api.sendMessage(to, text, undefined, meta);
       // Remove pending immediately to avoid showing two messages simultaneously
-      pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
+      pendingMessages.value = pendingMessages.value.filter(
+        (p) => p.id !== pending.id,
+      );
       setTimeout(loadMessages, 200);
     } catch (e) {
       pending.status = "failed";
@@ -171,7 +187,9 @@ const logs = ref<LogEntry[]>([]);
     pending.error = undefined;
     try {
       await api.sendMessage(pending.to, pending.text);
-      pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
+      pendingMessages.value = pendingMessages.value.filter(
+        (p) => p.id !== pending.id,
+      );
       setTimeout(loadMessages, 200);
     } catch (e) {
       pending.status = "failed";
@@ -331,7 +349,8 @@ const logs = ref<LogEntry[]>([]);
         // event arrives before the send() promise resolves.
         const p = event.payload;
         pendingMessages.value = pendingMessages.value.filter(
-          (x) => !(x.text === p.text && Math.abs(x.timestamp - p.timestamp) < 30000),
+          (x) =>
+            !(x.text === p.text && Math.abs(x.timestamp - p.timestamp) < 30000),
         );
         // Incremental hostname update
         ingestHostnamesFromMessage(event.payload);

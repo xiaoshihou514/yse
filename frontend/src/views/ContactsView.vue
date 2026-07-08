@@ -47,7 +47,9 @@
       </t-space>
       <div class="form-hint">
         地址格式：<code
-          >{{ newPlugin || newName || "名称" }}#8位随机码@{{ newHostname || "主机名" }}</code
+          >{{ newPlugin || newName || "名称" }}#8位随机码@{{
+            newHostname || "主机名"
+          }}</code
         >
       </div>
     </t-card>
@@ -117,13 +119,13 @@
           </t-form-item>
           <t-form-item>
             <div class="addr-preview">
-               地址:
-               <code
-                 >{{ newPlugin || newName || "名称" }}#8位随机码@{{
-                   newHostname || "主机名"
-                 }}</code
-               >
-             </div>
+              地址:
+              <code
+                >{{ newPlugin || newName || "名称" }}#8位随机码@{{
+                  newHostname || "主机名"
+                }}</code
+              >
+            </div>
           </t-form-item>
           <t-form-item>
             <t-button block @click="handleAdd">添加</t-button>
