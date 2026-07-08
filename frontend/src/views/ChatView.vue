@@ -538,6 +538,7 @@ interface Contact {
   hostname: string;
   hidden: boolean;
   hasNew?: boolean;
+  lastIsSelf?: boolean;
 }
 
 const readTimestamps = reactive<Record<string, number>>({});
@@ -557,9 +558,11 @@ const contacts = computed<Contact[]>(() => {
         lastTime: m.timestamp,
         hostname: "文件传输助手",
         hidden: store.hiddenAddresses.has(selfAddr),
+        lastIsSelf: true,
       });
       continue;
     }
+    const isSelf = nameFromAddr(m.from) === ownName;
     if (!map.has(addr) || m.timestamp > map.get(addr)!.lastTime) {
       map.set(addr, {
         address: addr,
@@ -567,6 +570,7 @@ const contacts = computed<Contact[]>(() => {
         lastTime: m.timestamp,
         hostname: hostnameFromAddr(addr),
         hidden: store.hiddenAddresses.has(addr),
+        lastIsSelf: isSelf,
       });
     }
   }
@@ -597,7 +601,8 @@ const contacts = computed<Contact[]>(() => {
     ...c,
     hasNew:
       selectedContact.value !== c.address &&
-      c.lastTime > (readTimestamps[c.address] ?? 0),
+      c.lastTime > (readTimestamps[c.address] ?? 0) &&
+      !c.lastIsSelf,
   }));
   return result.sort((a, b) => b.lastTime - a.lastTime);
 });
