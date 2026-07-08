@@ -530,8 +530,8 @@ const conversation = computed(() => {
     const mFrom = nameFromAddr(m.from);
     const mTo = nameFromAddr(m.to);
     if (isSelf) {
-      // 文件传输助手 — show messages where either side is self
-      return mFrom === ownName || mTo === ownName;
+      // 文件传输助手 — only messages where BOTH sides are self
+      return mFrom === ownName && mTo === ownName;
     }
     return (
       (m.from === addr && mTo === ownName) ||
@@ -565,7 +565,7 @@ const conversation = computed(() => {
           Math.abs(r.timestamp - p.timestamp) < 5000,
       );
     });
-  return [...real, ...pending];
+  return [...real, ...pending].sort((a, b) => a.timestamp - b.timestamp);
 });
 
 function initial(addr: string) {

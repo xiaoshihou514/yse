@@ -373,10 +373,8 @@ pub async fn send_message(
         )
         .await;
 
-    // Mark processed so the IMAP poll skips the SMTP copy (avoid re-route)
-    let _ = state.store.mark_processed(&msg.id).await;
-
-    // Send via SMTP (best-effort for external delivery)
+    // Send via SMTP — fail the command if delivery fails so the frontend
+    // shows the message as unsent (with retry button).
     if let Some(sender) = state.sender.read().await.as_ref() {
         let payload = msg.to_json().map_err(|e| e.to_string())?;
         let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
@@ -391,6 +389,7 @@ pub async fn send_message(
             .await
         {
             state.log("error", format!("SMTP send failed: {}", e));
+            return Err(format!("SMTP 发送失败: {}", e));
         }
     } else {
         state.log(
@@ -398,6 +397,9 @@ pub async fn send_message(
             "SMTP not configured, message not sent via email".into(),
         );
     }
+
+    // Only mark processed after successful send (prevents IMAP re-route of local copy)
+    let _ = state.store.mark_processed(&msg.id).await;
 
     state.log("info", format!("sent message to {}", to));
     Ok(())
@@ -552,8 +554,11 @@ impl YseState {
                                 let own_name = own.split('@').next().unwrap_or(&own);
                                 let to_name = yse_core::identity::parse_address(&msg.to_addr)
                                     .map(|(n, _, _)| n).unwrap_or("");
+                                // 文件传输助手地址是 bare name（如 "me"），parse_address 无法解析
+                                // 需要额外检查 bare name 匹配
                                 let for_self = to_name == own_name
-                                    || msg.to_addr == own;
+                                    || msg.to_addr == own
+                                    || msg.to_addr == own_name;
                                 if for_self {
                                     let _ = store.mark_processed(&msg.id).await;
                                 } else {
@@ -635,6 +640,7 @@ impl YseState {
                                 .map(|(n, _, _)| n).unwrap_or("");
                             if to_name == own_name || from_name == own_name
                                 || msg.to_addr == own || msg.from_addr == own
+                                || msg.to_addr == own_name || msg.from_addr == own_name
                             {
                                 let _ = handle.emit("new-message", &msg);
                             }
