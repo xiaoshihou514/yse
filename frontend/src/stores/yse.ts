@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, reactive, computed } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import type {
   Message,
@@ -87,6 +87,11 @@ export const useYseStore = defineStore("yse", () => {
   const processes = ref<ProcessInfo[]>([]);
   const sessions = ref<SessionInfo[]>([]);
   const localHostname = ref("");
+  const readTimestamps = reactive<Record<string, number>>({});
+
+  function markRead(addr: string) {
+    readTimestamps[addr] = Date.now();
+  }
 
   const sortedMessages = computed(() =>
     [...messages.value].sort((a, b) => a.timestamp - b.timestamp),
@@ -376,6 +381,8 @@ export const useYseStore = defineStore("yse", () => {
     processes,
     sessions,
     localHostname,
+    readTimestamps,
+    markRead,
     sortedMessages,
     loadMessages,
     loadPlugins,

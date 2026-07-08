@@ -303,7 +303,6 @@
 <script setup lang="ts">
 import {
   ref,
-  reactive,
   computed,
   onMounted,
   onUnmounted,
@@ -541,8 +540,6 @@ interface Contact {
   lastIsSelf?: boolean;
 }
 
-const readTimestamps = reactive<Record<string, number>>({});
-
 const contacts = computed<Contact[]>(() => {
   const ownName = ownAddress.value;
   const map = new Map<string, Contact>();
@@ -601,7 +598,7 @@ const contacts = computed<Contact[]>(() => {
     ...c,
     hasNew:
       selectedContact.value !== c.address &&
-      c.lastTime > (readTimestamps[c.address] ?? 0) &&
+      c.lastTime > (store.readTimestamps[c.address] ?? 0) &&
       !c.lastIsSelf,
   }));
   return result.sort((a, b) => b.lastTime - a.lastTime);
@@ -716,7 +713,7 @@ function hostnameLabel(c: Contact) {
 
 function selectContact(addr: string) {
   selectedContact.value = addr;
-  readTimestamps[addr] = Date.now();
+  store.markRead(addr);
 }
 
 function onInputFocus() {
