@@ -68,7 +68,7 @@ import { useRouter, useRoute } from "vue-router";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { mobileChatOpen } from "@/composables/useChatOpen";
-import { trace, debug, info, warn, error, attachConsole } from "@tauri-apps/plugin-log";
+
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { setLocalHostname } from "@/api/commands";
 import appRouter, { setConfigState } from "@/router";
@@ -97,24 +97,6 @@ function navigate(val: string) {
   router.push(val);
 }
 
-const originalConsole = {
-  log: console.log.bind(console),
-  debug: console.debug.bind(console),
-  info: console.info.bind(console),
-  warn: console.warn.bind(console),
-  error: console.error.bind(console),
-};
-
-function forwardConsole(
-  fnName: "log" | "debug" | "info" | "warn" | "error",
-  logger: (message: string) => Promise<void>,
-) {
-  console[fnName] = (...args: unknown[]) => {
-    originalConsole[fnName](...args);
-    logger(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" "));
-  };
-}
-
 function setupTitlebar() {
   const win = getCurrentWindow();
   const $ = (id: string) => document.getElementById(id);
@@ -129,12 +111,6 @@ function setupTitlebar() {
 }
 
 onMounted(async () => {
-  forwardConsole("log", trace);
-  forwardConsole("debug", debug);
-  forwardConsole("info", info);
-  forwardConsole("warn", warn);
-  forwardConsole("error", error);
-  attachConsole().catch(() => {});
   await nextTick();
   setupTitlebar();
   await store.loadConfig();
