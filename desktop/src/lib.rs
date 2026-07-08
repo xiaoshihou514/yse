@@ -23,6 +23,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
+                .clear_targets()
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Stdout,
