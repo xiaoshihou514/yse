@@ -548,7 +548,9 @@ impl YseState {
 
                             let already = store.is_processed(&msg.id).await.unwrap_or(false);
                             if !already {
-                                let for_self = msg.to_addr == own || msg.to_addr.starts_with(&format!("{}#", own));
+                                let for_self = msg.to_addr == own
+                                    || msg.to_addr.starts_with(&format!("{}@", own))
+                                    || msg.to_addr.starts_with(&format!("{}#", own));
                                 if for_self {
                                     let _ = store.mark_processed(&msg.id).await;
                                 } else {
@@ -624,7 +626,9 @@ impl YseState {
                             let _ = handle.emit("log-entry", &entry);
 
                             if msg.to_addr == own || msg.from_addr == own
+                                || msg.to_addr.starts_with(&format!("{}@", own))
                                 || msg.to_addr.starts_with(&format!("{}#", own))
+                                || msg.from_addr.starts_with(&format!("{}@", own))
                                 || msg.from_addr.starts_with(&format!("{}#", own))
                             {
                                 let _ = handle.emit("new-message", &msg);

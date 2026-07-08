@@ -79,7 +79,7 @@ export const useYseStore = defineStore("yse", () => {
         if (p.status !== "sent") return true;
         return !messages.value.some(
           (r) =>
-            r.text === p.text && Math.abs(r.timestamp - p.timestamp) < 5000,
+            r.text === p.text && Math.abs(r.timestamp - p.timestamp) < 30000,
         );
       });
     } catch (e) {
@@ -133,9 +133,9 @@ export const useYseStore = defineStore("yse", () => {
     pendingMessages.value.push(pending);
     try {
       await api.sendMessage(to, text, undefined, meta);
-      (pending as any).status = "sent";
-      // Refresh real messages after a short delay to pick up the server-side copy
-      setTimeout(loadMessages, 300);
+      // Remove pending immediately to avoid showing two messages simultaneously
+      pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
+      setTimeout(loadMessages, 200);
     } catch (e) {
       (pending as any).status = "failed";
       (pending as any).error = String(e);
@@ -157,8 +157,8 @@ export const useYseStore = defineStore("yse", () => {
     (pending as any).error = undefined;
     try {
       await api.sendMessage(pending.to, pending.text);
-      (pending as any).status = "sent";
-      setTimeout(loadMessages, 300);
+      pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
+      setTimeout(loadMessages, 200);
     } catch (e) {
       (pending as any).status = "failed";
       (pending as any).error = String(e);
