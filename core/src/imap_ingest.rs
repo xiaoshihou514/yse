@@ -2,7 +2,7 @@ use crate::identity;
 use crate::message::Message;
 use crate::plugin::session::RouteResult;
 use crate::store::Storage;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Result of processing an incoming IMAP message.
 pub struct IngestResult {
@@ -32,6 +32,30 @@ fn classify(msg: &Message, own_addr: &str) -> (/*for_self*/ bool, /*for_user*/ b
     (for_self, for_user)
 }
 
+/// Shared prelude: save, deduplicate, and check if routing is needed.
+/// Returns (for_user, should_route).
+async fn ingest_core(msg: &Message, store: &dyn Storage, own_addr: &str) -> (bool, bool) {
+    let (for_self, for_user) = classify(msg, own_addr);
+
+    let already = store.is_processed(&msg.id).await.unwrap_or(false);
+    if let Err(e) = store.save_message(&msg).await {
+        warn!("imap: save_message failed for {}: {}", msg.id, e);
+    }
+    if already {
+        return (for_user, false);
+    }
+
+    if for_self {
+        if let Err(e) = store.mark_processed(&msg.id).await {
+            warn!("imap: mark_processed failed for {}: {}", msg.id, e);
+        }
+        info!("imap: self-addressed msg {}, marked processed", msg.id);
+        return (for_user, false);
+    }
+
+    (for_user, true)
+}
+
 /// Desktop version: includes plugin routing via SessionRegistry.
 #[cfg(feature = "plugin-routing")]
 pub async fn ingest_message(
@@ -41,36 +65,31 @@ pub async fn ingest_message(
     sr: &crate::plugin::session::SessionRegistry,
     pm: &crate::plugin::process_manager::PluginProcessManager,
 ) -> IngestResult {
-    let (for_self, for_user) = classify(msg, own_addr);
+    let (for_user, should_route) = ingest_core(msg, store, own_addr).await;
 
-    let already = store.is_processed(&msg.id).await.unwrap_or(false);
-    let _ = store.save_message(&msg).await;
-    if already {
-        return IngestResult { show_in_chat: for_user, route_result: None };
+    let route_result = if should_route {
+        let plugin_configs = store.list_plugins().await.unwrap_or_default();
+        let r = sr
+            .route(
+                &msg.to_addr,
+                &msg.from_addr,
+                msg.text.as_deref(),
+                msg.meta.as_ref(),
+                msg.files.as_ref(),
+                &plugin_configs,
+                pm,
+            )
+            .await;
+        Some(r)
+    } else {
+        None
+    };
+
+    if let Err(e) = store.mark_processed(&msg.id).await {
+        warn!("imap: mark_processed failed for {}: {}", msg.id, e);
     }
 
-    if for_self {
-        let _ = store.mark_processed(&msg.id).await;
-        info!("imap: self-addressed msg {}, marked processed", msg.id);
-        return IngestResult { show_in_chat: true, route_result: None };
-    }
-
-    // Route to plugin
-    let plugin_configs = store.list_plugins().await.unwrap_or_default();
-    let route_result = sr
-        .route(
-            &msg.to_addr,
-            &msg.from_addr,
-            msg.text.as_deref(),
-            msg.meta.as_ref(),
-            msg.files.as_ref(),
-            &plugin_configs,
-            pm,
-        )
-        .await;
-    let _ = store.mark_processed(&msg.id).await;
-
-    IngestResult { show_in_chat: for_user, route_result: Some(route_result) }
+    IngestResult { show_in_chat: for_user, route_result }
 }
 
 /// Mobile version: no plugin routing.
@@ -80,18 +99,10 @@ pub async fn ingest_message(
     store: &dyn Storage,
     own_addr: &str,
 ) -> IngestResult {
-    let (for_self, for_user) = classify(msg, own_addr);
+    let (for_user, _should_route) = ingest_core(msg, store, own_addr).await;
 
-    let already = store.is_processed(&msg.id).await.unwrap_or(false);
-    let _ = store.save_message(&msg).await;
-    if already {
-        return IngestResult { show_in_chat: for_user, route_result: None };
-    }
-
-    let _ = store.mark_processed(&msg.id).await;
-
-    if for_self {
-        info!("imap: self-addressed msg {}, marked processed", msg.id);
+    if let Err(e) = store.mark_processed(&msg.id).await {
+        warn!("imap: mark_processed failed for {}: {}", msg.id, e);
     }
 
     IngestResult { show_in_chat: for_user, route_result: None }

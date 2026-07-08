@@ -137,8 +137,8 @@ export const useYseStore = defineStore("yse", () => {
       pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
       setTimeout(loadMessages, 200);
     } catch (e) {
-      (pending as any).status = "failed";
-      (pending as any).error = String(e);
+      pending.status = "failed";
+      pending.error = String(e);
     }
   }
 
@@ -153,15 +153,15 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function retryMessage(pending: PendingMessage) {
-    (pending as any).status = "sending";
-    (pending as any).error = undefined;
+    pending.status = "sending";
+    pending.error = undefined;
     try {
       await api.sendMessage(pending.to, pending.text);
       pendingMessages.value = pendingMessages.value.filter((p) => p.id !== pending.id);
       setTimeout(loadMessages, 200);
     } catch (e) {
-      (pending as any).status = "failed";
-      (pending as any).error = String(e);
+      pending.status = "failed";
+      pending.error = String(e);
     }
   }
 
