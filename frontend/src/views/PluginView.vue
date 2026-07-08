@@ -48,61 +48,15 @@
       </t-space>
     </t-card>
 
-    <!-- Mobile: card list -->
+    <!-- Mobile: no plugin management (plugins run on desktop only) -->
     <template v-else>
       <div class="mobile-header">
         <h2 class="mobile-title">插件管理</h2>
       </div>
-      <div class="plugin-cards">
-        <div
-          v-for="plugin in store.plugins"
-          :key="plugin.id"
-          class="plugin-card"
-        >
-          <div class="card-top">
-            <div class="card-func">
-              <span class="card-name">{{ plugin.name }}</span>
-              <span class="card-path">{{ plugin.exec_path }}</span>
-            </div>
-            <t-tag
-              :theme="procTag(procState(plugin.id))"
-              size="small"
-              variant="light"
-              >{{ procState(plugin.id) || "未启动" }}</t-tag
-            >
-          </div>
-          <div class="card-actions">
-            <t-button
-              size="small"
-              variant="outline"
-              @click="showPluginQr(plugin)"
-              title="分享名片"
-            >
-              <template #icon><QrcodeIcon /></template>
-            </t-button>
-            <t-popconfirm
-              content="确定删除此插件？"
-              @confirm="handleDelete(plugin)"
-            >
-              <t-button
-                theme="danger"
-                variant="text"
-                size="small"
-                @click.stop
-                title="删除"
-              >
-                <template #icon><DeleteIcon /></template>
-              </t-button>
-            </t-popconfirm>
-          </div>
-        </div>
-        <t-empty v-if="!store.plugins.length" description="暂无插件" />
+      <div class="mobile-hint-card">
+        <p>插件运行在桌面端 YSE 服务中。</p>
+        <p>在桌面端添加/管理插件后，移动端可以发消息控制它们。</p>
       </div>
-
-      <!-- FAB -->
-      <t-button class="fab" shape="circle" size="large" @click="showAdd = true">
-        <template #icon><span class="fab-icon">+</span></template>
-      </t-button>
 
       <!-- Add dialog -->
       <t-dialog
@@ -293,6 +247,16 @@ onMounted(async () => {
   font-weight: 600;
   margin: 0;
 }
+.mobile-hint-card {
+  margin: 16px;
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--td-bg-color-secondarycontainer);
+  line-height: 1.8;
+  font-size: 14px;
+  color: var(--td-text-color-secondary);
+}
+.mobile-hint-card p { margin: 0; }
 
 .plugin-cards {
   display: flex;

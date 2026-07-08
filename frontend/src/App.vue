@@ -50,7 +50,7 @@
     </t-layout>
     <div v-if="isMobile && !mobileChatOpen" class="mobile-tab-bar">
       <div
-        v-for="item in navItems"
+        v-for="item in navItems.filter((n) => n.mobile !== false)"
         :key="item.path"
         :class="['tab-item', { active: currentRoute === item.path }]"
         @click="navigate(item.path)"
@@ -88,7 +88,7 @@ const isMobile = useIsMobile();
 
 const navItems = [
   { path: "/", label: "聊天", icon: markRaw(ChatIcon) },
-  { path: "/plugins", label: "插件", icon: markRaw(ExtensionIcon) },
+  { path: "/plugins", label: "插件", icon: markRaw(ExtensionIcon), mobile: false },
   { path: "/contacts", label: "联系人", icon: markRaw(UserIcon) },
   { path: "/config", label: "配置", icon: markRaw(SettingIcon) },
 ];
