@@ -4,7 +4,8 @@ use std::sync::atomic::AtomicBool;
 use tokio::sync::RwLock;
 
 use crate::config::YseConfig;
-use crate::crypto::derive_key;
+use crate::crypto::{derive_key, encrypt};
+use crate::disguise;
 use crate::email::smtp::{SmtpConfig, SmtpSender};
 use crate::event::{EventSender, event_channel};
 use crate::plugin::process_manager::PluginProcessManager;
@@ -93,4 +94,23 @@ impl CoreState {
         Ok(())
     }
 
+    /// Serialize + encrypt + send a message via SMTP.
+    /// Eliminates the duplicate disguise→encrypt→send pattern across
+    /// send_message, plugin handler, and error reply paths.
+    pub async fn send_encrypted(&self, msg: &crate::message::Message) -> Result<(), String> {
+        let email_user = self.config.read().await.email_username.clone();
+        let key_guard = self.crypto_key.read().await;
+        let key = key_guard.as_ref().ok_or("crypto key not set")?;
+        let payload = msg.to_json().map_err(|e| e.to_string())?;
+        let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
+        if let Some(sender) = self.sender.read().await.as_ref() {
+            let d = disguise::disguise();
+            sender
+                .send((&email_user, &d.display_name), &email_user, encrypted, vec![])
+                .await
+                .map_err(|e| format!("SMTP send failed: {}", e))
+        } else {
+            Err("SMTP not configured".into())
+        }
+    }
 }

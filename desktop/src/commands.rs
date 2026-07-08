@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, State};
-use tokio::sync::RwLock;
 use tracing::warn;
 use yse_core::crypto::Key;
 use yse_core::{
@@ -13,14 +12,13 @@ use yse_core::{
         parser::parse_incoming,
         smtp::{SmtpConfig, SmtpSender},
     },
-    event::{CoreEvent, EventSender    },
+    event::CoreEvent,
     identity,
     message::Message,
     plugin::{
-        process_manager::{PluginProcessManager, ProcessInfo},
-        session::SessionRegistry,
+        process_manager::ProcessInfo,
     },
-    store::{sqlite::SqliteStorage, PluginConfig, Storage},
+    store::PluginConfig,
 };
 
 use serde::Serialize;
@@ -318,11 +316,6 @@ pub async fn send_message(
     _files: Option<Vec<String>>,
     meta: Option<serde_json::Value>,
 ) -> Result<(), String> {
-    let key = state.core.crypto_key.read().await;
-    let key = key.as_ref().ok_or("crypto key not set")?;
-
-    let email_username = state.core.config.read().await.email_username.clone();
-
     // Format sender address using session registry (name#hash@hostname)
     let from_addr = state.core.session_registry.format_sender_address(&to);
 
@@ -351,29 +344,10 @@ pub async fn send_message(
         )
         .await;
 
-    // Send via SMTP — fail the command if delivery fails so the frontend
-    // shows the message as unsent (with retry button).
-    if let Some(sender) = state.core.sender.read().await.as_ref() {
-        let payload = msg.to_json().map_err(|e| e.to_string())?;
-        let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
-        let d = disguise::disguise();
-        if let Err(e) = sender
-            .send(
-                (&email_username, &d.display_name),
-                &email_username,
-                encrypted,
-                vec![],
-            )
-            .await
-        {
-            state.log("error", format!("SMTP send failed: {}", e));
-            return Err(format!("SMTP 发送失败: {}", e));
-        }
-    } else {
-        state.log(
-            "warn",
-            "SMTP not configured, message not sent via email".into(),
-        );
+    // Send via SMTP — fail the command if delivery fails
+    if let Err(e) = state.core.send_encrypted(&msg).await {
+        state.log("error", format!("SMTP send failed: {}", e));
+        return Err(format!("SMTP 发送失败: {}", e));
     }
 
     // Only mark processed after successful send (prevents IMAP re-route of local copy)

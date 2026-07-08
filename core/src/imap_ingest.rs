@@ -38,7 +38,7 @@ async fn ingest_core(msg: &Message, store: &dyn Storage, own_addr: &str) -> (boo
     let (for_self, for_user) = classify(msg, own_addr);
 
     let already = store.is_processed(&msg.id).await.unwrap_or(false);
-    if let Err(e) = store.save_message(&msg).await {
+    if let Err(e) = store.save_message(msg).await {
         warn!("imap: save_message failed for {}: {}", msg.id, e);
     }
     if already {
