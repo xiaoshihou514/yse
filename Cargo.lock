@@ -5842,6 +5842,7 @@ dependencies = [
  "tauri-plugin-os",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "yse-core",
 ]
 

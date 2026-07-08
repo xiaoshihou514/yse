@@ -142,9 +142,14 @@ onMounted(async () => {
   if (!hasCfg && appRouter.currentRoute.value.name !== "welcome") {
     appRouter.replace("/welcome");
   }
-  await store.listenForLogs();
-  await store.listenForMessages();
+  // Fire listeners async but don't block init — on Android IPC may not be
+  // ready yet and await would hang, preventing polling from starting.
+  store.listenForLogs();
+  store.listenForMessages();
   await store.initializeApp();
+  // Explicitly load data after init in case events were missed during startup.
+  store.loadMessages();
+  store.loadLogs();
   // Sync the resolved hostname to the backend so format_sender_address uses it
   if (store.localHostname) {
     setLocalHostname(store.localHostname).catch(() => {});

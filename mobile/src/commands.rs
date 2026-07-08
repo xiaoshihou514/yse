@@ -153,6 +153,12 @@ pub async fn start_polling(
     let sys_log = state.log_buffer.clone();
     let save_store = store.clone();
 
+    emit_log_entry(
+        &emit_handle,
+        &msg_log,
+        logging::LogEntry::new("info", "IMAP polling starting on mobile"),
+    );
+
     tokio::spawn(async move {
         let mut poller = ImapPoller::new(imap_cfg, last_uid);
         poller.set_running_flag(poller_flag);
