@@ -255,7 +255,8 @@ function displayAddress(row: {
 }
 
 function pluginName(id: string): string | undefined {
-  return store.plugins.find((p) => p.id === id)?.name;
+  const p = store.plugins.find((p) => p.id === id || p.name === id);
+  return p?.name || p?.id || id;
 }
 
 function generateHash(): string {
