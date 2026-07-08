@@ -226,6 +226,7 @@ import { useIsMobile } from "@/composables/useIsMobile";
 import { mobileChatOpen } from "@/composables/useChatOpen";
 import PluginComponent from "@/components/PluginComponent.vue";
 import type { PluginMeta } from "@/types/plugin";
+import { parseAddress, hostnameFromAddr, nameFromAddr } from "@/utils/address";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -256,24 +257,6 @@ md.validateLink = function (url: string): boolean {
 
 function renderMarkdown(text: string): string {
   return md.render(text);
-}
-
-function parseAddress(addr: string) {
-  const at = addr.lastIndexOf("@");
-  if (at < 0) return { name: addr, hash: "", hostname: "" };
-  const hostname = addr.slice(at + 1);
-  const local = addr.slice(0, at);
-  const hashIdx = local.indexOf("#");
-  if (hashIdx < 0) return { name: local, hash: "", hostname };
-  return {
-    name: local.slice(0, hashIdx),
-    hash: local.slice(hashIdx + 1),
-    hostname,
-  };
-}
-
-function hostnameFromAddr(addr: string) {
-  return parseAddress(addr).hostname;
 }
 
 const route = useRoute();
@@ -411,11 +394,6 @@ function onTouchMove(e: TouchEvent) {
 document.addEventListener("click", () => {
   if (ctxMenu.value.visible) ctxMenu.value.visible = false;
 });
-
-function nameFromAddr(addr: string): string {
-  const hashIdx = addr.indexOf("#");
-  return hashIdx >= 0 ? addr.slice(0, hashIdx) : addr;
-}
 
 const ownAddress = computed(() => store.config?.own_address ?? "me");
 const connected = computed(() => store.connected);

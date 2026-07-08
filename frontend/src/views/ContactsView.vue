@@ -147,6 +147,7 @@ import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { platform } from "@tauri-apps/plugin-os";
 import * as api from "@/api/commands";
+import { parseAddress } from "@/utils/address";
 
 const router = useRouter();
 const route = useRoute();
@@ -177,20 +178,6 @@ watch(
   },
   { immediate: true },
 );
-
-function parseAddress(addr: string) {
-  const at = addr.lastIndexOf("@");
-  if (at < 0) return { name: addr, hash: "", hostname: "" };
-  const hostname = addr.slice(at + 1);
-  const local = addr.slice(0, at);
-  const hashIdx = local.indexOf("#");
-  if (hashIdx < 0) return { name: local, hash: "", hostname };
-  return {
-    name: local.slice(0, hashIdx),
-    hash: local.slice(hashIdx + 1),
-    hostname,
-  };
-}
 
 const mappings = computed(() => store.config?.plugin_mappings ?? []);
 

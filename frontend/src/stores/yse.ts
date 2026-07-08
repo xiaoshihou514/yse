@@ -10,6 +10,7 @@ import type {
 } from "@/api/commands";
 import * as api from "@/api/commands";
 import { platform } from "@tauri-apps/plugin-os";
+import { hostnameFromAddr } from "@/utils/address";
 
 function generateId(): string {
   return Math.random().toString(16).slice(2, 10);
@@ -52,6 +53,11 @@ export interface PendingMessage {
   error?: string;
 }
 
+async function withLog<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
+  try { return await fn(); }
+  catch (e) { console.error(`${label} failed:`, e); }
+}
+
 export const useYseStore = defineStore("yse", () => {
   const messages = ref<Message[]>([]);
   const pendingMessages = ref<PendingMessage[]>([]);
@@ -88,19 +94,11 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function loadPlugins() {
-    try {
-      plugins.value = await api.listPlugins();
-    } catch (e) {
-      console.error("loadPlugins failed:", e);
-    }
+    plugins.value = await withLog("loadPlugins", () => api.listPlugins()) || plugins.value;
   }
 
   async function loadConfig() {
-    try {
-      config.value = await api.getConfig();
-    } catch (e) {
-      console.error("loadConfig failed:", e);
-    }
+    config.value = await withLog("loadConfig", () => api.getConfig()) || config.value;
   }
 
   async function saveConfigAndApply(cfg: YseConfig) {
@@ -109,11 +107,7 @@ export const useYseStore = defineStore("yse", () => {
   }
 
   async function loadLogs() {
-    try {
-      logs.value = await api.getLogs(200);
-    } catch (e) {
-      console.error("loadLogs failed:", e);
-    }
+    logs.value = await withLog("loadLogs", () => api.getLogs(200)) || logs.value;
   }
 
   async function sendMessage(
@@ -272,12 +266,8 @@ export const useYseStore = defineStore("yse", () => {
 
   /** Incrementally update hostnames from a new message */
   function ingestHostnamesFromMessage(msg: Message) {
-    const extract = (addr: string) => {
-      const idx = addr.lastIndexOf("@");
-      return idx >= 0 ? addr.slice(idx + 1) : null;
-    };
     for (const addr of [msg.from, msg.to]) {
-      const h = extract(addr);
+      const h = hostnameFromAddr(addr) || null;
       if (h && !hostnames.value.includes(h)) {
         hostnames.value.push(h);
       }
