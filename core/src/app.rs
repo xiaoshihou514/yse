@@ -50,11 +50,11 @@ impl CoreState {
         };
 
         let password = cfg.crypto_password.clone();
-        let own_name = cfg.own_address.clone();
         let mut w = self.config.write().await;
         *w = cfg;
+        w.own_address = "me".into();
         drop(w);
-        self.session_registry.set_local_name(&own_name);
+        self.session_registry.set_local_name("me");
 
         if let Ok(hashes) = self.store.get_contact_hashes().await {
             let map: HashMap<String, String> = hashes.into_iter().collect();

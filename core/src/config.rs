@@ -45,7 +45,7 @@ impl Default for YseConfig {
             email_smtp_port: 465,
             email_username: String::new(),
             email_password: String::new(),
-            own_address: "me@yse.org".into(),
+            own_address: "me".into(),
             crypto_password: String::new(),
             plugin_mappings: Vec::new(),
             data_dir: PathBuf::from("."),

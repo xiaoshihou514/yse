@@ -28,15 +28,6 @@
         <t-form-item label="IMAP授权码" name="email_password">
           <t-input v-model="form.email_password" type="password" />
         </t-form-item>
-        <t-form-item label="我的显示名称">
-          <t-input
-            v-model="form.own_address"
-            placeholder="你的名称 (用于发件地址)"
-          />
-          <template #help
-            >本机主机名: {{ store.localHostname || "加载中..." }}</template
-          >
-        </t-form-item>
         <t-form-item label="加密密码">
           <t-input
             v-model="form.crypto_password"
@@ -273,7 +264,6 @@ function applyQrConfig(json: string) {
     if (cfg.email_smtp_port != null) form.email_smtp_port = cfg.email_smtp_port;
     if (cfg.email_username) form.email_username = cfg.email_username;
     if (cfg.email_password) form.email_password = cfg.email_password;
-    if (cfg.own_address) form.own_address = cfg.own_address;
     if (cfg.crypto_password) form.crypto_password = cfg.crypto_password;
     MessagePlugin.success("配置已从二维码导入，点击保存以生效");
   } catch (e) {
