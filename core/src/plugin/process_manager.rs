@@ -42,6 +42,7 @@ struct ProcessEntry {
     last_exit: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct PluginProcessManager {
     processes: Arc<Mutex<HashMap<String, ProcessEntry>>>,
     request_handler: Arc<std::sync::Mutex<Option<PluginRequestHandler>>>,

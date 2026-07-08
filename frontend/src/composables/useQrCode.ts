@@ -1,6 +1,9 @@
-import { ref, nextTick } from "vue";
+import { ref, nextTick, type Ref } from "vue";
 
-export function useQrCode() {
+export function useQrCode(): {
+  qrDataUrl: Ref<string>;
+  generate: (data: string) => Promise<string>;
+} {
   const qrDataUrl = ref("");
 
   async function generate(data: string) {

@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, State};
 use tracing::warn;
-use yse_core::crypto::Key;
+use yse_core::logging::{log_buffer_new, log_buffer_push, LogBuffer, LogEntry};
 use yse_core::{
     config::YseConfig,
-    crypto::{decrypt, derive_key, encrypt},
+    crypto::{decrypt, derive_key},
     disguise,
     email::{
         imap::{ImapConfig, ImapPoller},
@@ -21,19 +21,6 @@ use yse_core::{
     store::PluginConfig,
 };
 
-use serde::Serialize;
-
-// ---------------------------------------------------------------------------
-// Frontend-facing types
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize, Clone)]
-pub struct LogEntry {
-    pub level: String,
-    pub message: String,
-    pub timestamp: u64,
-}
-
 // ---------------------------------------------------------------------------
 // Application state
 // ---------------------------------------------------------------------------
@@ -41,32 +28,20 @@ pub struct LogEntry {
 /// Emit a log entry: push to Tauri event (if app_handle ready) + buffer.
 fn log_emit(
     app_handle: &Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
-    log_buffer: &Arc<std::sync::Mutex<Vec<LogEntry>>>,
+    log_buffer: &LogBuffer,
     level: &str,
     message: String,
 ) {
-    let entry = LogEntry {
-        level: level.into(),
-        message,
-        timestamp: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64,
-    };
+    let entry = LogEntry::new(level, message);
     if let Some(h) = app_handle.lock().unwrap().as_ref() {
         let _ = h.emit("log-entry", &entry);
     }
-    let mut buf = log_buffer.lock().unwrap();
-    buf.push(entry);
-    if buf.len() > 1000 {
-        let keep = buf.len() - 500;
-        buf.drain(0..keep);
-    }
+    log_buffer_push(log_buffer, entry);
 }
 
 pub struct YseState {
     pub core: yse_core::app::CoreState,
-    pub log_buffer: Arc<std::sync::Mutex<Vec<LogEntry>>>,
+    pub log_buffer: LogBuffer,
     pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
 }
 
@@ -74,7 +49,7 @@ impl YseState {
     pub fn new(db_path: std::path::PathBuf) -> Result<Self, String> {
         Ok(Self {
             core: yse_core::app::CoreState::new(db_path, "me")?,
-            log_buffer: Arc::new(std::sync::Mutex::new(Vec::new())),
+            log_buffer: log_buffer_new(),
             app_handle: Arc::new(std::sync::Mutex::new(None)),
         })
     }
@@ -194,7 +169,7 @@ impl YseState {
                             }
                         };
                         let key = match crypto_key.read().await.as_ref() {
-                            Some(k) => *k,
+                            Some(crypto_key) => *crypto_key,
                             None => {
                                 log_emit(
                                     &app_handle,
@@ -219,11 +194,11 @@ impl YseState {
                         };
 
                         // Send via SMTP (envelope FROM must match authenticated user)
-                        if let Some(s) = sender.read().await.as_ref() {
-                            let d = disguise::disguise();
-                            match s
+                        if let Some(sender) = sender.read().await.as_ref() {
+                            let disguised = disguise::disguise();
+                            match sender
                                 .send(
-                                    (&email_user, &d.display_name),
+                                    (&email_user, &disguised.display_name),
                                     &email_user,
                                     encrypted,
                                     vec![],
@@ -277,14 +252,7 @@ impl YseState {
     }
 
     pub fn log(&self, level: &str, message: String) {
-        let entry = LogEntry {
-            level: level.into(),
-            message,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
-        };
+        let entry = LogEntry::new(level, message);
         let _ = self.core.event_tx.send(CoreEvent::Log {
             level: entry.level.clone(),
             message: entry.message.clone(),
@@ -295,12 +263,7 @@ impl YseState {
             let _ = handle.emit("log-entry", &entry);
         }
 
-        let mut buf = self.log_buffer.lock().unwrap();
-        buf.push(entry);
-        if buf.len() > 1000 {
-            let keep = buf.len() - 500;
-            buf.drain(0..keep);
-        }
+        log_buffer_push(&self.log_buffer, entry);
     }
 }
 
@@ -338,7 +301,7 @@ pub async fn send_message(
             &msg.from_addr,
             msg.text.as_deref(),
             msg.meta.as_ref(),
-            msg.files.as_ref(),
+            msg.files.as_deref(),
             &plugin_configs,
             &state.core.process_manager,
         )
@@ -384,9 +347,7 @@ impl YseState {
     pub async fn start_polling_inner(&self, app_handle: tauri::AppHandle) -> Result<(), String> {
         use tauri::Emitter;
 
-        let sender = self.core.sender.clone();
-        let crypto_key = self.core.crypto_key.clone();
-        let (imap_cfg, key, store, own_addr, session_registry, process_manager, yse_cfg) = {
+        let (imap_cfg, key, store, own_addr, session_registry, process_manager) = {
             let cfg = self.core.config.read().await;
             let imap = ImapConfig {
                 server: cfg.email_imap_server.clone(),
@@ -408,7 +369,6 @@ impl YseState {
                 self.core.config.read().await.own_address.clone(),
                 self.core.session_registry.clone(),
                 self.core.process_manager.clone(),
-                self.core.config.clone(),
             )
         };
 
@@ -428,6 +388,7 @@ impl YseState {
         let state_log_buffer = self.log_buffer.clone();
         let save_store = store.clone();
 
+        let core_clone = self.core.clone();
         let poller_flag = self.core.poller_running.clone();
         tokio::spawn(async move {
             let mut poller = ImapPoller::new(imap_cfg, last_uid);
@@ -452,44 +413,24 @@ impl YseState {
                         let parsed = match parse_incoming(&raw_email) {
                             Ok(p) => p,
                             Err(e) => {
-                                let entry = LogEntry {
-                                    level: "warn".into(),
-                                    message: format!("IMAP parse failed: {}", e),
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_millis()
-                                        as u64,
-                                };
+                                let entry = LogEntry::new("warn", format!("IMAP parse failed: {}", e));
                                 let _ = app_handle.emit("log-entry", &entry);
                                 return;
                             }
                         };
-                        let entry = LogEntry {
-                            level: "debug".into(),
-                            message: format!(
+                        let entry = LogEntry::new(
+                            "debug",
+                            format!(
                                 "IMAP received {} bytes, decrypting...",
                                 parsed.encrypted_body.len()
                             ),
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis() as u64,
-                        };
+                        );
                         let _ = app_handle.emit("log-entry", &entry);
 
                         let decrypted = match decrypt(&key, &parsed.encrypted_body) {
                             Ok(d) => d,
                             Err(e) => {
-                                let entry = LogEntry {
-                                    level: "warn".into(),
-                                    message: format!("decrypt failed: {}", e),
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_millis()
-                                        as u64,
-                                };
+                                let entry = LogEntry::new("warn", format!("decrypt failed: {}", e));
                                 let _ = app_handle.emit("log-entry", &entry);
                                 return;
                             }
@@ -497,15 +438,7 @@ impl YseState {
                         let msg = match Message::from_json(&decrypted) {
                             Ok(m) => m,
                             Err(e) => {
-                                let entry = LogEntry {
-                                    level: "warn".into(),
-                                    message: format!("JSON parse failed: {}", e),
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_millis()
-                                        as u64,
-                                };
+                                let entry = LogEntry::new("warn", format!("JSON parse failed: {}", e));
                                 let _ = app_handle.emit("log-entry", &entry);
                                 return;
                             }
@@ -516,9 +449,7 @@ impl YseState {
                         let own = own_addr.clone();
                         let sr = session_registry.clone();
                         let pm = process_manager.clone();
-                        let cfg = yse_cfg.clone();
-                        let snd = sender.clone();
-                        let ck = crypto_key.clone();
+                        let core_clone = core_clone.clone();
 
                         tokio::spawn(async move {
                             let s: &dyn yse_core::store::Storage = &*store;
@@ -526,58 +457,52 @@ impl YseState {
                                 &msg, s, &own, &sr, &pm,
                             ).await;
 
+                            let Some(ref route_result) = result.route_result else {
+                                let entry = LogEntry::new(
+                                    "debug",
+                                    format!("received msg {} from {} to {}", msg.id, msg.from_addr, msg.to_addr),
+                                );
+                                let _ = handle.emit("log-entry", &entry);
+                                if result.show_in_chat {
+                                    let _ = handle.emit("new-message", &msg);
+                                }
+                                return;
+                            };
+
                             // Error reply for plugin-not-found
-                            if let Some(ref route_result) = result.route_result {
-                                if matches!(route_result, yse_core::plugin::session::RouteResult::PluginNotFound { .. }) {
-                                    if let Some(plugin_name) = route_result.plugin_name() {
-                                        let plugin_configs = store.list_plugins().await.unwrap_or_default();
-                                        let available: Vec<String> = plugin_configs.iter()
-                                            .filter(|p| p.enabled)
-                                            .map(|p| p.name.clone())
-                                            .collect();
-                                        let reply_text = if available.is_empty() {
-                                            format!("错误: 插件「{}」在此机器上不存在。\n\n当前没有可用插件。", plugin_name)
-                                        } else {
-                                            format!(
-                                                "错误: 插件「{}」在此机器上不存在。\n\n可用插件: {}",
-                                                plugin_name, available.join(", ")
-                                            )
-                                        };
-                                        let ck_guard = ck.read().await;
-                                        if let Some(ref k) = *ck_guard {
-                                            if let Err(e) = send_plugin_error_reply(
-                                                &msg.from_addr, &reply_text,
-                                                &snd, k, &cfg,
-                                            ).await {
-                                                warn!("send_plugin_error_reply failed: {}", e);
-                                            }
-                                        }
-                                    }
+                            if let yse_core::plugin::session::RouteResult::PluginNotFound { plugin_name } = route_result {
+                                let plugin_configs = store.list_plugins().await.unwrap_or_default();
+                                let available: Vec<String> = plugin_configs.iter()
+                                    .filter(|p| p.enabled)
+                                    .map(|p| p.name.clone())
+                                    .collect();
+                                let reply_text = if available.is_empty() {
+                                    format!("错误: 插件「{}」在此机器上不存在。\n\n当前没有可用插件。", plugin_name)
+                                } else {
+                                    format!(
+                                        "错误: 插件「{}」在此机器上不存在。\n\n可用插件: {}",
+                                        plugin_name, available.join(", ")
+                                    )
+                                };
+                                let reply_msg = Message::new(own.to_string(), msg.from_addr.clone(), Some(reply_text));
+                                if let Err(e) = core_clone.send_encrypted(&reply_msg).await {
+                                    warn!("send_plugin_error_reply failed: {}", e);
                                 }
                             }
 
                             // Log
-                            if let Some(ref route_result) = result.route_result {
-                                let log_msg = match route_result {
-                                    yse_core::plugin::session::RouteResult::Dispatched =>
-                                        format!("session-routed msg {} via session registry", msg.id),
-                                    _ => format!("msg {}: not routed locally ({:?})", msg.id, route_result),
-                                };
-                                let log = LogEntry {
-                                    level: "info".into(),
-                                    message: log_msg,
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
-                                };
-                                let _ = handle.emit("log-entry", &log);
-                            }
-
-                            let entry = LogEntry {
-                                level: "debug".into(),
-                                message: format!("received msg {} from {} to {}", msg.id, msg.from_addr, msg.to_addr),
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
+                            let log_msg = match route_result {
+                                yse_core::plugin::session::RouteResult::Dispatched =>
+                                    format!("session-routed msg {} via session registry", msg.id),
+                                _ => format!("msg {}: not routed locally ({:?})", msg.id, route_result),
                             };
+                            let log = LogEntry::new("info", log_msg);
+                            let _ = handle.emit("log-entry", &log);
+
+                            let entry = LogEntry::new(
+                                "debug",
+                                format!("received msg {} from {} to {}", msg.id, msg.from_addr, msg.to_addr),
+                            );
                             let _ = handle.emit("log-entry", &entry);
 
                             if result.show_in_chat {
@@ -608,31 +533,6 @@ impl YseState {
             format!("loaded {} enabled plugin config(s), no auto-start", count),
         );
     }
-}
-
-/// Send a reply message to the original sender when a plugin is not found.
-/// This lets the sender know what happened instead of getting a silent failure.
-async fn send_plugin_error_reply(
-    to_addr: &str,
-    reply_text: &str,
-    sender: &tokio::sync::RwLock<Option<SmtpSender>>,
-    crypto_key: &Key,
-    cfg: &tokio::sync::RwLock<YseConfig>,
-) -> Result<(), String> {
-    let (email_user, from_addr) = {
-        let g = cfg.read().await;
-        (g.email_username.clone(), g.own_address.clone())
-    };
-    let reply_msg = Message::new(from_addr, to_addr.to_string(), Some(reply_text.to_string()));
-    let payload = reply_msg.to_json().map_err(|e| e.to_string())?;
-    let encrypted = encrypt(crypto_key, &payload).map_err(|e| e.to_string())?;
-    if let Some(s) = sender.read().await.as_ref() {
-        let d = disguise::disguise();
-        s.send((&email_user, &d.display_name), &email_user, encrypted, vec![])
-            .await
-            .map_err(|e| format!("SMTP send error reply failed: {}", e))?;
-    }
-    Ok(())
 }
 
 #[tauri::command]

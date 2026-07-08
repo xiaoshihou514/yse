@@ -116,14 +116,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from "vue";
+import { ref, onMounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { QrcodeIcon, DeleteIcon } from "tdesign-icons-vue-next";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
-import { error } from "@tauri-apps/plugin-log";
+import { useQrCode } from "@/composables/useQrCode";
 import * as api from "@/api/commands";
 import type { PluginConfig } from "@/api/commands";
+import { showError } from "@/utils/helpers";
 
 const isMobile = useIsMobile();
 const store = useYseStore();
@@ -132,7 +133,7 @@ const newName = ref("");
 const newExec = ref("");
 const showAdd = ref(false);
 const showPluginQrDialog = ref(false);
-const pluginQrUrl = ref("");
+const { qrDataUrl: pluginQrUrl, generate: generateQr } = useQrCode();
 const qrPlugin = ref<PluginConfig | null>(null);
 const qrPluginAddr = ref("");
 
@@ -164,7 +165,7 @@ async function handleDelete(row: PluginConfig) {
     await store.loadProcesses();
     await MessagePlugin.success(`已删除 ${row.name}`);
   } catch (e) {
-    await MessagePlugin.error(`删除失败: ${e}`);
+    showError("删除", e);
   }
 }
 
@@ -187,7 +188,7 @@ async function handleAdd() {
     await store.loadProcesses();
     await MessagePlugin.success("插件已添加");
   } catch (e) {
-    await MessagePlugin.error(`添加失败: ${e}`);
+    showError("添加", e);
   }
 }
 
@@ -204,22 +205,12 @@ async function pickFile() {
 async function showPluginQr(plugin: PluginConfig) {
   qrPlugin.value = plugin;
   qrPluginAddr.value = "";
-  pluginQrUrl.value = "";
   showPluginQrDialog.value = true;
-  try {
-    const QRCode = (await import("qrcode")).default;
-    const hostname = store.localHostname || "localhost";
-    const addr = `${plugin.name}#00000000@${hostname}`;
-    qrPluginAddr.value = addr;
-    const data = JSON.stringify({ name: plugin.name, hostname });
-    pluginQrUrl.value = await QRCode.toDataURL(data, {
-      width: 280,
-      margin: 2,
-      color: { dark: "#000000", light: "#ffffff" },
-    });
-  } catch (e) {
-    error(`[PluginView] QR gen failed: ${String(e)}`);
-  }
+  const hostname = store.localHostname || "localhost";
+  const addr = `${plugin.name}#00000000@${hostname}`;
+  qrPluginAddr.value = addr;
+  const data = JSON.stringify({ name: plugin.name, hostname });
+  await generateQr(data);
 }
 
 onMounted(async () => {

@@ -148,6 +148,7 @@ import { useIsMobile } from "@/composables/useIsMobile";
 import { platform } from "@tauri-apps/plugin-os";
 import * as api from "@/api/commands";
 import { parseAddress } from "@/utils/address";
+import { showError } from "@/utils/helpers";
 
 const router = useRouter();
 const route = useRoute();
@@ -288,7 +289,7 @@ async function handleAdd() {
     showAdd.value = false;
     await MessagePlugin.success("联系人已添加");
   } catch (e) {
-    await MessagePlugin.error(`添加失败: ${e}`);
+    showError("添加", e);
   }
 }
 
@@ -303,7 +304,7 @@ async function handleDelete(row: { virtual_addr: string }) {
     await store.loadConfig();
     await MessagePlugin.success("联系人已删除");
   } catch (e) {
-    await MessagePlugin.error(`删除失败: ${e}`);
+    showError("删除", e);
   }
 }
 

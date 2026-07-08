@@ -138,15 +138,15 @@
                 <div class="msg-time">{{ formatTime(msg.timestamp) }}</div>
               </div>
               <!-- Pending status indicators (outside bubble, left side for self) -->
-              <div v-if="(msg as any).__pending" class="msg-indicator">
+              <div v-if="isPending(msg)" class="msg-indicator">
                 <span
-                  v-if="(msg as any).__status === 'sending'"
+                  v-if="(msg as PendingDisplayMessage).__status === 'sending'"
                   class="msg-spinner"
                 ></span>
                 <span
-                  v-else-if="(msg as any).__status === 'failed'"
+                  v-else-if="(msg as PendingDisplayMessage).__status === 'failed'"
                   class="msg-retry"
-                  @click.stop="retryMessage(msg as any)"
+                  @click.stop="retryMessage(msg as PendingDisplayMessage)"
                   title="点击重试"
                   >⚠</span
                 >
@@ -274,7 +274,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { useRoute } from "vue-router";
-import { MessagePlugin } from "tdesign-vue-next";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
 import { useYseStore } from "@/stores/yse";
@@ -282,7 +281,9 @@ import { useIsMobile } from "@/composables/useIsMobile";
 import { mobileChatOpen } from "@/composables/useChatOpen";
 import PluginComponent from "@/components/PluginComponent.vue";
 import type { PluginMeta } from "@/types/plugin";
+import type { PendingDisplayMessage } from "@/api/commands";
 import { parseAddress, hostnameFromAddr, nameFromAddr } from "@/utils/address";
+import { showError } from "@/utils/helpers";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -573,7 +574,7 @@ const visibleContacts = computed(() => contacts.value.filter((c) => !c.hidden));
 const hiddenContacts = computed(() => contacts.value.filter((c) => c.hidden));
 
 const filteredContacts = computed(() => {
-  let list =
+  const list =
     selectedKey.value === "all"
       ? visibleContacts.value
       : visibleContacts.value.filter((c) => c.hostname === selectedKey.value);
@@ -730,7 +731,7 @@ async function handleSend() {
     if (inputRef.value) inputRef.value.style.height = "auto";
     await scrollToBottom();
   } catch (e) {
-    await MessagePlugin.error(`发送失败: ${e}`);
+    showError("发送", e);
   }
 }
 
@@ -743,8 +744,13 @@ async function handleComponentResponse(
   await scrollToBottom();
 }
 
-function retryMessage(msg: any) {
-  store.retryMessage(msg);
+function isPending(msg: unknown): msg is PendingDisplayMessage {
+  return typeof msg === 'object' && msg !== null && '__pending' in msg && (msg as PendingDisplayMessage).__pending === true;
+}
+
+function retryMessage(msg: PendingDisplayMessage) {
+  const pending = store.pendingMessages.find((p) => p.id === msg.id);
+  if (pending) store.retryMessage(pending);
 }
 
 async function scrollToBottom() {

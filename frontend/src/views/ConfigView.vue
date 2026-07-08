@@ -149,6 +149,8 @@ import { MessagePlugin } from "tdesign-vue-next";
 import { useYseStore } from "@/stores/yse";
 import * as api from "@/api/commands";
 import { platform } from "@tauri-apps/plugin-os";
+import { showError } from "@/utils/helpers";
+import { useQrCode } from "@/composables/useQrCode";
 
 const router = useRouter();
 const route = useRoute();
@@ -209,27 +211,20 @@ const logContainer = ref<HTMLElement | null>(null);
 
 // QR export
 const qrExportVisible = ref(false);
-const qrDataUrl = ref("");
+const { qrDataUrl, generate: generateQr } = useQrCode();
 
 const isMobilePlatform = platform() === "android";
 
 async function showExportQr() {
   qrExportVisible.value = true;
-  qrDataUrl.value = "";
-  await nextTick();
   try {
-    const QRCode = (await import("qrcode")).default;
     const data = JSON.stringify({
       ...form,
       plugin_mappings: store.config?.plugin_mappings ?? [],
     });
-    qrDataUrl.value = await QRCode.toDataURL(data, {
-      width: 280,
-      margin: 2,
-      color: { dark: "#000000", light: "#ffffff" },
-    });
+    await generateQr(data);
   } catch (e) {
-    await MessagePlugin.error(`生成二维码失败: ${e}`);
+    showError("生成二维码", e);
     qrExportVisible.value = false;
   }
 }
@@ -263,7 +258,7 @@ async function uploadQrImage() {
     };
     input.click();
   } catch (e) {
-    await MessagePlugin.error(`解析图片失败: ${e}`);
+    showError("解析图片", e);
   }
 }
 
@@ -282,7 +277,7 @@ function applyQrConfig(json: string) {
     if (cfg.crypto_password) form.crypto_password = cfg.crypto_password;
     MessagePlugin.success("配置已从二维码导入，点击保存以生效");
   } catch (e) {
-    MessagePlugin.error(`解析配置失败: ${e}`);
+    showError("解析配置", e);
   }
 }
 
@@ -357,7 +352,7 @@ async function handleSave() {
     setConfigState(true);
     await MessagePlugin.success("配置已保存");
   } catch (e) {
-    await MessagePlugin.error(`保存失败: ${e}`);
+    showError("保存", e);
   } finally {
     saving.value = false;
   }
@@ -373,7 +368,7 @@ async function handleTest() {
     );
     await MessagePlugin.success(result);
   } catch (e) {
-    await MessagePlugin.error(`连接失败: ${e}`);
+    showError("连接", e);
   }
 }
 

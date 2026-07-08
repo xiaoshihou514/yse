@@ -41,20 +41,21 @@ pub struct Session {
     pub name: String,
 }
 
+#[derive(Clone)]
 pub struct SessionRegistry {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
-    contact_hashes: std::sync::Mutex<HashMap<String, String>>,
-    local_name: std::sync::Mutex<String>,
-    local_hostname: std::sync::Mutex<String>,
+    contact_hashes: Arc<std::sync::Mutex<HashMap<String, String>>>,
+    local_name: Arc<std::sync::Mutex<String>>,
+    local_hostname: Arc<std::sync::Mutex<String>>,
 }
 
 impl SessionRegistry {
     pub fn new(local_name: &str) -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            contact_hashes: std::sync::Mutex::new(HashMap::new()),
-            local_name: std::sync::Mutex::new(local_name.to_string()),
-            local_hostname: std::sync::Mutex::new(identity::local_hostname()),
+            contact_hashes: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            local_name: Arc::new(std::sync::Mutex::new(local_name.to_string())),
+            local_hostname: Arc::new(std::sync::Mutex::new(identity::local_hostname())),
         }
     }
 
@@ -99,7 +100,7 @@ impl SessionRegistry {
         from_addr: &str,
         text: Option<&str>,
         meta: Option<&serde_json::Value>,
-        files: Option<&Vec<FileAttachment>>,
+        files: Option<&[FileAttachment]>,
         plugin_configs: &[PluginConfig],
         process_manager: &PluginProcessManager,
     ) -> RouteResult {
@@ -126,7 +127,7 @@ impl SessionRegistry {
                     to_addr: to_addr.to_string(),
                     text: text.map(String::from),
                     meta: meta.cloned(),
-                    files: files.cloned(),
+                    files: files.map(|f| f.to_vec()),
                 };
                 self.dispatch_to_plugin(&pid, &notif, process_manager).await;
                 RouteResult::Dispatched

@@ -3,47 +3,26 @@ use tauri::{Emitter, State};
 use yse_core::{
     app::CoreState,
     config::YseConfig,
-    disguise,
     email::imap::{ImapConfig, ImapPoller},
     identity,
+    logging,
     message::Message,
 };
 
-#[derive(serde::Serialize, Clone)]
-pub struct LogEntry {
-    pub level: String,
-    pub message: String,
-    pub timestamp: u64,
-}
-
-fn log_emit(
+fn emit_log_entry(
     app_handle: &Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
-    log_buffer: &Arc<std::sync::Mutex<Vec<LogEntry>>>,
-    level: &str,
-    message: String,
+    log_buffer: &logging::LogBuffer,
+    entry: logging::LogEntry,
 ) {
-    let entry = LogEntry {
-        level: level.into(),
-        message,
-        timestamp: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64,
-    };
     if let Some(h) = app_handle.lock().unwrap().as_ref() {
         let _ = h.emit("log-entry", &entry);
     }
-    let mut buf = log_buffer.lock().unwrap();
-    buf.push(entry);
-    if buf.len() > 1000 {
-        let keep = buf.len() - 500;
-        buf.drain(0..keep);
-    }
+    logging::log_buffer_push(log_buffer, entry);
 }
 
 pub struct AppState {
     pub core: CoreState,
-    pub log_buffer: Arc<std::sync::Mutex<Vec<LogEntry>>>,
+    pub log_buffer: logging::LogBuffer,
     pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
 }
 
@@ -52,13 +31,17 @@ impl AppState {
         let core = CoreState::new(db_path, "me")?;
         Ok(Self {
             core,
-            log_buffer: Arc::new(std::sync::Mutex::new(Vec::new())),
+            log_buffer: logging::log_buffer_new(),
             app_handle: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 
     pub fn log(&self, level: &str, message: String) {
-        log_emit(&self.app_handle, &self.log_buffer, level, message);
+        emit_log_entry(
+            &self.app_handle,
+            &self.log_buffer,
+            logging::LogEntry::new(level, message),
+        );
     }
 }
 
@@ -107,11 +90,6 @@ pub async fn send_message(
     _files: Option<Vec<String>>,
     meta: Option<serde_json::Value>,
 ) -> Result<(), String> {
-    let key = state.core.crypto_key.read().await;
-    let key = key.as_ref().ok_or("crypto key not set")?;
-
-    let email_username = state.core.config.read().await.email_username.clone();
-
     let from_addr = state.core.session_registry.format_sender_address(&to);
 
     let msg = match meta {
@@ -126,31 +104,12 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Notify frontend immediately so the sent message shows up
     if let Some(h) = state.app_handle.lock().unwrap().as_ref() {
         let _ = h.emit("new-message", &msg);
     }
 
-    if let Some(sender) = state.core.sender.read().await.as_ref() {
-        let payload = msg.to_json().map_err(|e| e.to_string())?;
-        let encrypted = yse_core::crypto::encrypt(key, &payload).map_err(|e| e.to_string())?;
-        let d = disguise::disguise();
-        if let Err(e) = sender
-            .send(
-                (&email_username, &d.display_name),
-                &email_username,
-                encrypted,
-                vec![],
-            )
-            .await
-        {
-            state.log("error", format!("SMTP send failed: {}", e));
-        }
-    } else {
-        state.log(
-            "warn",
-            "SMTP not configured, message not sent via email".into(),
-        );
+    if let Err(e) = state.core.send_encrypted(&msg).await {
+        state.log("error", e);
     }
 
     state.log("info", format!("sent message to {}", to));
@@ -188,10 +147,10 @@ pub async fn start_polling(
         .store(true, std::sync::atomic::Ordering::SeqCst);
 
     let poller_flag = state.core.poller_running.clone();
-    let ah1 = state.app_handle.clone();
-    let lb1 = state.log_buffer.clone();
-    let ah2 = state.app_handle.clone();
-    let lb2 = state.log_buffer.clone();
+    let emit_handle = state.app_handle.clone();
+    let msg_log = state.log_buffer.clone();
+    let sys_handle = state.app_handle.clone();
+    let sys_log = state.log_buffer.clone();
     let save_store = store.clone();
 
     tokio::spawn(async move {
@@ -211,17 +170,19 @@ pub async fn start_polling(
             }
         });
 
+        let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let eh = emit_handle.clone();
+        let ml = msg_log.clone();
         poller
             .run_with_log(
                 move |raw_email| {
                     let parsed = match yse_core::email::parser::parse_incoming(&raw_email) {
                         Ok(p) => p,
                         Err(e) => {
-                            log_emit(
-                                &ah1,
-                                &lb1,
-                                "warn",
-                                format!("IMAP parse failed: {}", e),
+                            emit_log_entry(
+                                &eh,
+                                &ml,
+                                logging::LogEntry::new("warn", format!("IMAP parse failed: {}", e)),
                             );
                             return;
                         }
@@ -229,11 +190,10 @@ pub async fn start_polling(
                     let decrypted = match yse_core::crypto::decrypt(&key, &parsed.encrypted_body) {
                         Ok(d) => d,
                         Err(e) => {
-                            log_emit(
-                                &ah1,
-                                &lb1,
-                                "error",
-                                format!("decrypt failed: {}", e),
+                            emit_log_entry(
+                                &eh,
+                                &ml,
+                                logging::LogEntry::new("error", format!("decrypt failed: {}", e)),
                             );
                             return;
                         }
@@ -242,41 +202,44 @@ pub async fn start_polling(
                     let msg = match Message::from_json(&decrypted) {
                         Ok(m) => m,
                         Err(e) => {
-                            log_emit(
-                                &ah1,
-                                &lb1,
-                                "error",
-                                format!("message parse failed: {}", e),
+                            emit_log_entry(
+                                &eh,
+                                &ml,
+                                logging::LogEntry::new("error", format!("message parse failed: {}", e)),
                             );
                             return;
                         }
                     };
 
-                    let rt = tokio::runtime::Runtime::new().unwrap();
                     let result = rt.block_on(async {
                         let s: &dyn yse_core::store::Storage = &*store;
+                        let sr = yse_core::plugin::session::SessionRegistry::new(&own_addr);
+                        let pm = yse_core::plugin::process_manager::PluginProcessManager::new();
                         yse_core::imap_ingest::ingest_message(
-                            &msg, s, &own_addr,
+                            &msg, s, &own_addr, &sr, &pm,
                         ).await
                     });
 
                     if result.show_in_chat {
-                        if let Some(h) = ah1.lock().unwrap().as_ref() {
+                        if let Some(h) = eh.lock().unwrap().as_ref() {
                             let _ = h.emit("new-message", &msg);
                         }
                     }
-                    log_emit(
-                        &ah1,
-                        &lb1,
-                        "info",
-                        format!(
+                    emit_log_entry(
+                        &eh,
+                        &ml,
+                        logging::LogEntry::new("info", format!(
                             "new message from {} (show_in_chat={})",
                             msg.from_addr, result.show_in_chat
-                        ),
+                        )),
                     );
                 },
                 Arc::new(move |level: &str, msg: String| {
-                    log_emit(&ah2, &lb2, level, msg);
+                    emit_log_entry(
+                        &sys_handle,
+                        &sys_log,
+                        logging::LogEntry::new(level, msg),
+                    );
                 }),
             )
             .await;
@@ -310,10 +273,7 @@ pub async fn get_known_hostnames(state: State<'_, AppState>) -> Result<Vec<Strin
         .map_err(|e| e.to_string())?;
     let mut hostnames: Vec<String> = addrs
         .iter()
-        .filter_map(|a| {
-            let idx = a.rfind('@')?;
-            Some(a[idx + 1..].to_string())
-        })
+        .filter_map(|a| yse_core::identity::extract_hostname(a).map(|s| s.to_string()))
         .collect();
     hostnames.sort();
     hostnames.dedup();
@@ -373,7 +333,7 @@ pub async fn get_contact_hashes(
 pub async fn get_logs(
     state: State<'_, AppState>,
     limit: u32,
-) -> Result<Vec<LogEntry>, String> {
+) -> Result<Vec<logging::LogEntry>, String> {
     let buf = state.log_buffer.lock().unwrap();
     let len = buf.len();
     Ok(buf

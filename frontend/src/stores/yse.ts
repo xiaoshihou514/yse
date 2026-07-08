@@ -131,7 +131,7 @@ export const useYseStore = defineStore("yse", () => {
   ) {
     const own = config.value?.own_address ?? "";
     const pending: PendingMessage = {
-      id: "pending_" + generateId(),
+      id: `pending_${generateId()}`,
       from: own,
       to,
       text,

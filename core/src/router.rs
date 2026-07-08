@@ -66,7 +66,7 @@ impl Router {
                 &msg.from_addr,
                 msg.text.as_deref(),
                 msg.meta.as_ref(),
-                msg.files.as_ref(),
+                msg.files.as_deref(),
                 &mappings,
             )
             .await;
@@ -106,7 +106,7 @@ impl Router {
                     &msg.from_addr,
                     msg.text.as_deref(),
                     msg.meta.as_ref(),
-                    msg.files.as_ref(),
+                    msg.files.as_deref(),
                     &mappings,
                 )
                 .await;

@@ -142,11 +142,7 @@ impl Storage for SqliteStorage {
             })
             .map_err(|e| StoreError::Db(e.to_string()))?;
 
-        let mut msgs = Vec::new();
-        for row in rows {
-            msgs.push(row.map_err(|e| StoreError::Db(e.to_string()))?);
-        }
-        Ok(msgs)
+        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
     }
 
     async fn is_processed(&self, msg_id: &str) -> Result<bool, StoreError> {
@@ -195,11 +191,7 @@ impl Storage for SqliteStorage {
                 })
             })
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        let mut plugins = Vec::new();
-        for row in rows {
-            plugins.push(row.map_err(|e| StoreError::Db(e.to_string()))?);
-        }
-        Ok(plugins)
+        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
     }
 
     async fn save_plugin(&self, plugin: &PluginConfig) -> Result<(), StoreError> {
@@ -210,7 +202,7 @@ impl Storage for SqliteStorage {
         let args_str = serde_json::to_string(&plugin.args).unwrap_or_default();
         conn.execute(
             "INSERT OR REPLACE INTO plugins (id, name, exec_path, args, enabled) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![plugin.id, plugin.name, plugin.exec_path, args_str, plugin.enabled as i32],
+            rusqlite::params![plugin.id, plugin.name, plugin.exec_path, args_str, i32::from(plugin.enabled)],
         )
         .map_err(|e| StoreError::Db(e.to_string()))?;
         Ok(())
@@ -283,11 +275,7 @@ impl Storage for SqliteStorage {
         let rows = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row.map_err(|e| StoreError::Db(e.to_string()))?);
-        }
-        Ok(out)
+        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
     }
 
     async fn set_hidden(&self, addr: &str, hidden: bool) -> Result<(), StoreError> {
@@ -322,11 +310,7 @@ impl Storage for SqliteStorage {
         let rows = stmt
             .query_map([], |row| row.get(0))
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row.map_err(|e| StoreError::Db(e.to_string()))?);
-        }
-        Ok(out)
+        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
     }
 
     async fn delete_messages_for_address(&self, addr: &str) -> Result<(), StoreError> {
@@ -359,11 +343,7 @@ impl Storage for SqliteStorage {
         let rows = stmt
             .query_map([], |row| row.get(0))
             .map_err(|e| StoreError::Db(e.to_string()))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row.map_err(|e| StoreError::Db(e.to_string()))?);
-        }
-        Ok(out)
+        Ok(rows.collect::<Result<Vec<_>, _>>().map_err(|e| StoreError::Db(e.to_string()))?)
     }
 }
 
@@ -409,6 +389,29 @@ mod tests {
             assert_eq!(
                 db.get_config_value("key1").await.unwrap(),
                 Some("val1".into())
+            );
+        });
+    }
+
+    #[test]
+    fn test_processed_survives_deletion() {
+        let msg = crate::message::Message::new(
+            "alice#abc@host".into(),
+            "bob#def@host".into(),
+            Some("test".into()),
+        );
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let db = SqliteStorage::open(":memory:").unwrap();
+            db.save_message(&msg).await.unwrap();
+            db.mark_processed(&msg.id).await.unwrap();
+            assert!(db.is_processed(&msg.id).await.unwrap());
+
+            db.delete_messages_for_address("alice#abc@host").await.unwrap();
+
+            assert!(
+                db.is_processed(&msg.id).await.unwrap(),
+                "processed mark must survive message deletion"
             );
         });
     }

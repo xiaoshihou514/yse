@@ -12,6 +12,7 @@ use crate::plugin::process_manager::PluginProcessManager;
 use crate::plugin::session::SessionRegistry;
 use crate::store::{sqlite::SqliteStorage, Storage};
 
+#[derive(Clone)]
 pub struct CoreState {
     pub store: Arc<dyn Storage>,
     pub config: Arc<RwLock<YseConfig>>,
@@ -41,35 +42,39 @@ impl CoreState {
     }
 
     pub async fn load_config(&self) {
-        if let Ok(Some(json)) = self.store.get_config_value("config").await {
-            if let Ok(cfg) = serde_json::from_str::<YseConfig>(&json) {
-                let password = cfg.crypto_password.clone();
-                let own_name = cfg.own_address.clone();
-                let mut w = self.config.write().await;
-                *w = cfg;
-                drop(w);
-                self.session_registry.set_local_name(&own_name);
-                if let Ok(hashes) = self.store.get_contact_hashes().await {
-                    let map: HashMap<String, String> = hashes.into_iter().collect();
-                    self.session_registry.set_contact_hashes(map);
-                }
-                if !password.is_empty() {
-                    if let Ok(key) = derive_key(&password) {
-                        *self.crypto_key.write().await = Some(key);
-                    }
-                }
-                {
-                    let cfg = self.config.read().await;
-                    let smtp_cfg = SmtpConfig {
-                        server: cfg.email_smtp_server.clone(),
-                        port: cfg.email_smtp_port,
-                        username: cfg.email_username.clone(),
-                        password: cfg.email_password.clone(),
-                    };
-                    if !smtp_cfg.server.is_empty() && !smtp_cfg.username.is_empty() {
-                        *self.sender.write().await = Some(SmtpSender::new(smtp_cfg));
-                    }
-                }
+        let Some(json) = self.store.get_config_value("config").await.ok().flatten() else {
+            return;
+        };
+        let Ok(cfg) = serde_json::from_str::<YseConfig>(&json) else {
+            return;
+        };
+
+        let password = cfg.crypto_password.clone();
+        let own_name = cfg.own_address.clone();
+        let mut w = self.config.write().await;
+        *w = cfg;
+        drop(w);
+        self.session_registry.set_local_name(&own_name);
+
+        if let Ok(hashes) = self.store.get_contact_hashes().await {
+            let map: HashMap<String, String> = hashes.into_iter().collect();
+            self.session_registry.set_contact_hashes(map);
+        }
+        if !password.is_empty() {
+            if let Ok(key) = derive_key(&password) {
+                *self.crypto_key.write().await = Some(key);
+            }
+        }
+        {
+            let cfg = self.config.read().await;
+            let smtp_cfg = SmtpConfig {
+                server: cfg.email_smtp_server.clone(),
+                port: cfg.email_smtp_port,
+                username: cfg.email_username.clone(),
+                password: cfg.email_password.clone(),
+            };
+            if !smtp_cfg.server.is_empty() && !smtp_cfg.username.is_empty() {
+                *self.sender.write().await = Some(SmtpSender::new(smtp_cfg));
             }
         }
     }
@@ -86,8 +91,9 @@ impl CoreState {
             let new_key = derive_key(&cfg.crypto_password).map_err(|e| e.to_string())?;
             *self.crypto_key.write().await = Some(new_key);
         }
+        let json = serde_json::to_string(&cfg).map_err(|e| e.to_string())?;
         self.store
-            .set_config_value("config", &serde_json::to_string(&cfg).unwrap())
+            .set_config_value("config", &json)
             .await
             .map_err(|e| e.to_string())?;
         *self.config.write().await = cfg;

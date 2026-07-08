@@ -68,6 +68,17 @@ export interface YseConfig {
   plugin_mappings: { virtual_addr: string; plugin_id: string; display_name?: string }[];
 }
 
+export interface PendingDisplayMessage {
+  id: string;
+  from: string;
+  to: string;
+  text: string;
+  timestamp: number;
+  __pending: true;
+  __status: "sending" | "failed";
+  error?: string;
+}
+
 export interface LogEntry {
   level: "info" | "warn" | "error" | "debug";
   message: string;

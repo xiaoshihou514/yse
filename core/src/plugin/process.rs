@@ -154,14 +154,14 @@ impl ManagedPlugin {
         to: &str,
         text: Option<&str>,
         meta: Option<&serde_json::Value>,
-        files: Option<&Vec<crate::message::FileAttachment>>,
+        files: Option<&[crate::message::FileAttachment]>,
     ) -> Result<(), String> {
         let notif = CoreNotification::Message {
             from_addr: from.into(),
             to_addr: to.into(),
             text: text.map(String::from),
             meta: meta.cloned(),
-            files: files.cloned(),
+            files: files.map(|f| f.to_vec()),
         };
         self.send_notification(&notif).await
     }
@@ -247,7 +247,7 @@ impl PluginManager {
         from_addr: &str,
         text: Option<&str>,
         meta: Option<&serde_json::Value>,
-        files: Option<&Vec<crate::message::FileAttachment>>,
+        files: Option<&[crate::message::FileAttachment]>,
         mapping: &[(String, String)],
     ) -> usize {
         let map = self.plugins.lock().await;

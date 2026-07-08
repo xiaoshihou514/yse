@@ -56,8 +56,8 @@ async fn ingest_core(msg: &Message, store: &dyn Storage, own_addr: &str) -> (boo
     (for_user, true)
 }
 
-/// Desktop version: includes plugin routing via SessionRegistry.
-#[cfg(feature = "plugin-routing")]
+/// Process an incoming IMAP message: save, dedup, route to plugin if needed.
+/// Uses SessionRegistry for plugin routing (pass dummy values on mobile).
 pub async fn ingest_message(
     msg: &Message,
     store: &dyn Storage,
@@ -75,7 +75,7 @@ pub async fn ingest_message(
                 &msg.from_addr,
                 msg.text.as_deref(),
                 msg.meta.as_ref(),
-                msg.files.as_ref(),
+                msg.files.as_deref(),
                 &plugin_configs,
                 pm,
             )
@@ -92,18 +92,123 @@ pub async fn ingest_message(
     IngestResult { show_in_chat: for_user, route_result }
 }
 
-/// Mobile version: no plugin routing.
-#[cfg(not(feature = "plugin-routing"))]
-pub async fn ingest_message(
-    msg: &Message,
-    store: &dyn Storage,
-    own_addr: &str,
-) -> IngestResult {
-    let (for_user, _should_route) = ingest_core(msg, store, own_addr).await;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::message::Message;
+    use crate::store::{Storage, StoreError, PluginConfig};
+    use async_trait::async_trait;
+    use std::sync::Mutex;
 
-    if let Err(e) = store.mark_processed(&msg.id).await {
-        warn!("imap: mark_processed failed for {}: {}", msg.id, e);
+    #[derive(Default)]
+    struct FakeStore {
+        messages: Mutex<Vec<Message>>,
+        processed: Mutex<Vec<String>>,
     }
 
-    IngestResult { show_in_chat: for_user, route_result: None }
+    #[async_trait]
+    impl Storage for FakeStore {
+        async fn save_message(&self, msg: &Message) -> Result<(), StoreError> {
+            self.messages.lock().unwrap().push(msg.clone());
+            Ok(())
+        }
+        async fn list_messages(&self, _: u32, _: u32) -> Result<Vec<Message>, StoreError> {
+            Ok(self.messages.lock().unwrap().clone())
+        }
+        async fn is_processed(&self, msg_id: &str) -> Result<bool, StoreError> {
+            Ok(self.processed.lock().unwrap().contains(&msg_id.to_string()))
+        }
+        async fn mark_processed(&self, msg_id: &str) -> Result<(), StoreError> {
+            self.processed.lock().unwrap().push(msg_id.to_string());
+            Ok(())
+        }
+        async fn list_plugins(&self) -> Result<Vec<PluginConfig>, StoreError> { Ok(vec![]) }
+        async fn save_plugin(&self, _: &PluginConfig) -> Result<(), StoreError> { Ok(()) }
+        async fn delete_plugin(&self, _: &str) -> Result<(), StoreError> { Ok(()) }
+        async fn get_config_value(&self, _: &str) -> Result<Option<String>, StoreError> { Ok(None) }
+        async fn set_config_value(&self, _: &str, _: &str) -> Result<(), StoreError> { Ok(()) }
+        async fn get_contact_hashes(&self) -> Result<Vec<(String, String)>, StoreError> { Ok(vec![]) }
+        async fn save_contact_hash(&self, _: &str, _: &str) -> Result<(), StoreError> { Ok(()) }
+        async fn get_unique_addresses(&self) -> Result<Vec<String>, StoreError> { Ok(vec![]) }
+        async fn set_hidden(&self, _: &str, _: bool) -> Result<(), StoreError> { Ok(()) }
+        async fn get_hidden_addresses(&self) -> Result<Vec<String>, StoreError> { Ok(vec![]) }
+        async fn delete_messages_for_address(&self, _: &str) -> Result<(), StoreError> { Ok(()) }
+    }
+
+    fn make_msg(from: &str, to: &str) -> Message {
+        Message::new(from.into(), to.into(), Some("test".into()))
+    }
+
+    fn block<F: std::future::Future>(f: F) -> F::Output {
+        tokio::runtime::Runtime::new().unwrap().block_on(f)
+    }
+
+    #[test]
+    fn classify_self_addressed() {
+        let m = make_msg("me#abc@myhost", "me#def@myhost");
+        let (fs, fu) = classify(&m, "me");
+        assert!(fs);
+        assert!(fu);
+    }
+
+    #[test]
+    fn classify_from_other_to_self() {
+        let m = make_msg("echo#abc@myhost", "me#def@myhost");
+        let (fs, fu) = classify(&m, "me");
+        assert!(fs);
+        assert!(fu);
+    }
+
+    #[test]
+    fn classify_from_self_to_other() {
+        let m = make_msg("me#abc@myhost", "echo#def@myhost");
+        let (fs, fu) = classify(&m, "me");
+        assert!(!fs);
+        assert!(fu);
+    }
+
+    #[test]
+    fn classify_unrelated() {
+        let m = make_msg("alice#abc@other", "bob#def@other");
+        let (fs, fu) = classify(&m, "me");
+        assert!(!fs);
+        assert!(!fu);
+    }
+
+    #[test]
+    fn ingest_core_new_msg_routes() {
+        let store = FakeStore::default();
+        let msg = make_msg("me#abc@myhost", "echo#def@myhost");
+        let (fu, should_route) = block(ingest_core(&msg, &store, "me"));
+        assert!(fu);
+        assert!(should_route);
+        assert_eq!(store.messages.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn ingest_core_self_addressed_no_route() {
+        let store = FakeStore::default();
+        let msg = make_msg("me#abc@myhost", "me#def@myhost");
+        let (fu, should_route) = block(ingest_core(&msg, &store, "me"));
+        assert!(fu);
+        assert!(!should_route);
+        assert!(block(store.is_processed(&msg.id)).unwrap());
+    }
+
+    #[test]
+    fn ingest_core_already_processed_skips() {
+        let store = FakeStore::default();
+        let msg = make_msg("echo#abc@myhost", "me#def@myhost");
+        block(store.mark_processed(&msg.id)).unwrap();
+        let (_fu, should_route) = block(ingest_core(&msg, &store, "me"));
+        assert!(!should_route);
+    }
+
+    #[test]
+    fn ingest_core_unrelated_not_for_user() {
+        let store = FakeStore::default();
+        let msg = make_msg("alice#abc@other", "bob#def@other");
+        let (fu, _should_route) = block(ingest_core(&msg, &store, "me"));
+        assert!(!fu);
+    }
 }
