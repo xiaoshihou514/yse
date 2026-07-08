@@ -23,7 +23,7 @@ fi
 KEY_PASSWORD=$(cat "$KEYSTORE_PASSWORD")
 
 # ── NDK setup ──────────────────────────────────────────────────────
-NDK_DIR=$(ls -1d "${ANDROID_HOME:-$HOME/Android/Sdk}/ndk/"*/ 2>/dev/null | head -1)
+NDK_DIR=$(ls -1d "${ANDROID_HOME:-$HOME/Android/Sdk}/ndk/"*/ 2>/dev/null | head -1) || true
 if [ -n "$NDK_DIR" ]; then
     export TARGET_RANLIB="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
     export CARGO_TARGET_AARCH64_LINUX_ANDROID_RANLIB="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib"
@@ -179,17 +179,19 @@ fi
 npm install
 # Build may return non-zero (e.g. Gradle deprecation warnings) even if APK was created.
 # We check for the APK directly instead of relying on exit code.
-npx @tauri-apps/cli@^2 android build --apk --target aarch64 || true
+EXIT_CODE=0
+npx @tauri-apps/cli@^2 android build --apk --target aarch64 || EXIT_CODE=$?
+echo "[yse] tauri android build exited with code ${EXIT_CODE}"
 cd ..
 
 # ── find & sign APK ────────────────────────────────────────────────
-BUILD_TOOLS="${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}/build-tools"
-TOOLS_DIR=$(ls -1d "$BUILD_TOOLS"/*/ 2>/dev/null | head -1)
+BUILD_TOOLS="${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools"
+TOOLS_DIR=$(ls -1d "$BUILD_TOOLS"/*/ 2>/dev/null | head -1) || true
 if [ -n "$TOOLS_DIR" ]; then export PATH="$TOOLS_DIR:$PATH"; fi
 
-APK=$(find mobile/gen/android -name '*-unsigned.apk' | head -1)
+APK=$(find mobile/gen/android -name '*-unsigned.apk' | head -1) || true
 if [ -z "$APK" ]; then
-    APK=$(find mobile/gen/android -name '*.apk' ! -name '*-unsigned*' | head -1)
+    APK=$(find mobile/gen/android -name '*.apk' ! -name '*-unsigned*' | head -1) || true
 fi
 if [ -z "$APK" ]; then echo "ERROR: no APK found"; exit 1; fi
 
