@@ -142,8 +142,8 @@ onMounted(async () => {
   if (!hasCfg && appRouter.currentRoute.value.name !== "welcome") {
     appRouter.replace("/welcome");
   }
-  store.listenForLogs();
-  store.listenForMessages();
+  await store.listenForLogs();
+  await store.listenForMessages();
   await store.initializeApp();
   // Sync the resolved hostname to the backend so format_sender_address uses it
   if (store.localHostname) {

@@ -171,6 +171,8 @@ pub async fn start_polling(
         });
 
         let rt = std::sync::Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let sr = yse_core::plugin::session::SessionRegistry::new(&own_addr);
+        let pm = yse_core::plugin::process_manager::PluginProcessManager::new();
         let eh = emit_handle.clone();
         let ml = msg_log.clone();
         poller
@@ -213,8 +215,6 @@ pub async fn start_polling(
 
                     let result = rt.block_on(async {
                         let s: &dyn yse_core::store::Storage = &*store;
-                        let sr = yse_core::plugin::session::SessionRegistry::new(&own_addr);
-                        let pm = yse_core::plugin::process_manager::PluginProcessManager::new();
                         yse_core::imap_ingest::ingest_message(
                             &msg, s, &own_addr, &sr, &pm,
                         ).await
