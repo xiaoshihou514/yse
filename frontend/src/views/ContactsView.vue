@@ -47,7 +47,7 @@
       </t-space>
       <div class="form-hint">
         地址格式：<code
-          >{{ newName || "名称" }}#8位随机码@{{ newHostname || "主机名" }}</code
+          >{{ newPlugin || newName || "名称" }}#8位随机码@{{ newHostname || "主机名" }}</code
         >
       </div>
     </t-card>
@@ -119,7 +119,7 @@
             <div class="addr-preview">
                地址:
                <code
-                 >{{ newPlugin?.trim() || newName || "名称" }}#8位随机码@{{
+                 >{{ newPlugin || newName || "名称" }}#8位随机码@{{
                    newHostname || "主机名"
                  }}</code
                >
@@ -273,10 +273,11 @@ async function handleAdd() {
   if (!hostname) {
     hostname = store.localHostname || (await api.getHostname());
   }
+  const pluginId = newPlugin.value.trim();
   const hash = generateHash();
   // Use the plugin ID as the address name so routing matches the actual plugin,
   // not the display name. Fall back to the display name if no plugin is bound.
-  const addrName = newPlugin.value?.trim() || name;
+  const addrName = pluginId || name;
   const vaddr = `${addrName}#${hash}@${hostname}`;
 
   if (!store.config) return;
@@ -287,7 +288,7 @@ async function handleAdd() {
   }
   cfg.plugin_mappings.push({
     virtual_addr: vaddr,
-    plugin_id: newPlugin.value || "",
+    plugin_id: pluginId,
   });
   try {
     await api.saveConfig(cfg);
