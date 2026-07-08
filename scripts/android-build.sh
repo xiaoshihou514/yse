@@ -177,7 +177,9 @@ KOTLIN
 fi
 
 npm install
-npx @tauri-apps/cli@^2 android build --apk --target aarch64
+# Build may return non-zero (e.g. Gradle deprecation warnings) even if APK was created.
+# We check for the APK directly instead of relying on exit code.
+npx @tauri-apps/cli@^2 android build --apk --target aarch64 || true
 cd ..
 
 # ── find & sign APK ────────────────────────────────────────────────
