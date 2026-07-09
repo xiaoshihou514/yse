@@ -91,8 +91,8 @@ function formatSize(bytes: number) {
 
 <style scoped>
 .msg-bubble {
-  max-width: 70%; padding: 8px 12px; border-radius: 12px;
-  word-break: break-word; position: relative;
+  max-width: 85%; padding: 8px 12px; border-radius: 12px;
+  overflow-wrap: break-word; position: relative; width: fit-content;
 }
 .bubble-self {
   background: var(--td-brand-color); color: #fff; border-bottom-right-radius: 4px;
@@ -100,7 +100,7 @@ function formatSize(bytes: number) {
 .bubble-other {
   background: var(--td-bg-color-secondarycontainer); border-bottom-left-radius: 4px;
 }
-.msg-text { font-size: 15px; line-height: 1.6; }
+.msg-text { font-size: 15px; line-height: 1.6; overflow-wrap: break-word; }
 .msg-text :deep(pre) { margin: 6px 0; padding: 8px 10px; border-radius: 6px; overflow-x: auto; font-size: 13px; background: var(--td-bg-color-component); }
 .msg-text :deep(code) { font-family: ui-monospace, monospace; font-size: 0.9em; }
 .msg-text :deep(p) { margin: 4px 0; }
