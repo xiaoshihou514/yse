@@ -91,7 +91,7 @@ function formatSize(bytes: number) {
 
 <style scoped>
 .msg-bubble {
-  max-width: 85%; padding: 8px 12px; border-radius: 12px;
+  max-width: 75%; padding: 8px 12px; border-radius: 12px;
   overflow-wrap: break-word; position: relative; width: fit-content;
 }
 .bubble-self {

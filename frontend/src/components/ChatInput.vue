@@ -97,7 +97,17 @@ defineExpose({ inputRef });
   background: var(--td-bg-color-secondarycontainer);
   border: none; border-radius: 8px;
 }
-.send-btn { flex-shrink: 0; align-self: flex-start; height: 44px; }
+.send-btn {
+  flex-shrink: 0;
+  align-self: flex-start;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 18px;
+  font-weight: 500;
+  padding: 0 15px;
+  border-radius: 8px;
+}
 @media (max-width: 767px) {
   .input-area { padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)); gap: 10px; }
   .chat-textarea { min-height: 44px; font-size: 16px; }
