@@ -302,7 +302,7 @@ export async function fetchAllSessions(
   client: any,
 ): Promise<any[]> {
   try {
-    const result = await client.session.list({ roots: true } as any);
+    const result = await client.experimental.session.list();
     let sessions: any[];
     if (Array.isArray(result)) {
       sessions = result;
