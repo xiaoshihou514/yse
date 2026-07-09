@@ -515,6 +515,7 @@ onMounted(async () => {
 @keyframes pullSpin { to { transform: rotate(360deg); } }
 
 .msg-row { display: flex; align-items: flex-end; gap: 6px; min-width: 0; }
+.msg-row > * { min-width: 0; }
 .row-self { flex-direction: row-reverse; }
 .row-other { justify-content: flex-start; }
 
