@@ -35,18 +35,11 @@ const isMobile = useIsMobile();
 const isKeyboardOpen = ref(false);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 
-watch(
-  () => props.modelValue,
-  () => {
-    nextTick(() => {
-      const el = inputRef.value;
-      if (el) {
-        el.style.height = "";
-        el.style.height = Math.min(el.scrollHeight, 120) + "px";
-      }
-    });
-  },
-);
+function autoResize(el: HTMLTextAreaElement) {
+  el.style.height = "";
+  const newH = Math.min(el.scrollHeight, 120);
+  el.style.height = newH + "px";
+}
 
 function onInput(e: Event) {
   const el = e.target as HTMLTextAreaElement;
@@ -54,16 +47,20 @@ function onInput(e: Event) {
   autoResize(el);
 }
 
-function autoResize(el: HTMLTextAreaElement) {
-  const prevHeight = el.offsetHeight;
-  el.style.height = "";
-  const newH = Math.min(el.scrollHeight, 120);
-  if (Math.abs(newH - prevHeight) > 6) {
-    el.style.height = newH + "px";
-  } else {
-    el.style.height = prevHeight + "px";
-  }
-}
+watch(
+  () => props.modelValue,
+  (v) => {
+    nextTick(() => {
+      const el = inputRef.value;
+      if (!el) return;
+      if (v) {
+        autoResize(el);
+      } else {
+        el.style.height = "";
+      }
+    });
+  },
+);
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === "Enter" && !e.shiftKey) {
