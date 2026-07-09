@@ -36,11 +36,14 @@ const isKeyboardOpen = ref(false);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 
 function autoResize(el: HTMLTextAreaElement) {
-  const newH = Math.min(el.scrollHeight, 120);
-  // Only grow when clearly needed (2+ lines). The threshold avoids
-  // 1-2px scrollHeight fluctuation on single-line content.
-  if (newH > el.offsetHeight + 6) {
+  const prevHeight = el.offsetHeight;
+  el.style.height = "";
+  // scrollHeight 在单行时比 CSS 高度大 1-3px，减 3 吸收偏差
+  const newH = Math.min(el.scrollHeight - 20, 120);
+  if (Math.abs(newH - prevHeight) > 6) {
     el.style.height = newH + "px";
+  } else {
+    el.style.height = prevHeight + "px";
   }
 }
 
