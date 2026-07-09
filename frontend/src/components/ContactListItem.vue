@@ -82,33 +82,70 @@ function formatTime(ts: number) {
 
 <style scoped>
 .contact-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; cursor: pointer; transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
 }
-.contact-item:hover { background: var(--td-bg-color-secondarycontainer); }
-.contact-item.active { background: var(--td-brand-color-light); }
-.contact-item.hidden { opacity: 0.5; }
-.contact-info { flex: 1; min-width: 0; }
-.contact-row1 { display: flex; justify-content: space-between; align-items: center; }
+.contact-item:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.contact-item.active {
+  background: var(--td-brand-color-light);
+}
+.contact-item.hidden {
+  opacity: 0.5;
+}
+.contact-info {
+  flex: 1;
+  min-width: 0;
+}
+.contact-row1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 .contact-row2 {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 3px;
 }
 .contact-name {
-  font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; flex: 1; min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 .contact-hostname {
-  font-size: 10px; color: var(--td-text-color-placeholder); white-space: nowrap;
-  max-width: 80px; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
+  white-space: nowrap;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
   margin-left: 6px;
 }
 .contact-text {
-  font-size: 12px; color: var(--td-text-color-secondary); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 .contact-time {
-  font-size: 11px; color: var(--td-text-color-placeholder); white-space: nowrap;
-  flex-shrink: 0; margin-left: 6px;
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 6px;
 }
 </style>

@@ -354,7 +354,10 @@ export const useYseStore = defineStore("yse", () => {
         "log://log",
         (event) => {
           logs.value.push({
-            level: (LogLevel[event.payload.level as unknown as number] ?? String(event.payload.level)).toLowerCase(),
+            level: (
+              LogLevel[event.payload.level as unknown as number] ??
+              String(event.payload.level)
+            ).toLowerCase(),
             message: event.payload.message,
             timestamp: Date.now(),
           });

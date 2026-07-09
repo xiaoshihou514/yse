@@ -176,10 +176,8 @@ pub async fn start_polling(
                     let result = tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(async {
                             let s: &dyn yse_core::store::Storage = &*store;
-                            yse_core::imap_ingest::ingest_message(
-                                &msg, s, &own_addr, &sr, &pm,
-                            )
-                            .await
+                            yse_core::imap_ingest::ingest_message(&msg, s, &own_addr, &sr, &pm)
+                                .await
                         })
                     });
 

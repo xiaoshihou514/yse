@@ -49,7 +49,12 @@
     </t-card>
 
     <!-- Process manager (desktop only) -->
-    <t-card v-if="!isMobile" title="进程管理" :bordered="false" style="margin-top:0">
+    <t-card
+      v-if="!isMobile"
+      title="进程管理"
+      :bordered="false"
+      style="margin-top: 0"
+    >
       <t-table
         :data="store.processes"
         :columns="procColumns"
@@ -174,11 +179,9 @@
       :footer="false"
     >
       <div class="log-viewer" v-if="logLines.length > 0">
-        <pre
-          class="log-content"
-          v-for="(line, i) in logLines"
-          :key="i"
-        >{{ line }}</pre>
+        <pre class="log-content" v-for="(line, i) in logLines" :key="i">{{
+          line
+        }}</pre>
       </div>
       <t-empty v-else description="暂无日志" />
     </t-dialog>
@@ -188,7 +191,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
-import { QrcodeIcon, DeleteIcon, StopCircleIcon, RefreshIcon, ViewListIcon } from "tdesign-icons-vue-next";
+import {
+  QrcodeIcon,
+  DeleteIcon,
+  StopCircleIcon,
+  RefreshIcon,
+  ViewListIcon,
+} from "tdesign-icons-vue-next";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { useQrCode } from "@/composables/useQrCode";

@@ -130,7 +130,8 @@ impl YseState {
                     let app_handle = app_handle.clone();
                     tokio::spawn(async move {
                         let email_user = config.read().await.email_username.clone();
-                        let mut msg = Message::new(from_addr.clone(), to_addr.clone(), text.clone());
+                        let mut msg =
+                            Message::new(from_addr.clone(), to_addr.clone(), text.clone());
                         if let Some(m) = meta {
                             msg = msg.with_meta(m);
                         }

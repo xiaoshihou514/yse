@@ -127,7 +127,14 @@ impl PluginProcessManager {
             .map(|d| format!("{}/plugins/{}", d, id))
             .unwrap_or_else(|| format!("./plugins/{}", id));
 
-        match ManagedPlugin::spawn_with_exit_handler(id.into(), exec_path, args, &state_dir, handler, on_exit) {
+        match ManagedPlugin::spawn_with_exit_handler(
+            id.into(),
+            exec_path,
+            args,
+            &state_dir,
+            handler,
+            on_exit,
+        ).await {
             Ok(plugin) => {
                 map.insert(
                     id.into(),
@@ -206,8 +213,14 @@ impl PluginProcessManager {
             .map(|d| format!("{}/plugins/{}", d, id))
             .unwrap_or_else(|| format!("./plugins/{}", id));
 
-        match ManagedPlugin::spawn_with_exit_handler(id.into(), &exec_path, &args, &state_dir, handler, on_exit)
-        {
+        match ManagedPlugin::spawn_with_exit_handler(
+            id.into(),
+            &exec_path,
+            &args,
+            &state_dir,
+            handler,
+            on_exit,
+        ).await {
             Ok(plugin) => {
                 map.insert(
                     id.into(),

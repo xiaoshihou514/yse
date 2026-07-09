@@ -14,7 +14,10 @@
       clearable
       style="margin-bottom: 8px"
     />
-    <div class="forward-list" :style="{ maxHeight: isMobile ? '40vh' : '300px' }">
+    <div
+      class="forward-list"
+      :style="{ maxHeight: isMobile ? '40vh' : '300px' }"
+    >
       <div
         v-for="c in filteredContacts"
         :key="c.address"
@@ -126,17 +129,43 @@ defineExpose({ clear });
 </script>
 
 <style scoped>
-.forward-list { overflow-y: auto; border: 1px solid var(--td-component-stroke); border-radius: 6px; }
+.forward-list {
+  overflow-y: auto;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 6px;
+}
 .forward-contact {
-  display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer;
-  border-bottom: 1px solid var(--td-component-stroke); transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--td-component-stroke);
+  transition: background 0.1s;
 }
-.forward-contact:last-child { border-bottom: none; }
-.forward-contact:active { background: var(--td-bg-color-secondarycontainer); }
+.forward-contact:last-child {
+  border-bottom: none;
+}
+.forward-contact:active {
+  background: var(--td-bg-color-secondarycontainer);
+}
 .forward-name {
-  font-size: 14px; color: var(--td-text-color-primary); flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 14px;
+  color: var(--td-text-color-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.forward-hostname { font-size: 11px; color: var(--td-text-color-placeholder); flex-shrink: 0; }
-.forward-actions { display: flex; gap: 8px; padding: 4px 0; }
+.forward-hostname {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+  flex-shrink: 0;
+}
+.forward-actions {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+}
 </style>

@@ -24,17 +24,17 @@ pub struct ManagedPlugin {
 }
 
 impl ManagedPlugin {
-    pub fn spawn(
+    pub async fn spawn(
         id: String,
         exec_path: &str,
         args: &[String],
         state_dir: &str,
         handler: Option<PluginRequestHandler>,
     ) -> Result<Self, String> {
-        Self::spawn_with_exit_handler(id, exec_path, args, state_dir, handler, None)
+        Self::spawn_with_exit_handler(id, exec_path, args, state_dir, handler, None).await
     }
 
-    pub fn spawn_with_exit_handler(
+    pub async fn spawn_with_exit_handler(
         id: String,
         exec_path: &str,
         args: &[String],
@@ -74,25 +74,20 @@ impl ManagedPlugin {
             state_dir: state_dir.clone(),
         };
 
-        // Send initial config so plugin knows where to persist state
+        // Send config synchronously before returning, so the plugin
+        // receives it before any messages (stdin Mutex acts as barrier).
         {
-            let stdin_w = stdin;
-            let cfg_dir = state_dir;
-            tokio::spawn(async move {
-                let notif = CoreNotification::Config {
-                    state_dir: cfg_dir,
-                    virtual_addr: None,
-                };
-                let json = match serde_json::to_string(&notif) {
-                    Ok(s) => s,
-                    Err(_) => return,
-                };
+            let notif = CoreNotification::Config {
+                state_dir: state_dir.clone(),
+                virtual_addr: None,
+            };
+            if let Ok(json) = serde_json::to_string(&notif) {
                 let mut line = json;
                 line.push('\n');
-                let mut handle = stdin_w.lock().await;
+                let mut handle = stdin.lock().await;
                 let _ = handle.write_all(line.as_bytes()).await;
                 let _ = handle.flush().await;
-            });
+            }
         }
 
         // Spawn stdout reader task that routes plugin requests
@@ -268,7 +263,7 @@ impl PluginManager {
             return Err(format!("plugin {} already running", id));
         }
         let handler = self.get_request_handler();
-        let plugin = ManagedPlugin::spawn(id.into(), exec_path, args, "", handler)?;
+        let plugin = ManagedPlugin::spawn(id.into(), exec_path, args, "", handler).await?;
         map.insert(id.into(), plugin);
         info!("plugin started: {}", id);
         Ok(())
