@@ -368,15 +368,18 @@ async function cmdSessions(state: any, from: string) {
   // Group by directory
   const groups = new Map<string, any[]>();
   for (const s of sessions) {
-    const dir = s.directory || s.worktree || "";
+    const dir = s.directory || "";
     if (!groups.has(dir)) groups.set(dir, []);
     groups.get(dir)!.push(s);
   }
 
+  process.stderr.write(`[opencode-bot] cmdSessions: ${sessions.length} sessions, ${groups.size} dirs: ${JSON.stringify(Array.from(groups.keys()))}\n`);
+
   if (groups.size === 1) {
-    // Single directory — show session list directly
+    const dir = Array.from(groups.keys())[0];
+    // Single directory with sessions — show session list
     const list = sessions.map(formatSessionItem);
-    sendList(from, "请选择会话：", "可选会话", list);
+    sendList(from, dir ? `请选择会话（${path.basename(dir)}）：` : "请选择会话：", "可选会话", list);
     return;
   }
 
@@ -393,9 +396,9 @@ function formatSessionItem(s: any): { label: string; value: string; description:
   return {
     label: s.title || s.id?.slice(0, 8) || "Untitled",
     value: s.id,
-    description: s.directory || s.worktree
-      ? `📁 ${s.directory || s.worktree}`
-      : `🕐 ${s.updatedAt || s.updated ? new Date((s.updatedAt || s.updated) as number).toLocaleDateString("zh-CN") : "?"}`,
+    description: s.directory
+      ? `📁 ${s.directory}`
+      : `🕐 ${s.updatedAt ? new Date(s.updatedAt as number).toLocaleDateString("zh-CN") : "?"}`,
   };
 }
 
@@ -489,7 +492,7 @@ async function handleListResponse(state: any, from: string, value: string) {
     const dir = value.slice(4);
     const sessions = await fetchAllSessions(state.client);
     const filtered = sessions.filter(
-      (s: any) => (s.directory || s.worktree || "") === dir,
+      (s: any) => (s.directory || "") === dir,
     );
     if (filtered.length === 0) {
       sendResponse(from, "该目录下暂无会话");

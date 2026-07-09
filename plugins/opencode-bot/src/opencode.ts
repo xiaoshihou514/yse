@@ -302,7 +302,7 @@ export async function fetchAllSessions(
   client: any,
 ): Promise<any[]> {
   try {
-    const result = await client.experimental.session.list();
+    const result = await client.session.list({} as any);
     let sessions: any[];
     if (Array.isArray(result)) {
       sessions = result;
@@ -317,7 +317,16 @@ export async function fetchAllSessions(
       process.stderr.write(`[opencode-bot] unexpected session.list format: ${raw}\n`);
       return [];
     }
-    return sessions.slice(0, 20);
+    if (!Array.isArray(sessions)) {
+      process.stderr.write(`[opencode-bot] sessions is not an array: ${JSON.stringify(sessions).slice(0, 200)}\n`);
+      return [];
+    }
+    // Normalize directory field (v2 uses location.directory)
+    return sessions.slice(0, 40).map((s: any) => ({
+      ...s,
+      directory: s.directory || s.worktree || s.location?.directory || "",
+      updatedAt: s.updatedAt || s.time?.updated || s.updated,
+    }));
   } catch (e: any) {
     process.stderr.write(`[opencode-bot] fetchAllSessions failed: ${e.message ?? e}\n`);
     return [];
