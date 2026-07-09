@@ -533,8 +533,36 @@ onMounted(async () => {
 .pull-spinner { width: 18px; height: 18px; border: 2px solid var(--td-component-stroke); border-top-color: var(--td-brand-color); border-radius: 50%; animation: pullSpin 0.6s linear infinite; }
 @keyframes pullSpin { to { transform: rotate(360deg); } }
 
-.msg-row { display: flex; align-items: flex-end; gap: 6px; }
-.row-self { flex-direction: row-reverse; }
+.msg-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 1. 限制外层最大宽度 */
+.msg-row > * {
+  min-width: 0;
+  max-width: 75%;
+}
+
+/* 2. 使用 margin-left: auto 替代 justify-content，强制吸收左侧空间 */
+.row-self > * {
+  margin-left: auto;
+}
+
+/* 3. 核心修复：强制打断超长无空格字符，防止撑破 max-width */
+.msg-row :deep(.msg-text) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* 确保气泡本身也遵守宽度限制并 100% 填充外层包裹层 */
+.msg-row :deep(.msg-bubble) {
+  max-width: 100%;
+  display: inline-block;
+}
+
 .row-other { justify-content: flex-start; }
 
 @media (max-width: 767px) {
