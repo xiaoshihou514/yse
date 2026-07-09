@@ -359,7 +359,7 @@ async function handleCommand(
 }
 
 async function cmdSessions(state: any, from: string) {
-  const sessions = await fetchAllSessions(state.client);
+  const sessions = await fetchAllSessions(state.client, state.baseUrl);
   if (sessions.length === 0) {
     sendResponse(from, "暂无会话，输入 /new [标题] 创建一个");
     return;
@@ -490,7 +490,7 @@ async function handleListResponse(state: any, from: string, value: string) {
   // Directory selection from /sessions flow
   if (value.startsWith("dir:")) {
     const dir = value.slice(4);
-    const sessions = await fetchAllSessions(state.client);
+    const sessions = await fetchAllSessions(state.client, state.baseUrl);
     const filtered = sessions.filter(
       (s: any) => (s.directory || "") === dir,
     );

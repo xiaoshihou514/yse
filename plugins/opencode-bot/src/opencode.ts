@@ -300,9 +300,29 @@ export async function listAgents(
 
 export async function fetchAllSessions(
   client: any,
+  baseUrl?: string,
 ): Promise<any[]> {
+  // Use a temp client without directory scope to get cross-project sessions
+  const listingClient = (baseUrl ? createOpencodeClient({ baseUrl }) : client);
+
   try {
-    const result = await client.experimental.session.list();
+    const result = await listingClient.v2.session.list({ limit: 200 });
+    const arr = result?.data?.data;
+    if (Array.isArray(arr) && arr.length > 0) {
+      return arr.slice(0, 100).map((s: any) => ({
+        id: s.id,
+        title: s.title || "",
+        directory: s.location?.directory || "",
+        updatedAt: s.time?.updated || 0,
+      }));
+    }
+  } catch {
+    // fall through
+  }
+
+  // Fallback: experimental API
+  try {
+    const result = await listingClient.experimental.session.list();
     let sessions: any[];
     if (Array.isArray(result)) {
       sessions = result;
@@ -321,22 +341,27 @@ export async function fetchAllSessions(
       process.stderr.write(`[opencode-bot] sessions is not an array: ${JSON.stringify(sessions).slice(0, 200)}\n`);
       return [];
     }
-    // Normalize directory field (v2 uses location.directory)
-    return sessions.slice(0, 40).map((s: any) => ({
-      ...s,
+    return sessions.slice(0, 100).map((s: any) => ({
+      id: s.id,
+      title: s.title || "",
       directory: s.directory || s.worktree || s.location?.directory || "",
-      updatedAt: s.updatedAt || s.time?.updated || s.updated,
+      updatedAt: s.updatedAt || s.time?.updated || s.updated || 0,
     }));
   } catch (e: any) {
     process.stderr.write(`[opencode-bot] fetchAllSessions failed: ${e.message ?? e}\n`);
     return [];
+  } finally {
+    if (listingClient !== client && typeof listingClient === "object") {
+      // no explicit cleanup needed for in-memory client
+    }
   }
 }
 
 export async function listSessions(
   client: any,
+  baseUrl?: string,
 ): Promise<{ label: string; value: string; description: string }[]> {
-  const sessions = await fetchAllSessions(client);
+  const sessions = await fetchAllSessions(client, baseUrl);
   return sessions.map((s: any) => ({
     label: s.title || s.id?.slice(0, 8) || "Untitled",
     value: s.id,
