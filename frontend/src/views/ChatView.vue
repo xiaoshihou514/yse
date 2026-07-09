@@ -256,9 +256,17 @@
       <div class="ctx-item" @click="copyCtxText">
         {{ ctxContact ? "复制地址" : "复制" }}
       </div>
-      <div class="ctx-sep"></div>
-      <div class="ctx-item" @click="toggleCtxHide">
+      <div v-if="ctxContact" class="ctx-sep"></div>
+      <div v-if="ctxContact" class="ctx-item" @click="toggleCtxHide">
         {{ ctxContact?.hidden ? "取消隐藏" : "隐藏对话" }}
+      </div>
+      <div v-if="!ctxContact && ctxMenu.text" class="ctx-sep"></div>
+      <div
+        v-if="!ctxContact && ctxMenu.text"
+        class="ctx-item"
+        @click="openForwardDialog"
+      >
+        转发
       </div>
       <div v-if="ctxContact" class="ctx-sep"></div>
       <div
@@ -282,6 +290,67 @@
         placeholder="联系人显示名称"
         @keydown.enter="confirmRename"
       />
+    </t-dialog>
+
+    <!-- Forward dialog -->
+    <t-dialog
+      v-model:visible="forwardVisible"
+      header="转发消息"
+      width="400px"
+      :close-on-overlay-click="true"
+      :footer="false"
+    >
+      <t-input
+        v-model="forwardSearch"
+        placeholder="搜索联系人..."
+        size="small"
+        clearable
+        style="margin-bottom: 8px"
+      />
+      <div class="forward-list" :style="{ maxHeight: isMobile ? '40vh' : '300px' }">
+        <div
+          v-for="c in forwardContacts"
+          :key="c.address"
+          class="forward-contact"
+          @click="toggleForwardSelect(c.address)"
+        >
+          <t-checkbox
+            :checked="forwardSelected.has(c.address)"
+            :style="{ pointerEvents: 'none' }"
+          />
+          <span class="forward-name">{{ resolveDisplayName(c.address) }}</span>
+          <span class="forward-hostname">{{
+            c.hostname ? "@" + c.hostname : ""
+          }}</span>
+        </div>
+        <t-empty v-if="forwardContacts.length === 0" description="暂无联系人" />
+      </div>
+      <div class="forward-actions">
+        <t-button size="small" variant="text" @click="selectAllForward"
+          >全选</t-button
+        >
+        <t-button size="small" variant="text" @click="clearForward"
+          >清空</t-button
+        >
+      </div>
+      <t-textarea
+        v-model="forwardExtraText"
+        placeholder="添加附加内容（可选）"
+        :autosize="{ minRows: 2, maxRows: 4 }"
+        style="margin-top: 8px"
+      />
+      <t-space style="margin-top: 12px; justify-content: flex-end; width: 100%">
+        <t-button variant="outline" @click="forwardVisible = false"
+          >取消</t-button
+        >
+        <t-button
+          theme="primary"
+          :disabled="forwardSelected.size === 0"
+          @click="confirmForward"
+        >
+          发送 ({{ forwardSelected.size }})
+        </t-button>
+      </t-space>
     </t-dialog>
 
     <!-- Chat settings panel: right sidebar (desktop) / full-page (mobile) -->
@@ -452,6 +521,11 @@ const ctxMenu = ref<{ visible: boolean; x: number; y: number; text: string }>({
   text: "",
 });
 
+const forwardVisible = ref(false);
+const forwardSearch = ref("");
+const forwardSelected = ref(new Set<string>());
+const forwardExtraText = ref("");
+
 function onBubbleContext(e: MouseEvent, msg: { text?: string }) {
   ctxMenu.value = {
     visible: true,
@@ -493,6 +567,63 @@ async function toggleCtxHide() {
     await store.toggleHide(ctxContact.value.address);
   }
   ctxMenu.value.visible = false;
+}
+
+const forwardContacts = computed(() => {
+  const list = visibleContacts.value.filter(
+    (c) => !c.hidden || store.hiddenAddresses.has(c.address),
+  );
+  if (!forwardSearch.value) return list;
+  const q = forwardSearch.value.toLowerCase();
+  return list.filter(
+    (c) =>
+      resolveDisplayName(c.address).toLowerCase().includes(q) ||
+      (c.hostname || "").toLowerCase().includes(q),
+  );
+});
+
+function openForwardDialog() {
+  forwardSelected.value = new Set();
+  forwardExtraText.value = "";
+  forwardSearch.value = "";
+  ctxMenu.value.visible = false;
+  forwardVisible.value = true;
+}
+
+function toggleForwardSelect(addr: string) {
+  const s = new Set(forwardSelected.value);
+  if (s.has(addr)) {
+    s.delete(addr);
+  } else {
+    s.add(addr);
+  }
+  forwardSelected.value = s;
+}
+
+function selectAllForward() {
+  forwardSelected.value = new Set(
+    forwardContacts.value.map((c) => c.address),
+  );
+}
+
+function clearForward() {
+  forwardSelected.value = new Set();
+}
+
+async function confirmForward() {
+  const originalText = ctxMenu.value.text;
+  const extra = forwardExtraText.value.trim();
+  const forwardText = extra
+    ? `${originalText}\n---\n${extra}`
+    : originalText;
+  const targets = [...forwardSelected.value];
+  for (const to of targets) {
+    await store.sendMessage(to, forwardText);
+  }
+  forwardVisible.value = false;
+  MessagePlugin.success(
+    targets.length > 1 ? `已转发给 ${targets.length} 个联系人` : "已转发",
+  );
 }
 
 // ---- Long press for mobile ----
@@ -1569,5 +1700,46 @@ onMounted(async () => {
   to {
     transform: translateY(0);
   }
+}
+
+/* Forward dialog */
+.forward-list {
+  overflow-y: auto;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 6px;
+}
+.forward-contact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--td-component-stroke);
+  transition: background 0.1s;
+}
+.forward-contact:last-child {
+  border-bottom: none;
+}
+.forward-contact:active {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.forward-name {
+  font-size: 14px;
+  color: var(--td-text-color-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.forward-hostname {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+  flex-shrink: 0;
+}
+.forward-actions {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
 }
 </style>
