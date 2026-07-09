@@ -139,7 +139,7 @@ export async function listSessions(
   client: any,
 ): Promise<{ label: string; value: string; description: string }[]> {
   try {
-    const result = await client.session.list();
+    const result = await client.experimental.session.list();
     let sessions: any[];
     if (Array.isArray(result)) {
       sessions = result;
@@ -172,18 +172,23 @@ export async function getSessionInfo(
   sessionId: string,
 ): Promise<string> {
   try {
-    const s = await client.session.get({ path: { id: sessionId } });
+    const s = await client.session.get({ sessionID: sessionId });
     const data = s.data as any;
     if (!data) return "未找到会话";
     const lines: string[] = [];
-    lines.push(`📋 会话: ${data.title ?? "(无标题)"}  (${data.id})`);
-    if (data.worktree) lines.push(`📁 目录: ${data.worktree}`);
+    lines.push(`📋 会话: ${data.title ?? "(无标题)"}  (${data.id || sessionId})`);
+    if (data.directory || data.worktree)
+      lines.push(`📁 目录: ${data.directory || data.worktree}`);
     if (data.time?.createdAt)
       lines.push(
         `🕐 创建: ${new Date(data.time.createdAt).toLocaleString("zh-CN")}`,
       );
+    else if (data.created)
+      lines.push(
+        `🕐 创建: ${new Date(data.created).toLocaleString("zh-CN")}`,
+      );
     return lines.join("\n");
-  } catch {
-    return "获取会话信息失败";
+  } catch (e: any) {
+    return `获取会话信息失败: ${e.message ?? e}`;
   }
 }
