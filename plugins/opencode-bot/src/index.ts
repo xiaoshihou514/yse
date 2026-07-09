@@ -32,16 +32,29 @@ const HELP = `可用命令：
 /help         — 显示此帮助`;
 
 let stateFile = "";
+let pendingUserRestore: any = null;
 
 function saveStateImpl(s: any) {
   if (!stateFile || !s) return;
   try {
     fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    let lastUserState: any = null;
+    for (const us of Object.values(s.sessions) as any[]) {
+      if (us.sessionId) {
+        lastUserState = {
+          sessionId: us.sessionId,
+          planMode: us.planMode ?? false,
+          agentId: us.agentId,
+        };
+        break;
+      }
+    }
     fs.writeFileSync(
       stateFile,
       JSON.stringify({
         sessions: s.sessions,
         projectDir: s.projectDir,
+        lastUserState,
       }),
     );
   } catch {}
@@ -75,6 +88,9 @@ async function main() {
           const saved = JSON.parse(raw);
           if (state && saved.sessions) state.sessions = saved.sessions;
           if (state && saved.projectDir) state.projectDir = saved.projectDir;
+          if (state && saved.lastUserState?.sessionId) {
+            pendingUserRestore = saved.lastUserState;
+          }
           sendLog("info", `loaded state from ${stateFile}`);
         } catch { /* no state file yet */ }
       }
@@ -117,6 +133,16 @@ async function main() {
     }
 
     const us = getUserState(state, from);
+
+    // Restore session from cross-restart fallback if user has no session
+    if (pendingUserRestore && !us.sessionId) {
+      const u: any = us;
+      u.sessionId = pendingUserRestore.sessionId;
+      u.planMode = pendingUserRestore.planMode ?? false;
+      u.agentId = pendingUserRestore.agentId;
+      pendingUserRestore = null;
+      saveStateImpl(state);
+    }
 
     // Command routing
     if (text.startsWith("/")) {
@@ -300,7 +326,6 @@ async function handleCommand(
         sendResponse(from, "请先选择会话");
         break;
       }
-      const info = await getSessionInfo(state.client, us.sessionId);
       const listVariants = async (): Promise<{ label: string; value: string; description: string }[]> => {
         try {
           const res = await fetch(`${state.baseUrl}/api/model`);
