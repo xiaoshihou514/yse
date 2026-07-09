@@ -17,6 +17,10 @@ export interface BotState {
     [userAddr: string]: {
       mode: "sdk" | "tui";
       sessionId: string | null;
+      modelId?: string;
+      providerId?: string;
+      modelVariant?: string;
+      agentId?: string;
     };
   };
   serverProcess: ChildProcess | null;
@@ -112,13 +116,25 @@ export async function sendPrompt(
   sessionId: string,
   text: string,
   directory?: string,
+  modelOpts?: { modelId?: string; providerId?: string; variant?: string; agentId?: string },
 ): Promise<string> {
   try {
-    const result = await client.session.prompt({
+    const promptParams: any = {
       sessionID: sessionId,
       parts: [{ type: "text", text }],
       ...(directory ? { directory } : {}),
-    });
+    };
+    if (modelOpts?.modelId && modelOpts?.providerId) {
+      promptParams.model = {
+        id: modelOpts.modelId,
+        providerID: modelOpts.providerId,
+        ...(modelOpts.variant ? { variant: modelOpts.variant } : {}),
+      };
+    }
+    if (modelOpts?.agentId && !modelOpts?.modelId) {
+      promptParams.agent = modelOpts.agentId;
+    }
+    const result = await client.session.prompt(promptParams);
     const msg = result.data as any;
     const parts: any[] = msg?.parts ?? [];
     const texts = parts

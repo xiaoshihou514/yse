@@ -123,7 +123,12 @@ async function main() {
       await handleCommand(state, from, us, cmd, args.join(" "));
     } else if (us.sessionId) {
       // SDK mode — send prompt directly
-      const reply = await sendPrompt(state.client, us.sessionId, text, state.projectDir);
+      const reply = await sendPrompt(state.client, us.sessionId, text, state.projectDir, {
+        modelId: us.modelId,
+        providerId: us.providerId,
+        variant: us.modelVariant,
+        agentId: us.agentId,
+      });
       sendResponse(from, reply);
     } else {
       sendResponse(from, "请先选择会话：/sessions 或 /new [标题]");
@@ -384,6 +389,17 @@ async function handleListResponse(state: any, from: string, value: string) {
     let config: any;
     try { config = JSON.parse(value); } catch { return; }
     try {
+      // Model/variant/plan selection — update local state if session exists
+      if (us.sessionId) {
+        if (config.model) us.modelId = config.model;
+        if (config.provider) us.providerId = config.provider;
+        if (config.variant) us.modelVariant = config.variant;
+        if (config.agent) us.agentId = config.agent;
+        sendResponse(from, "✅ 已设置，下一条消息将使用新配置");
+        saveStateImpl(state);
+        return;
+      }
+      // No active session → create new one with the chosen config
       const body: any = {};
       if (config.model) {
         body.model = { id: config.model, providerID: config.provider };
