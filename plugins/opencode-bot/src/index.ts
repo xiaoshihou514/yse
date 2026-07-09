@@ -181,7 +181,7 @@ async function handleCommand(
         break;
       }
       try {
-        await state.client.session.abort({ path: { id: us.sessionId } });
+        await state.client.session.abort({ sessionID: us.sessionId });
         sendResponse(from, "✅ 已中止");
       } catch (e: any) {
         sendResponse(from, `中止失败: ${e.message ?? e}`);
@@ -194,7 +194,7 @@ async function handleCommand(
         break;
       }
       try {
-        await state.client.session.revert({ path: { id: us.sessionId } });
+        await state.client.session.revert({ sessionID: us.sessionId });
         sendResponse(from, "✅ 已撤回上一条消息");
       } catch (e: any) {
         sendResponse(from, `撤回失败: ${e.message ?? e}`);
@@ -207,7 +207,7 @@ async function handleCommand(
         break;
       }
       try {
-        await state.client.session.unrevert({ path: { id: us.sessionId } });
+        await state.client.session.unrevert({ sessionID: us.sessionId });
         sendResponse(from, "✅ 已恢复撤回");
       } catch (e: any) {
         sendResponse(from, `恢复失败: ${e.message ?? e}`);
@@ -345,9 +345,7 @@ async function cmdMessages(state: any, from: string, us: any, arg: string) {
   }
   const limit = parseInt(arg, 10) || 5;
   try {
-    const result = await state.client.session.messages({
-      path: { id: us.sessionId },
-    } as any);
+    const result = await state.client.session.messages({ sessionID: us.sessionId });
     const msgs = (result.data as any[]) ?? [];
     const recent = msgs.slice(-limit);
     if (recent.length === 0) {
