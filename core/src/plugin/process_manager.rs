@@ -15,7 +15,7 @@ pub enum ProcessState {
     Starting,
     Running,
     Stopping,
-    Crashed(String),
+    Crashed,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -93,7 +93,7 @@ impl PluginProcessManager {
                         "crashed (max restarts)".to_string()
                     };
                     warn!("process {}: {}", id, msg);
-                    entry.state = ProcessState::Crashed(msg.clone());
+                    entry.state = ProcessState::Crashed;
                     entry.last_exit = Some(msg);
                 }
             });

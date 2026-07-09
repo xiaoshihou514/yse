@@ -229,7 +229,7 @@ function procTag(
 ): "success" | "warning" | "danger" | "default" {
   if (state === "Running") return "success";
   if (state === "Starting" || state === "Stopping") return "warning";
-  if (state?.startsWith("Crashed")) return "danger";
+  if (state === "Crashed") return "danger";
   return "default";
 }
 
