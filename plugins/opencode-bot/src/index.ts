@@ -179,30 +179,16 @@ function formatToolInput(input: any): string {
   return s;
 }
 
-function formatToolContent(content: any[]): string {
-  if (!content || !content.length) return "";
-  return content
-    .filter((c: any) => c.type === "text")
-    .map((c: any) => (c.text || "").slice(0, 1500))
-    .filter(Boolean)
-    .join("\n");
-}
-
 function makeEventHandler(from: string) {
   return (type: string, data: any) => {
     switch (type) {
       case "tool_called":
         sendResponse(from, `🔧 ${data.name}(${formatToolInput(data.input)})`);
         break;
-      case "tool_progress": {
-        const t = (data.text || "").slice(0, 1000);
-        if (t) sendResponse(from, `📝 ${t}`);
-        break;
-      }
       case "tool_success": {
         let msg = `✅ ${data.name} 完成`;
-        const content = formatToolContent(data.content);
-        if (content) msg += `\n${content.slice(0, 2000)}`;
+        const out = (data.output || "").slice(0, 2000);
+        if (out) msg += `\n${out}`;
         sendResponse(from, msg);
         break;
       }

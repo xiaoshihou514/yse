@@ -135,68 +135,60 @@ export async function sendPromptStreaming(
     promptParams.agent = modelOpts.agentId;
   }
 
-  // Track the assistantMessageID for this run to filter events
-  let ourAssistantMsgId: string | null = null;
+  // Track assistant message ID for this prompt
+  let ourMessageId: string | null = null;
   let unsubscribed = false;
 
-  // Subscribe to global SSE events (real-time, no replay)
+  // Subscribe to global SSE events and process events directly from the generator
   let eventStream: any = null;
   let eventConsumer: Promise<void> | null = null;
   try {
-    const sub = await client.event.subscribe({
-      onSseEvent: (raw: any) => {
-        if (unsubscribed) return;
-        const event = raw.data as any;
-        const props = event?.properties;
-        if (!props || props.sessionID !== sessionId) return;
-
-        // Capture the assistantMessageID from the first relevant event
-        if (!ourAssistantMsgId && props.assistantMessageID) {
-          if (event.type === "session.next.tool.called" ||
-              event.type === "session.next.text.started" ||
-              event.type === "session.next.step.started") {
-            ourAssistantMsgId = props.assistantMessageID;
-          }
-        }
-
-        // Skip events from other assistant messages in the same session
-        if (props.assistantMessageID && props.assistantMessageID !== ourAssistantMsgId) return;
-
-        switch (event.type) {
-          case "session.next.tool.called":
-            onEvent("tool_called", { name: props.tool, input: props.input });
-            break;
-          case "session.next.tool.progress": {
-            const texts = (props.content || [])
-              .filter((c: any) => c.type === "text")
-              .map((c: any) => c.text)
-              .filter(Boolean);
-            if (texts.length) onEvent("tool_progress", { callID: props.callID, text: texts.join("") });
-            break;
-          }
-          case "session.next.tool.success":
-            onEvent("tool_success", { name: props.tool, callID: props.callID, content: props.content, outputPaths: props.outputPaths, result: props.result });
-            break;
-          case "session.next.tool.failed":
-            onEvent("tool_failed", { name: props.tool, callID: props.callID, error: props.error });
-            break;
-        }
-      },
-    });
+    const sub = await client.event.subscribe();
     eventStream = sub.stream;
-    // Start consuming the generator to activate the SSE connection
-    // The generator's body (fetch + onSseEvent) only executes when iterated.
+
     eventConsumer = (async () => {
       try {
-        for await (const _ of eventStream) {
-          // keep the generator running; events handled by onSseEvent
+        for await (const event of eventStream) {
+          if (unsubscribed) break;
+          if (!event?.type) continue;
+
+          const p = event.properties;
+          if (!p?.sessionID || p.sessionID !== sessionId) continue;
+
+          // Capture assistant message ID from first assistant message.updated
+          if (!ourMessageId && event.type === "message.updated") {
+            const info = p.info || p;
+            if (info?.role === "assistant" && info?.id) {
+              ourMessageId = info.id;
+            }
+          }
+          if (!ourMessageId) continue;
+
+          // Helper to get messageID from event properties
+          const msgId = p.info?.part?.messageID || p.messageID || (p.info?.messageID);
+          if (msgId && msgId !== ourMessageId) continue;
+
+          switch (event.type) {
+            case "message.part.updated": {
+              const part = p.info?.part || p.part;
+              if (!part) break;
+              if (part.type === "tool" && part.state?.status === "running") {
+                onEvent("tool_called", { name: part.tool, input: part.state.input });
+              } else if (part.type === "tool" && part.state?.status === "completed") {
+                const output = part.state.output || "";
+                const result = part.state.result || part.state.metadata;
+                onEvent("tool_success", { name: part.tool, output, result });
+              }
+              break;
+            }
+          }
         }
-      } catch {
-        // stream terminated
+      } catch (e: any) {
+        process.stderr.write(`[opencode-bot] SSE consumer error: ${e.message ?? e}\n`);
       }
     })();
   } catch (e: any) {
-    process.stderr.write(`[opencode-bot] event subscribe failed (proceeding without events): ${e.message ?? e}\n`);
+    process.stderr.write(`[opencode-bot] SSE subscribe failed: ${e.message ?? e}\n`);
   }
 
   try {
