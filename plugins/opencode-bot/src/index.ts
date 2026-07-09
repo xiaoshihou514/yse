@@ -553,6 +553,7 @@ async function handleListResponse(state: any, from: string, value: string) {
   // Session list selection
   us.sessionId = value;
   us.mode = "sdk";
+  saveStateImpl(state);
   const info = await getSessionInfo(state.client, value);
   sendResponse(from, `✅ 已切换\n${info}`);
 }
