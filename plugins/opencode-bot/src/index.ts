@@ -277,6 +277,16 @@ async function handleCommand(
         sendResponse(from, "✅ 已切换为 plan 只读规划模式");
       }
       saveStateImpl(state);
+      // If there's follow-up text and an active session, send as prompt
+      if (arg && us.sessionId) {
+        const reply = await sendPrompt(state.client, us.sessionId, arg, state.projectDir, {
+          modelId: us.modelId,
+          providerId: us.providerId,
+          variant: us.modelVariant,
+          agentId: us.agentId,
+        });
+        sendResponse(from, reply);
+      }
       break;
     }
 
