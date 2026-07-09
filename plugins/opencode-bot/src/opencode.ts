@@ -113,10 +113,8 @@ export async function sendPrompt(
 ): Promise<string> {
   try {
     const result = await client.session.prompt({
-      path: { id: sessionId },
-      body: {
-        parts: [{ type: "text", text }],
-      },
+      sessionID: sessionId,
+      parts: [{ type: "text", text }],
     });
     const info = result.data?.info as any;
     const parts: any[] = info?.parts ?? [];
@@ -131,7 +129,7 @@ export async function sendPrompt(
 }
 
 export async function sendTuiPrompt(client: any, text: string): Promise<void> {
-  await client.tui.appendPrompt({ body: { text } });
+  await client.tui.appendPrompt({ text });
   await client.tui.submitPrompt();
 }
 

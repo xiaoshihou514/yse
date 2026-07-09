@@ -253,8 +253,7 @@ async function handleCommand(
         break;
       }
       state.projectDir = arg;
-      us.sessionId = null;
-      sendResponse(from, `✅ 已切换到目录: ${arg}\n请用 /new 或 /select 选择会话`);
+      sendResponse(from, `✅ 已切换到目录: ${arg}\n当前会话: ${us.sessionId ?? "无"}\n请用 /new 或 /select 切换会话`);
       saveStateImpl(state);
       break;
 
