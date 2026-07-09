@@ -369,6 +369,7 @@ function highlightCode(str: string, lang: string): string {
 
 const md = new MarkdownIt({
   html: false,
+  breaks: true,
   linkify: true,
   typographer: true,
   highlight: highlightCode,
