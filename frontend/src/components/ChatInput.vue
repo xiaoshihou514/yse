@@ -36,9 +36,12 @@ const isKeyboardOpen = ref(false);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 
 function autoResize(el: HTMLTextAreaElement) {
-  el.style.height = "";
   const newH = Math.min(el.scrollHeight, 120);
-  el.style.height = newH + "px";
+  // Only grow when clearly needed (2+ lines). The threshold avoids
+  // 1-2px scrollHeight fluctuation on single-line content.
+  if (newH > el.offsetHeight + 6) {
+    el.style.height = newH + "px";
+  }
 }
 
 function onInput(e: Event) {
@@ -50,14 +53,10 @@ function onInput(e: Event) {
 watch(
   () => props.modelValue,
   (v) => {
+    if (v) return; // onInput handles resize during typing
     nextTick(() => {
       const el = inputRef.value;
-      if (!el) return;
-      if (v) {
-        autoResize(el);
-      } else {
-        el.style.height = "";
-      }
+      if (el) el.style.height = "";
     });
   },
 );
