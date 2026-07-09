@@ -22,7 +22,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch, nextTick } from "vue";
 import { useIsMobile } from "@/composables/useIsMobile";
 
 const props = defineProps<{ modelValue: string }>();
@@ -34,6 +34,19 @@ const emit = defineEmits<{
 const isMobile = useIsMobile();
 const isKeyboardOpen = ref(false);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+
+watch(
+  () => props.modelValue,
+  () => {
+    nextTick(() => {
+      const el = inputRef.value;
+      if (el) {
+        el.style.height = "";
+        el.style.height = Math.min(el.scrollHeight, 120) + "px";
+      }
+    });
+  },
+);
 
 function onInput(e: Event) {
   const el = e.target as HTMLTextAreaElement;
