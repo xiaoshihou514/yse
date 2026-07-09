@@ -601,16 +601,10 @@ const conversation = computed(() => {
     if (seen.has(m.id)) continue;
     const fromName = nameFromAddr(m.from);
     const toName = nameFromAddr(m.to);
-    const selName = nameFromAddr(sel);
     if (fromName === ownName && toName === ownName && sel === ownName) {
       seen.add(m.id);
       result.push(m);
-    } else if (
-      nameFromAddr(m.from) === selName ||
-      nameFromAddr(m.to) === selName ||
-      m.from === sel ||
-      m.to === sel
-    ) {
+    } else if (m.from === sel || m.to === sel) {
       seen.add(m.id);
       result.push(m);
     }
