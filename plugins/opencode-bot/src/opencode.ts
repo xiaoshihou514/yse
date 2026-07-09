@@ -151,27 +151,44 @@ export async function sendPromptStreaming(
         for await (const event of eventStream) {
           if (unsubscribed) break;
           if (!event?.type) continue;
-
           const p = event.properties;
-          if (!p?.sessionID || p.sessionID !== sessionId) continue;
+
+          // Log every event for debugging
+          process.stderr.write(`[opencode-bot] SSE event: ${event.type} sid=${(p?.sessionID || "").slice(0,12)}\n`);
+
+          if (!p?.sessionID || p.sessionID !== sessionId) {
+            process.stderr.write(`[opencode-bot]   filtered by sessionID (want=${sessionId.slice(0,12)})\n`);
+            continue;
+          }
 
           // Capture assistant message ID from first assistant message.updated
           if (!ourMessageId && event.type === "message.updated") {
             const info = p.info || p;
             if (info?.role === "assistant" && info?.id) {
               ourMessageId = info.id;
+              process.stderr.write(`[opencode-bot]   captured ourMessageId=${(ourMessageId as string).slice(0,20)}\n`);
             }
           }
-          if (!ourMessageId) continue;
+          if (!ourMessageId) {
+            process.stderr.write(`[opencode-bot]   waiting for ourMessageId\n`);
+            continue;
+          }
 
           // Helper to get messageID from event properties
           const msgId = p.info?.part?.messageID || p.messageID || (p.info?.messageID);
-          if (msgId && msgId !== ourMessageId) continue;
+          if (msgId && msgId !== ourMessageId) {
+            process.stderr.write(`[opencode-bot]   filtered by msgId (${(msgId || "").slice(0,16)} vs ${(ourMessageId as string).slice(0,16)})\n`);
+            continue;
+          }
 
           switch (event.type) {
             case "message.part.updated": {
               const part = p.info?.part || p.part;
-              if (!part) break;
+              if (!part) {
+                process.stderr.write(`[opencode-bot]   no part in message.part.updated\n`);
+                break;
+              }
+              process.stderr.write(`[opencode-bot]   part type=${part.type} tool=${part.tool} status=${part.state?.status}\n`);
               if (part.type === "tool" && part.state?.status === "running") {
                 onEvent("tool_called", { name: part.tool, input: part.state.input });
               } else if (part.type === "tool" && part.state?.status === "completed") {
