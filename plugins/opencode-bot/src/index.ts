@@ -19,6 +19,7 @@ const HELP = `可用命令：
 /select <id>  — 直接按 ID 切换会话
 /new [标题] [目录] — 新建会话（可选指定目录）
 /info         — 当前会话详情
+/curr         — 查看当前选中的会话和模式
 /abort        — 中止当前生成
 /undo         — 撤回上一条消息
 /redo         — 恢复撤回
@@ -220,6 +221,18 @@ async function handleCommand(
       await cmdNew(state, from, us, arg);
       saveStateImpl(state);
       break;
+
+    case "curr": {
+      const lines = [`会话ID: ${us.sessionId || "(无)"}`];
+      lines.push(`模式: ${us.planMode ? "plan 只读" : "默认"}`);
+      lines.push(`agentId: ${us.agentId || "(无)"}`);
+      if (us.modelId) lines.push(`模型: ${us.modelId} (${us.providerId || "?"})`);
+      if (us.modelVariant) lines.push(`variant: ${us.modelVariant}`);
+      if (us.mode) lines.push(`mode: ${us.mode}`);
+      if (state.projectDir) lines.push(`项目目录: ${state.projectDir}`);
+      sendResponse(from, lines.join("\n"));
+      break;
+    }
 
     case "info":
       if (!us.sessionId) {
