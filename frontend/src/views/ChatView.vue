@@ -93,7 +93,10 @@
           <div v-if="hiddenContacts.length > 0" class="hidden-section">
             <div class="hidden-toggle" @click="showHidden = !showHidden">
               <span>隐藏对话 ({{ hiddenContacts.length }})</span>
-              <span class="toggle-arrow">{{ showHidden ? "▼" : "▶" }}</span>
+              <span class="toggle-arrow">
+                <ChevronDownIcon v-if="showHidden" />
+                <ChevronRightIcon v-else />
+              </span>
             </div>
             <template v-if="showHidden">
               <div
@@ -151,8 +154,8 @@
         <template v-if="selectedContact">
           <div class="chat-topbar">
             <span v-if="isMobile" class="back-btn" @click="selectedContact = ''"
-              >←</span
-            >
+              ><ChevronLeftIcon
+            /></span>
             <span class="topbar-name">{{ displayName(selectedContact) }}</span>
             <span class="topbar-more" @click="openContactActions"
               ><t-icon name="ellipsis"
@@ -161,9 +164,9 @@
           <div
             class="message-area"
             ref="messagesContainer"
-            @touchstart.passive="onPullStart"
-            @touchmove.passive="onPullMove"
-            @touchend="onPullEnd"
+            @touchstart.passive="onMessageTouchStart"
+            @touchmove.passive="onMessageTouchMove"
+            @touchend="onMessageTouchEnd"
           >
             <div
               class="pull-indicator"
@@ -380,7 +383,8 @@
       <div :class="['settings-panel', { 'settings-mobile': isMobile }]">
         <div class="settings-header">
           <span class="settings-back" @click="showSettings = false">
-            {{ isMobile ? "← 返回" : "✕" }}
+            <ChevronLeftIcon v-if="isMobile" />
+            <CloseIcon v-else />
           </span>
           <span class="settings-title">{{
             resolveDisplayName(selectedContact!)
@@ -398,7 +402,7 @@
               <span class="settings-item-value">{{
                 resolveDisplayName(selectedContact!)
               }}</span>
-              <span class="settings-item-arrow">›</span>
+              <span class="settings-item-arrow"><ChevronRightIcon /></span>
             </div>
             <div
               class="settings-item"
@@ -415,7 +419,7 @@
                   initial(selectedContact!)
                 }}</span>
               </div>
-              <span class="settings-item-arrow">›</span>
+              <span class="settings-item-arrow"><ChevronRightIcon /></span>
             </div>
           </div>
           <div class="settings-group">
@@ -459,6 +463,12 @@ import type { PendingDisplayMessage } from "@/api/commands";
 import { parseAddress, hostnameFromAddr, nameFromAddr } from "@/utils/address";
 import { showError } from "@/utils/helpers";
 import { MessagePlugin } from "tdesign-vue-next";
+import {
+  ChevronLeftIcon,
+  CloseIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+} from "tdesign-icons-vue-next";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -529,7 +539,7 @@ watch(
 const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
-const selectedKey = ref("all");
+const selectedKey = ref("local");
 const showHidden = ref(false);
 const ctxContact = ref<{ address: string; hidden: boolean } | null>(null);
 
@@ -859,12 +869,18 @@ const contacts = computed<Contact[]>(() => {
 });
 
 const hostnameOptions = computed(() => {
+  const mappings = store.config?.plugin_mappings ?? [];
+  const mapAddrs = new Set(mappings.map((m) => m.virtual_addr));
+  const localCount = visibleContacts.value.filter((c) =>
+    mapAddrs.has(c.address),
+  ).length;
   const groups = new Map<string, number>();
   for (const c of visibleContacts.value) {
     const h = c.hostname || "未知";
     groups.set(h, (groups.get(h) || 0) + 1);
   }
   const result: { label: string; value: string }[] = [
+    { label: `本机添加 (${localCount})`, value: "local" },
     { label: `全部对话 (${visibleContacts.value.length})`, value: "all" },
   ];
   for (const [key, count] of groups) {
@@ -880,10 +896,19 @@ const hasUnreadContact = computed(() => visibleContacts.value.some((c) => c.hasN
 const hiddenContacts = computed(() => contacts.value.filter((c) => c.hidden));
 
 const filteredContacts = computed(() => {
-  const list =
-    selectedKey.value === "all"
-      ? visibleContacts.value
-      : visibleContacts.value.filter((c) => c.hostname === selectedKey.value);
+  let list: Contact[];
+  if (selectedKey.value === "local") {
+    const mapAddrs = new Set(
+      (store.config?.plugin_mappings ?? []).map((m) => m.virtual_addr),
+    );
+    list = visibleContacts.value.filter((c) => mapAddrs.has(c.address));
+  } else if (selectedKey.value === "all") {
+    list = visibleContacts.value;
+  } else {
+    list = visibleContacts.value.filter(
+      (c) => c.hostname === selectedKey.value,
+    );
+  }
 
   if (!searchText.value) return list;
   const q = searchText.value.toLowerCase();
@@ -1001,22 +1026,52 @@ function selectContact(addr: string) {
   store.markRead(addr);
 }
 
-function onPullStart(e: TouchEvent) {
-  if (!messagesContainer.value || messagesContainer.value.scrollTop > 0) return;
-  pullStartY = e.touches[0].clientY;
+let msgTouchStartX = 0;
+let msgTouchStartY = 0;
+let msgTouchIsSwipe = false;
+
+function onMessageTouchStart(e: TouchEvent) {
+  const t = e.touches[0];
+  msgTouchStartX = t.clientX;
+  msgTouchStartY = t.clientY;
+  msgTouchIsSwipe = false;
+  // Pull-to-refresh: only active when scrolled to top
+  if (messagesContainer.value && messagesContainer.value.scrollTop <= 0) {
+    pullStartY = t.clientY;
+  }
 }
 
-function onPullMove(e: TouchEvent) {
+function onMessageTouchMove(e: TouchEvent) {
+  const t = e.touches[0];
+  const dx = t.clientX - msgTouchStartX;
+  const dy = t.clientY - msgTouchStartY;
+
+  // Detect horizontal swipe (right) for back navigation
+  if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.5 && !msgTouchIsSwipe) {
+    msgTouchIsSwipe = true;
+    pullOffset.value = 0;
+    pullStartY = 0;
+  }
+  if (msgTouchIsSwipe) return;
+
+  // Pull-to-refresh: only vertical down movement at scroll top
   if (!pullStartY) return;
-  const delta = e.touches[0].clientY - pullStartY;
-  if (delta <= 0) {
+  const deltaY = t.clientY - pullStartY;
+  if (deltaY <= 0) {
     pullOffset.value = 0;
     return;
   }
-  pullOffset.value = Math.min(delta * 0.5, 100);
+  pullOffset.value = Math.min(deltaY * 0.5, 100);
 }
 
-async function onPullEnd() {
+async function onMessageTouchEnd(e: TouchEvent) {
+  if (msgTouchIsSwipe) {
+    const dx = e.changedTouches[0].clientX - msgTouchStartX;
+    if (dx > 100 && isMobile.value && selectedContact.value) {
+      selectedContact.value = "";
+    }
+  }
+  // Pull-to-refresh
   if (pullOffset.value > 60 && !pullRefreshing.value) {
     pullRefreshing.value = true;
     await store.loadMessages();
@@ -1024,6 +1079,8 @@ async function onPullEnd() {
   }
   pullOffset.value = 0;
   pullStartY = 0;
+  msgTouchStartX = 0;
+  msgTouchStartY = 0;
 }
 
 function onInputFocus() {
@@ -1221,6 +1278,21 @@ onMounted(async () => {
   flex: 1;
   overflow-y: auto;
   padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.contact-list:hover {
+  scrollbar-color: var(--td-component-stroke) transparent;
+}
+.contact-list::-webkit-scrollbar {
+  width: 6px;
+}
+.contact-list::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+.contact-list:hover::-webkit-scrollbar-thumb {
+  background: var(--td-component-stroke);
 }
 .contact-item {
   display: flex;
@@ -1764,8 +1836,10 @@ onMounted(async () => {
   white-space: nowrap;
 }
 .settings-item-arrow {
-  font-size: 20px;
+  font-size: 18px;
   color: var(--td-text-color-placeholder);
+  display: flex;
+  align-items: center;
 }
 .settings-item-danger .settings-item-label {
   color: var(--td-error-color);
