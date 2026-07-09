@@ -2,7 +2,7 @@ import { parseStdin, sendResponse, sendList, sendLog, setPluginAddr, pluginAddr 
 import {
   initBot,
   getUserState,
-  sendPrompt,
+  sendPromptStreaming,
   fetchAllSessions,
   getSessionInfo,
   listModels,
@@ -122,18 +122,68 @@ async function main() {
       const [cmd, ...args] = text.slice(1).split(/\s+/);
       await handleCommand(state, from, us, cmd, args.join(" "));
     } else if (us.sessionId) {
-      // SDK mode — send prompt directly
-      const reply = await sendPrompt(state.client, us.sessionId, text, state.projectDir, {
-        modelId: us.modelId,
-        providerId: us.providerId,
-        variant: us.modelVariant,
-        agentId: us.agentId,
-      });
+      // SDK mode — send prompt with real-time tool event streaming
+      const reply = await sendPromptStreaming(
+        state.client, us.sessionId, text, state.projectDir,
+        { modelId: us.modelId, providerId: us.providerId, variant: us.modelVariant, agentId: us.agentId },
+        makeEventHandler(from),
+      );
       sendResponse(from, reply);
     } else {
       sendResponse(from, "请先选择会话：/sessions 或 /new [标题]");
     }
   }
+}
+
+// ---- Event formatting for streaming ----
+
+function formatToolInput(input: any): string {
+  if (!input) return "";
+  const keys = Object.keys(input);
+  if (keys.length === 0) return "";
+  const parts = keys.slice(0, 3).map((k) => {
+    const v = input[k];
+    if (typeof v === "string") return `${k}=${v.slice(0, 80)}`;
+    if (typeof v === "number" || typeof v === "boolean") return `${k}=${v}`;
+    return `${k}=${JSON.stringify(v).slice(0, 80)}`;
+  });
+  let s = parts.join(", ");
+  if (keys.length > 3) s += ", …";
+  return s;
+}
+
+function formatToolContent(content: any[]): string {
+  if (!content || !content.length) return "";
+  return content
+    .filter((c: any) => c.type === "text")
+    .map((c: any) => (c.text || "").slice(0, 1500))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function makeEventHandler(from: string) {
+  return (type: string, data: any) => {
+    switch (type) {
+      case "tool_called":
+        sendResponse(from, `🔧 ${data.name}(${formatToolInput(data.input)})`);
+        break;
+      case "tool_progress": {
+        const t = (data.text || "").slice(0, 1000);
+        if (t) sendResponse(from, `📝 ${t}`);
+        break;
+      }
+      case "tool_success": {
+        let msg = `✅ ${data.name} 完成`;
+        const content = formatToolContent(data.content);
+        if (content) msg += `\n${content.slice(0, 2000)}`;
+        sendResponse(from, msg);
+        break;
+      }
+      case "tool_failed":
+        sendResponse(from, `❌ ${data.name} 失败: ${data.error?.message ?? JSON.stringify(data.error).slice(0, 500)}`);
+        break;
+    }
+  };
 }
 
 // ---- Command handlers ----
@@ -279,12 +329,11 @@ async function handleCommand(
       saveStateImpl(state);
       // If there's follow-up text and an active session, send as prompt
       if (arg && us.sessionId) {
-        const reply = await sendPrompt(state.client, us.sessionId, arg, state.projectDir, {
-          modelId: us.modelId,
-          providerId: us.providerId,
-          variant: us.modelVariant,
-          agentId: us.agentId,
-        });
+        const reply = await sendPromptStreaming(
+          state.client, us.sessionId, arg, state.projectDir,
+          { modelId: us.modelId, providerId: us.providerId, variant: us.modelVariant, agentId: us.agentId },
+          makeEventHandler(from),
+        );
         sendResponse(from, reply);
       }
       break;

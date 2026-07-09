@@ -111,6 +111,101 @@ export function getUserState(
   return state.sessions[userAddr];
 }
 
+export async function sendPromptStreaming(
+  client: any,
+  sessionId: string,
+  text: string,
+  directory: string | undefined,
+  modelOpts: { modelId?: string; providerId?: string; variant?: string; agentId?: string } | undefined,
+  onEvent: (type: string, data: any) => void,
+): Promise<string> {
+  const promptParams: any = {
+    sessionID: sessionId,
+    parts: [{ type: "text", text }],
+    ...(directory ? { directory } : {}),
+  };
+  if (modelOpts?.modelId && modelOpts?.providerId) {
+    promptParams.model = {
+      id: modelOpts.modelId,
+      providerID: modelOpts.providerId,
+      ...(modelOpts.variant ? { variant: modelOpts.variant } : {}),
+    };
+  }
+  if (modelOpts?.agentId && !modelOpts?.modelId) {
+    promptParams.agent = modelOpts.agentId;
+  }
+
+  // Track the assistantMessageID for this run to filter events
+  let ourAssistantMsgId: string | null = null;
+  let unsubscribed = false;
+
+  // Subscribe to global SSE events (real-time, no replay)
+  let eventStream: any = null;
+  try {
+    const sub = await client.event.subscribe({
+      onSseEvent: (raw: any) => {
+        if (unsubscribed) return;
+        const event = raw.data as any;
+        const props = event?.properties;
+        if (!props || props.sessionID !== sessionId) return;
+
+        // Capture the assistantMessageID from the first relevant event
+        if (!ourAssistantMsgId && props.assistantMessageID) {
+          if (event.type === "session.next.tool.called" ||
+              event.type === "session.next.text.started" ||
+              event.type === "session.next.step.started") {
+            ourAssistantMsgId = props.assistantMessageID;
+          }
+        }
+
+        // Skip events from other assistant messages in the same session
+        if (props.assistantMessageID && props.assistantMessageID !== ourAssistantMsgId) return;
+
+        switch (event.type) {
+          case "session.next.tool.called":
+            onEvent("tool_called", { name: props.tool, input: props.input });
+            break;
+          case "session.next.tool.progress": {
+            const texts = (props.content || [])
+              .filter((c: any) => c.type === "text")
+              .map((c: any) => c.text)
+              .filter(Boolean);
+            if (texts.length) onEvent("tool_progress", { callID: props.callID, text: texts.join("") });
+            break;
+          }
+          case "session.next.tool.success":
+            onEvent("tool_success", { name: props.tool, callID: props.callID, content: props.content, outputPaths: props.outputPaths, result: props.result });
+            break;
+          case "session.next.tool.failed":
+            onEvent("tool_failed", { name: props.tool, callID: props.callID, error: props.error });
+            break;
+        }
+      },
+    });
+    eventStream = sub.stream;
+  } catch (e: any) {
+    process.stderr.write(`[opencode-bot] event subscribe failed (proceeding without events): ${e.message ?? e}\n`);
+  }
+
+  try {
+    const result = await client.session.prompt(promptParams);
+    const msg = result.data as any;
+    const parts: any[] = msg?.parts ?? [];
+    const texts = parts
+      .filter((p: any) => p.type === "text")
+      .map((p: any) => p.text)
+      .filter(Boolean);
+    return texts.join("\n") || "(empty response)";
+  } catch (e: any) {
+    return `Error: ${e.message ?? e}`;
+  } finally {
+    unsubscribed = true;
+    if (eventStream && typeof eventStream.return === "function") {
+      try { await eventStream.return(undefined); } catch {}
+    }
+  }
+}
+
 export async function sendPrompt(
   client: any,
   sessionId: string,
