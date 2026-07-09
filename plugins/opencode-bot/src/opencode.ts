@@ -137,66 +137,48 @@ export async function sendPromptStreaming(
 
   // Track assistant message ID for this prompt
   let ourMessageId: string | null = null;
-  let unsubscribed = false;
+  const abortController = new AbortController();
 
   // Subscribe to global SSE events and process events directly from the generator
   let eventStream: any = null;
   let eventConsumer: Promise<void> | null = null;
   try {
-    const sub = await client.event.subscribe();
+    const sub = await client.global.event({ signal: abortController.signal });
     eventStream = sub.stream;
 
     eventConsumer = (async () => {
       try {
-        for await (const event of eventStream) {
-          if (unsubscribed) break;
-          if (!event?.type) continue;
-          const p = event.properties;
+        for await (const raw of eventStream) {
+          // /global/event wraps in payload; /event does not
+          const ev = raw?.payload || raw;
+          if (!ev?.type) continue;
+          const p = ev.properties;
 
-          // Log every event for debugging
-          process.stderr.write(`[opencode-bot] SSE event: ${event.type} sid=${(p?.sessionID || "").slice(0,12)}\n`);
-
-          if (!p?.sessionID || p.sessionID !== sessionId) {
-            process.stderr.write(`[opencode-bot]   filtered by sessionID (want=${sessionId.slice(0,12)})\n`);
-            continue;
-          }
+          if (!p?.sessionID || p.sessionID !== sessionId) continue;
 
           // Capture assistant message ID from first assistant message.updated
-          if (!ourMessageId && event.type === "message.updated") {
+          if (!ourMessageId && ev.type === "message.updated") {
             const info = p.info || p;
             if (info?.role === "assistant" && info?.id) {
               ourMessageId = info.id;
-              process.stderr.write(`[opencode-bot]   captured ourMessageId=${(ourMessageId as string).slice(0,20)}\n`);
             }
           }
-          if (!ourMessageId) {
-            process.stderr.write(`[opencode-bot]   waiting for ourMessageId\n`);
-            continue;
-          }
+          if (!ourMessageId) continue;
 
           // Helper to get messageID from event properties
           const msgId = p.info?.part?.messageID || p.messageID || (p.info?.messageID);
-          if (msgId && msgId !== ourMessageId) {
-            process.stderr.write(`[opencode-bot]   filtered by msgId (${(msgId || "").slice(0,16)} vs ${(ourMessageId as string).slice(0,16)})\n`);
-            continue;
-          }
+          if (msgId && msgId !== ourMessageId) continue;
 
-          switch (event.type) {
-            case "message.part.updated": {
-              const part = p.info?.part || p.part;
-              if (!part) {
-                process.stderr.write(`[opencode-bot]   no part in message.part.updated\n`);
-                break;
-              }
-              process.stderr.write(`[opencode-bot]   part type=${part.type} tool=${part.tool} status=${part.state?.status}\n`);
-              if (part.type === "tool" && part.state?.status === "running") {
-                onEvent("tool_called", { name: part.tool, input: part.state.input });
-              } else if (part.type === "tool" && part.state?.status === "completed") {
-                const output = part.state.output || "";
-                const result = part.state.result || part.state.metadata;
-                onEvent("tool_success", { name: part.tool, output, result });
-              }
-              break;
+          if (ev.type === "message.part.updated") {
+            const part = p.info?.part || p.part;
+            if (!part || part.type !== "tool") continue;
+            const s = part.state;
+            if (!s) continue;
+            if (s.status === "running" || s.status === "pending") {
+              onEvent("tool_called", { name: part.tool, input: s.input });
+            } else if (s.status === "completed") {
+              const output = s.output || "";
+              onEvent("tool_success", { name: part.tool, output, result: s.metadata });
             }
           }
         }
@@ -220,10 +202,7 @@ export async function sendPromptStreaming(
   } catch (e: any) {
     return `Error: ${e.message ?? e}`;
   } finally {
-    unsubscribed = true;
-    if (eventStream && typeof eventStream.return === "function") {
-      try { await eventStream.return(undefined); } catch {}
-    }
+    abortController.abort();
     if (eventConsumer) {
       try { await eventConsumer; } catch {}
     }
