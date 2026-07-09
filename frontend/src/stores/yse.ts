@@ -96,6 +96,15 @@ export const useYseStore = defineStore("yse", () => {
     localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));
   }
 
+  function markAllRead() {
+    const now = Date.now();
+    for (const m of messages.value) {
+      readTimestamps[m.from] = now;
+      readTimestamps[m.to] = now;
+    }
+    localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));
+  }
+
   const sortedMessages = computed(() =>
     [...messages.value].sort((a, b) => a.timestamp - b.timestamp),
   );
@@ -395,6 +404,7 @@ export const useYseStore = defineStore("yse", () => {
     localHostname,
     readTimestamps,
     markRead,
+    markAllRead,
     sortedMessages,
     loadMessages,
     loadPlugins,

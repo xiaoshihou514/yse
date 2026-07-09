@@ -10,7 +10,23 @@
         ]"
       >
         <div class="panel-header">
-          <span class="panel-title">联系人</span>
+          <div class="panel-left">
+            <img v-if="isMobile" src="/icon.png" class="panel-icon" alt="盐水鹅" />
+            <span v-else class="panel-title">联系人</span>
+            <button
+              class="panel-mark-read"
+              :class="{ 'has-unread': hasUnreadContact }"
+              @click="store.markAllRead()"
+              title="全部已读"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path
+                  fill="currentColor"
+                  d="m9.55 18l-5.7-5.7l1.425-1.425L9.55 15.15l9.175-9.175L20.15 7.4z"
+                />
+              </svg>
+            </button>
+          </div>
           <t-select
             v-model="selectedKey"
             :options="hostnameOptions"
@@ -124,7 +140,22 @@
               ><t-icon name="ellipsis"
             /></span>
           </div>
-          <div class="message-area" ref="messagesContainer">
+          <div
+            class="message-area"
+            ref="messagesContainer"
+            @touchstart.passive="onPullStart"
+            @touchmove.passive="onPullMove"
+            @touchend="onPullEnd"
+          >
+            <div
+              class="pull-indicator"
+              :style="{ height: pullOffset + 'px', opacity: Math.min(pullOffset / 60, 1) }"
+            >
+              <span v-if="pullRefreshing" class="pull-spinner"></span>
+              <span v-else class="pull-text">{{
+                pullOffset > 60 ? "释放刷新" : "下拉刷新"
+              }}</span>
+            </div>
             <div
               v-for="msg in conversation"
               :key="msg.id"
@@ -396,6 +427,10 @@ const ctxContact = ref<{ address: string; hidden: boolean } | null>(null);
 // Track keyboard visibility for mobile safe area handling
 const isKeyboardOpen = ref(false);
 
+const pullOffset = ref(0);
+const pullRefreshing = ref(false);
+let pullStartY = 0;
+
 const renameDialog = ref({ visible: false, name: "" });
 const showSettings = ref(false);
 
@@ -594,13 +629,16 @@ const contacts = computed<Contact[]>(() => {
       });
     }
   }
-  const result = Array.from(map.values()).map((c) => ({
-    ...c,
-    hasNew:
-      selectedContact.value !== c.address &&
-      c.lastTime > (store.readTimestamps[c.address] ?? 0) &&
-      !c.lastIsSelf,
-  }));
+  const result = Array.from(map.values()).map((c) => {
+    const ts = store.readTimestamps[c.address] ?? 0;
+    return {
+      ...c,
+      hasNew:
+        selectedContact.value !== c.address &&
+        c.lastTime > ts &&
+        !c.lastIsSelf,
+    };
+  });
   return result.sort((a, b) => b.lastTime - a.lastTime);
 });
 
@@ -620,6 +658,8 @@ const hostnameOptions = computed(() => {
 });
 
 const visibleContacts = computed(() => contacts.value.filter((c) => !c.hidden));
+
+const hasUnreadContact = computed(() => visibleContacts.value.some((c) => c.hasNew));
 
 const hiddenContacts = computed(() => contacts.value.filter((c) => c.hidden));
 
@@ -714,6 +754,31 @@ function hostnameLabel(c: Contact) {
 function selectContact(addr: string) {
   selectedContact.value = addr;
   store.markRead(addr);
+}
+
+function onPullStart(e: TouchEvent) {
+  if (!messagesContainer.value || messagesContainer.value.scrollTop > 0) return;
+  pullStartY = e.touches[0].clientY;
+}
+
+function onPullMove(e: TouchEvent) {
+  if (!pullStartY) return;
+  const delta = e.touches[0].clientY - pullStartY;
+  if (delta <= 0) {
+    pullOffset.value = 0;
+    return;
+  }
+  pullOffset.value = Math.min(delta * 0.5, 100);
+}
+
+async function onPullEnd() {
+  if (pullOffset.value > 60 && !pullRefreshing.value) {
+    pullRefreshing.value = true;
+    await store.loadMessages();
+    pullRefreshing.value = false;
+  }
+  pullOffset.value = 0;
+  pullStartY = 0;
 }
 
 function onInputFocus() {
@@ -817,6 +882,14 @@ async function scrollToBottom() {
 
 watch(selectedContact, scrollToBottom);
 
+// On mobile, mark the conversation as read when leaving it.
+// This catches messages that arrived via polling while viewing.
+watch(selectedContact, (newVal, oldVal) => {
+  if (!newVal && oldVal && isMobile.value) {
+    store.markRead(oldVal);
+  }
+});
+
 onMounted(async () => {
   await store.loadMessages();
   store.listenForMessages();
@@ -850,12 +923,49 @@ onMounted(async () => {
 .panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 12px 12px 4px;
+}
+.panel-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.panel-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px;
+  flex-shrink: 0;
 }
 .panel-title {
   font-size: 16px;
   font-weight: 600;
+}
+.panel-mark-read {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--td-text-color-placeholder);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.panel-mark-read:hover {
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-brand-color);
+}
+.panel-mark-read.has-unread {
+  color: var(--td-success-color);
+  background: var(--td-success-color-1);
 }
 .search-input {
   margin: 4px 8px;
@@ -1009,10 +1119,35 @@ onMounted(async () => {
 .message-area {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px;
+  padding: 4px 20px 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.pull-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: height 0.15s ease;
+  flex-shrink: 0;
+}
+.pull-text {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+.pull-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--td-component-stroke);
+  border-top-color: var(--td-brand-color);
+  border-radius: 50%;
+  animation: pullSpin 0.6s linear infinite;
+}
+@keyframes pullSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .msg-row {
   display: flex;
