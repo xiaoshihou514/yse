@@ -60,17 +60,28 @@ export async function initBot(): Promise<BotState | null> {
     process.stderr.write(`[opencode-bot] server started on port ${actualPort}\n`);
 
     const cwd = process.cwd();
-    const client = createOpencodeClient({
-      baseUrl: `http://127.0.0.1:${actualPort}`,
-      directory: cwd,
-    });
-
+    const baseUrl = `http://127.0.0.1:${actualPort}`;
     let projectDir = cwd;
-    try {
-      const proj = await client.project.current();
-      const data = proj.data as any;
-      if (data?.worktree) projectDir = data.worktree;
-    } catch {}
+
+    // Retry project.current() — server may not be ready immediately
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const probe = createOpencodeClient({ baseUrl, directory: projectDir });
+        const proj = await probe.project.current();
+        const data = proj.data as any;
+        if (data?.worktree) projectDir = data.worktree;
+        break;
+      } catch {
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+    }
+
+    const client = createOpencodeClient({
+      baseUrl,
+      directory: projectDir,
+    });
 
     return { client, projectDir, sessions: {}, serverProcess: child };
   } catch (e: any) {
