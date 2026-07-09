@@ -97,7 +97,7 @@ defineExpose({ inputRef });
   background: var(--td-bg-color-secondarycontainer);
   border: none; border-radius: 8px;
 }
-.send-btn { flex-shrink: 0; }
+.send-btn { flex-shrink: 0; align-self: flex-start; height: 44px; }
 @media (max-width: 767px) {
   .input-area { padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)); gap: 10px; }
   .chat-textarea { min-height: 44px; font-size: 16px; }

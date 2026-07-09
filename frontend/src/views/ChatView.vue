@@ -500,7 +500,7 @@ onMounted(async () => {
 .toggle-arrow { display: flex; align-items: center; }
 .hidden-item { opacity: 0.5; }
 
-.chat-panel { flex: 1; display: flex; flex-direction: column; background: var(--td-bg-color-page); }
+.chat-panel { flex: 1; display: flex; flex-direction: column; background: var(--td-bg-color-page); min-width: 0; }
 .chat-panel.chat-empty { align-items: center; justify-content: center; }
 .chat-topbar { display: flex; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--td-component-stroke); background: var(--td-bg-color-container); flex-shrink: 0; }
 .back-btn { font-size: 20px; cursor: pointer; line-height: 1; user-select: none; color: var(--td-brand-color); display: flex; align-items: center; padding: 0 8px 0 0; }
@@ -514,7 +514,7 @@ onMounted(async () => {
 .pull-spinner { width: 18px; height: 18px; border: 2px solid var(--td-component-stroke); border-top-color: var(--td-brand-color); border-radius: 50%; animation: pullSpin 0.6s linear infinite; }
 @keyframes pullSpin { to { transform: rotate(360deg); } }
 
-.msg-row { display: flex; align-items: flex-end; gap: 6px; }
+.msg-row { display: flex; align-items: flex-end; gap: 6px; min-width: 0; }
 .row-self { flex-direction: row-reverse; }
 .row-other { justify-content: flex-start; }
 
