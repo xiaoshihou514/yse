@@ -576,6 +576,7 @@ interface Contact {
 }
 
 const contacts = computed<Contact[]>(() => {
+  void store.readVersion; // depend on readVersion so markRead/markAllRead triggers recompute
   const ownName = ownAddress.value;
   const map = new Map<string, Contact>();
   // 文件传输助手 — always present, address = ownName (no hostname, shared across devices)

@@ -90,9 +90,11 @@ export const useYseStore = defineStore("yse", () => {
   const readTimestamps = reactive<Record<string, number>>(
     JSON.parse(localStorage.getItem("yse-read-timestamps") || "{}"),
   );
+  const readVersion = ref(0);
 
   function markRead(addr: string) {
     readTimestamps[addr] = Date.now();
+    readVersion.value++;
     localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));
   }
 
@@ -102,6 +104,7 @@ export const useYseStore = defineStore("yse", () => {
       readTimestamps[m.from] = now;
       readTimestamps[m.to] = now;
     }
+    readVersion.value++;
     localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));
   }
 
@@ -403,6 +406,7 @@ export const useYseStore = defineStore("yse", () => {
     sessions,
     localHostname,
     readTimestamps,
+    readVersion,
     markRead,
     markAllRead,
     sortedMessages,
