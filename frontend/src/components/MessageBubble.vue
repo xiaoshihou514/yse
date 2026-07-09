@@ -93,7 +93,7 @@ function formatSize(bytes: number) {
 .msg-bubble {
   max-width: 75%; padding: 8px 12px; border-radius: 12px;
   overflow-wrap: anywhere; word-break: break-word;
-  position: relative;
+  position: relative; min-width: 0;
 }
 .bubble-self {
   background: var(--td-brand-color); color: #fff; border-bottom-right-radius: 4px;
@@ -101,9 +101,17 @@ function formatSize(bytes: number) {
 .bubble-other {
   background: var(--td-bg-color-secondarycontainer); border-bottom-left-radius: 4px;
 }
-.msg-text { font-size: 15px; line-height: 1.6; overflow-wrap: break-word; }
-.msg-text :deep(pre) { margin: 6px 0; padding: 8px 10px; border-radius: 6px; overflow-x: auto; font-size: 13px; background: var(--td-bg-color-component); }
-.msg-text :deep(code) { font-family: ui-monospace, monospace; font-size: 0.9em; }
+.msg-text { font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; word-break: break-word; }
+.msg-text :deep(pre) {
+  margin: 6px 0; padding: 8px 10px; border-radius: 6px;
+  overflow-x: hidden; font-size: 13px;
+  background: var(--td-bg-color-component);
+  white-space: pre-wrap; word-break: break-all;
+}
+.msg-text :deep(code) {
+  font-family: ui-monospace, monospace; font-size: 0.9em;
+  word-break: break-all; overflow-wrap: anywhere;
+}
 .msg-text :deep(p) { margin: 4px 0; }
 .msg-text :deep(ul), .msg-text :deep(ol) { padding-left: 20px; margin: 4px 0; }
 .msg-text :deep(blockquote) { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--td-brand-color); color: var(--td-text-color-placeholder); }
