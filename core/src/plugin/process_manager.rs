@@ -46,6 +46,7 @@ struct ProcessEntry {
 pub struct PluginProcessManager {
     processes: Arc<Mutex<HashMap<String, ProcessEntry>>>,
     request_handler: Arc<std::sync::Mutex<Option<PluginRequestHandler>>>,
+    app_data_dir: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl Default for PluginProcessManager {
@@ -59,7 +60,13 @@ impl PluginProcessManager {
         Self {
             processes: Arc::new(Mutex::new(HashMap::new())),
             request_handler: Arc::new(std::sync::Mutex::new(None)),
+            app_data_dir: Arc::new(std::sync::Mutex::new(None)),
         }
+    }
+
+    pub fn set_app_data_dir(&self, dir: String) {
+        std::fs::create_dir_all(&dir).ok();
+        *self.app_data_dir.lock().unwrap() = Some(dir);
     }
 
     pub fn set_request_handler(&self, handler: PluginRequestHandler) {
@@ -112,8 +119,15 @@ impl PluginProcessManager {
 
         let handler = self.get_request_handler();
         let on_exit = Some(Self::make_on_exit(self.processes.clone(), id.to_string()));
+        let state_dir = self
+            .app_data_dir
+            .lock()
+            .unwrap()
+            .clone()
+            .map(|d| format!("{}/plugins/{}", d, id))
+            .unwrap_or_else(|| format!("./plugins/{}", id));
 
-        match ManagedPlugin::spawn_with_exit_handler(id.into(), exec_path, args, handler, on_exit) {
+        match ManagedPlugin::spawn_with_exit_handler(id.into(), exec_path, args, &state_dir, handler, on_exit) {
             Ok(plugin) => {
                 map.insert(
                     id.into(),
@@ -184,8 +198,15 @@ impl PluginProcessManager {
         let restart_count = map.get(id).map(|e| e.restart_count + 1).unwrap_or(0);
         let handler = self.get_request_handler();
         let on_exit = Some(Self::make_on_exit(self.processes.clone(), id.to_string()));
+        let state_dir = self
+            .app_data_dir
+            .lock()
+            .unwrap()
+            .clone()
+            .map(|d| format!("{}/plugins/{}", d, id))
+            .unwrap_or_else(|| format!("./plugins/{}", id));
 
-        match ManagedPlugin::spawn_with_exit_handler(id.into(), &exec_path, &args, handler, on_exit)
+        match ManagedPlugin::spawn_with_exit_handler(id.into(), &exec_path, &args, &state_dir, handler, on_exit)
         {
             Ok(plugin) => {
                 map.insert(

@@ -42,6 +42,7 @@ pub fn run() {
             eprintln!("yse: using app_dir={:?} db_path={:?}", app_dir, db_path);
 
             let state = AppState::new(&db_path).expect("yse mobile: AppState::new failed");
+            state.core.set_app_data_dir(&app_dir);
             *state.app_handle.lock().unwrap() = Some(app.handle().clone());
 
             if let Ok(rt) = tokio::runtime::Runtime::new() {

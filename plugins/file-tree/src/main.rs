@@ -20,6 +20,7 @@ fn main() {
 
     // Per-user working directories
     let mut cwds: HashMap<String, PathBuf> = HashMap::new();
+    let mut state_dir: Option<String> = None;
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -67,8 +68,31 @@ fn main() {
 
                 let _ = writeln!(stdout, "{}", log("info", format!("handled from {from}")));
                 let _ = stdout.flush();
+
+                // Persist CWD state for recovery on next start
+                if let Some(ref dir) = state_dir {
+                    let cwd_map: HashMap<String, String> = cwds
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.display().to_string()))
+                        .collect();
+                    if let Ok(json) = serde_json::to_string(&cwd_map) {
+                        let _ = fs::write(format!("{dir}/cwd.json"), json);
+                    }
+                }
             }
-            "config" => {}
+            "config" => {
+                state_dir = val["params"]["state_dir"].as_str().map(|s| s.to_string());
+                if let Some(ref dir) = state_dir {
+                    // Restore persisted CWD state
+                    if let Ok(content) = fs::read_to_string(format!("{dir}/cwd.json")) {
+                        if let Ok(saved) = serde_json::from_str::<HashMap<String, String>>(&content) {
+                            for (user, path) in saved {
+                                cwds.insert(user, PathBuf::from(path));
+                            }
+                        }
+                    }
+                }
+            }
             "shutdown" => break,
             _ => {}
         }

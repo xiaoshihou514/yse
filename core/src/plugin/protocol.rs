@@ -49,11 +49,11 @@ pub enum CoreNotification {
         #[serde(skip_serializing_if = "Option::is_none")]
         files: Option<Vec<crate::message::FileAttachment>>,
     },
-    /// Config changed
+    /// Initial configuration sent once after process start.
+    /// Tells the plugin where to persist its state files.
     #[serde(rename = "config")]
     Config {
-        key: String,
-        value: serde_json::Value,
+        state_dir: String,
     },
     /// Plugin should shut down
     #[serde(rename = "shutdown")]

@@ -19,6 +19,8 @@ pub struct ManagedPlugin {
     #[allow(dead_code)]
     next_id: Arc<AtomicU64>,
     pub output: Arc<Mutex<VecDeque<String>>>,
+    #[allow(dead_code)]
+    state_dir: String,
 }
 
 impl ManagedPlugin {
@@ -26,15 +28,17 @@ impl ManagedPlugin {
         id: String,
         exec_path: &str,
         args: &[String],
+        state_dir: &str,
         handler: Option<PluginRequestHandler>,
     ) -> Result<Self, String> {
-        Self::spawn_with_exit_handler(id, exec_path, args, handler, None)
+        Self::spawn_with_exit_handler(id, exec_path, args, state_dir, handler, None)
     }
 
     pub fn spawn_with_exit_handler(
         id: String,
         exec_path: &str,
         args: &[String],
+        state_dir: &str,
         handler: Option<PluginRequestHandler>,
         on_exit: Option<Box<dyn FnOnce(String) + Send>>,
     ) -> Result<Self, String> {
@@ -58,13 +62,37 @@ impl ManagedPlugin {
         let output_buf: Arc<Mutex<VecDeque<String>>> =
             Arc::new(Mutex::new(VecDeque::with_capacity(200)));
 
+        let state_dir = state_dir.to_string();
+        std::fs::create_dir_all(&state_dir).ok();
+
         let plugin = ManagedPlugin {
             id: id.clone(),
             process: Some(child),
-            stdin: Some(stdin),
+            stdin: Some(stdin.clone()),
             next_id: Arc::new(AtomicU64::new(1)),
             output: output_buf.clone(),
+            state_dir: state_dir.clone(),
         };
+
+        // Send initial config so plugin knows where to persist state
+        {
+            let stdin_w = stdin;
+            let cfg_dir = state_dir;
+            tokio::spawn(async move {
+                let notif = CoreNotification::Config {
+                    state_dir: cfg_dir,
+                };
+                let json = match serde_json::to_string(&notif) {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+                let mut line = json;
+                line.push('\n');
+                let mut handle = stdin_w.lock().await;
+                let _ = handle.write_all(line.as_bytes()).await;
+                let _ = handle.flush().await;
+            });
+        }
 
         // Spawn stdout reader task that routes plugin requests
         let id_clone = id.clone();
@@ -191,8 +219,7 @@ impl ManagedPlugin {
     }
 
     pub async fn recent_logs(&self) -> Vec<String> {
-        let buf = self.output.lock().await;
-        buf.iter().cloned().collect()
+        self.output.lock().await.iter().cloned().collect()
     }
 }
 
@@ -240,7 +267,7 @@ impl PluginManager {
             return Err(format!("plugin {} already running", id));
         }
         let handler = self.get_request_handler();
-        let plugin = ManagedPlugin::spawn(id.into(), exec_path, args, handler)?;
+        let plugin = ManagedPlugin::spawn(id.into(), exec_path, args, "", handler)?;
         map.insert(id.into(), plugin);
         info!("plugin started: {}", id);
         Ok(())

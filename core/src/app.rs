@@ -41,6 +41,11 @@ impl CoreState {
         })
     }
 
+    pub fn set_app_data_dir(&self, dir: impl AsRef<std::path::Path>) {
+        self.process_manager
+            .set_app_data_dir(dir.as_ref().display().to_string());
+    }
+
     pub async fn load_config(&self) {
         let Some(json) = self.store.get_config_value("config").await.ok().flatten() else {
             return;

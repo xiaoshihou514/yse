@@ -7,6 +7,8 @@ import {
   listSessions,
   getSessionInfo,
 } from "./opencode.js";
+import * as fs from "fs";
+import * as path from "path";
 
 const HELP = `可用命令：
 发消息 → 发送给 AI（需先用 /select 或 /new 选择会话）
@@ -25,6 +27,22 @@ const HELP = `可用命令：
 /dir <path>   — 切换项目目录
 /help         — 显示此帮助`;
 
+let stateFile = "";
+
+function saveStateImpl(s: any) {
+  if (!stateFile || !s) return;
+  try {
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.writeFileSync(
+      stateFile,
+      JSON.stringify({
+        sessions: s.sessions,
+        projectDir: s.projectDir,
+      }),
+    );
+  } catch {}
+}
+
 async function main() {
   sendLog("info", "opencode-bot starting...");
   let state: Awaited<ReturnType<typeof initBot>>;
@@ -40,6 +58,21 @@ async function main() {
   }
 
   for await (const msg of parseStdin()) {
+    if (msg.method === "config") {
+      const dir = (msg.params as any)?.state_dir as string | undefined;
+      if (dir) {
+        stateFile = path.join(dir, "sessions.json");
+        try {
+          const raw = fs.readFileSync(stateFile, "utf-8");
+          const saved = JSON.parse(raw);
+          if (state && saved.sessions) state.sessions = saved.sessions;
+          if (state && saved.projectDir) state.projectDir = saved.projectDir;
+          sendLog("info", `loaded state from ${stateFile}`);
+        } catch { /* no state file yet */ }
+      }
+      continue;
+    }
+
     if (msg.method !== "message") continue;
     const text = msg.params.text?.trim();
     const from = msg.params.from;
@@ -49,6 +82,7 @@ async function main() {
     const respValue = msg.params.meta?.plugin?.response?.value;
     if (respValue) {
       await handleListResponse(state, from, respValue);
+      saveStateImpl(state);
       continue;
     }
 
@@ -122,11 +156,13 @@ async function handleCommand(
       us.mode = "sdk";
       const info = await getSessionInfo(state.client, arg);
       sendResponse(from, `✅ 已切换\n${info}`);
+      saveStateImpl(state);
       break;
 
     case "new":
       if (us.mode === "tui") us.mode = "sdk";
       await cmdNew(state, from, us, arg);
+      saveStateImpl(state);
       break;
 
     case "info":
@@ -183,11 +219,13 @@ async function handleCommand(
     case "tui-connect":
       us.mode = "tui";
       sendResponse(from, "✅ 已连接到 TUI 模式，后续消息将发送到 TUI 输入框");
+      saveStateImpl(state);
       break;
 
     case "tui-detach":
       us.mode = "sdk";
       sendResponse(from, "✅ 已断开 TUI 模式，回到 SDK 直连模式");
+      saveStateImpl(state);
       break;
 
     case "tui-status":
@@ -208,10 +246,8 @@ async function handleCommand(
       }
       state.projectDir = arg;
       us.sessionId = null;
-      sendResponse(
-        from,
-        `✅ 已切换到目录: ${arg}\n请用 /new 或 /select 选择会话`,
-      );
+      sendResponse(from, `✅ 已切换到目录: ${arg}\n请用 /new 或 /select 选择会话`);
+      saveStateImpl(state);
       break;
 
     default:
