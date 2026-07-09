@@ -48,6 +48,48 @@
       </t-space>
     </t-card>
 
+    <!-- Process manager (desktop only) -->
+    <t-card v-if="!isMobile" title="进程管理" :bordered="false" style="margin-top:0">
+      <t-table
+        :data="store.processes"
+        :columns="procColumns"
+        row-key="id"
+        size="small"
+        :empty="'暂无运行中进程'"
+      >
+        <template #name="{ row }">
+          <span>{{ row.name }}</span>
+        </template>
+        <template #state="{ row }">
+          <t-tag :theme="procTag(row.state)" variant="light" size="small">{{
+            row.state
+          }}</t-tag>
+        </template>
+        <template #restart_count="{ row }">
+          <span>{{ row.restart_count || 0 }}</span>
+        </template>
+        <template #operation="{ row }">
+          <t-space size="small">
+            <t-button
+              size="small"
+              variant="outline"
+              @click="handleStopProcess(row.id)"
+              :disabled="row.state === 'Stopped'"
+            >
+              结束
+            </t-button>
+            <t-button
+              size="small"
+              variant="outline"
+              @click="handleRestartProcess(row.id)"
+            >
+              重启
+            </t-button>
+          </t-space>
+        </template>
+      </t-table>
+    </t-card>
+
     <!-- Mobile: no plugin management (plugins run on desktop only) -->
     <template v-else>
       <div class="mobile-header">
@@ -116,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
 import { QrcodeIcon, DeleteIcon } from "tdesign-icons-vue-next";
 import { useYseStore } from "@/stores/yse";
@@ -141,6 +183,13 @@ const columns = [
   { colKey: "name", title: "名称" },
   { colKey: "exec_path", title: "路径" },
   { colKey: "operation", title: "操作" },
+];
+
+const procColumns = [
+  { colKey: "name", title: "插件" },
+  { colKey: "state", title: "状态" },
+  { colKey: "restart_count", title: "重启次数", width: 100 },
+  { colKey: "operation", title: "操作", width: 140 },
 ];
 
 function procState(pluginId: string): string | undefined {
@@ -213,11 +262,39 @@ async function showPluginQr(plugin: PluginConfig) {
   await generateQr(data);
 }
 
+async function handleStopProcess(processId: string) {
+  try {
+    await api.stopPlugin(processId);
+    await store.loadProcesses();
+    await MessagePlugin.success("进程已结束");
+  } catch (e) {
+    showError("结束进程", e);
+  }
+}
+
+async function handleRestartProcess(processId: string) {
+  try {
+    await api.stopPlugin(processId);
+    await api.startPlugin(processId);
+    await store.loadProcesses();
+    await MessagePlugin.success("进程已重启");
+  } catch (e) {
+    showError("重启进程", e);
+  }
+}
+
+let procRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
 onMounted(async () => {
   loading.value = true;
   await store.loadPlugins();
   await store.loadProcesses();
   loading.value = false;
+  procRefreshTimer = setInterval(() => store.loadProcesses(), 5000);
+});
+
+onUnmounted(() => {
+  if (procRefreshTimer) clearInterval(procRefreshTimer);
 });
 </script>
 
