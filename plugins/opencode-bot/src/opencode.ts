@@ -141,6 +141,7 @@ export async function sendPromptStreaming(
 
   // Subscribe to global SSE events (real-time, no replay)
   let eventStream: any = null;
+  let eventConsumer: Promise<void> | null = null;
   try {
     const sub = await client.event.subscribe({
       onSseEvent: (raw: any) => {
@@ -183,6 +184,17 @@ export async function sendPromptStreaming(
       },
     });
     eventStream = sub.stream;
+    // Start consuming the generator to activate the SSE connection
+    // The generator's body (fetch + onSseEvent) only executes when iterated.
+    eventConsumer = (async () => {
+      try {
+        for await (const _ of eventStream) {
+          // keep the generator running; events handled by onSseEvent
+        }
+      } catch {
+        // stream terminated
+      }
+    })();
   } catch (e: any) {
     process.stderr.write(`[opencode-bot] event subscribe failed (proceeding without events): ${e.message ?? e}\n`);
   }
@@ -202,6 +214,9 @@ export async function sendPromptStreaming(
     unsubscribed = true;
     if (eventStream && typeof eventStream.return === "function") {
       try { await eventStream.return(undefined); } catch {}
+    }
+    if (eventConsumer) {
+      try { await eventConsumer; } catch {}
     }
   }
 }
