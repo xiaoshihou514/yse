@@ -120,7 +120,8 @@ impl YseState {
                     from_addr,
                     to_addr,
                     text,
-                    ..
+                    meta,
+                    files,
                 } => {
                     let store = store.clone();
                     let config = config.clone();
@@ -129,7 +130,13 @@ impl YseState {
                     let app_handle = app_handle.clone();
                     tokio::spawn(async move {
                         let email_user = config.read().await.email_username.clone();
-                        let msg = Message::new(from_addr.clone(), to_addr.clone(), text.clone());
+                        let mut msg = Message::new(from_addr.clone(), to_addr.clone(), text.clone());
+                        if let Some(m) = meta {
+                            msg = msg.with_meta(m);
+                        }
+                        if let Some(f) = files {
+                            msg.files = Some(f);
+                        }
 
                         // Save locally BEFORE sending via SMTP, so the IMAP poll finds
                         // this message already in the DB and skips re-routing.
