@@ -3,9 +3,11 @@ import {
   initBot,
   getUserState,
   sendPrompt,
-  sendTuiPrompt,
   listSessions,
   getSessionInfo,
+  listModels,
+  listSkills,
+  listAgents,
   killServer,
 } from "./opencode.js";
 import * as fs from "fs";
@@ -21,9 +23,10 @@ const HELP = `可用命令：
 /undo         — 撤回上一条消息
 /redo         — 恢复撤回
 /messages [n] — 查看最近 n 条消息（默认 5）
-/tui-connect  — 连接到 TUI 模式
-/tui-detach   — 断开 TUI 模式
-/tui-status   — TUI 运行状态
+/models       — 列出可用模型（点选用该模型新建会话）
+/variants     — 列出当前模型可用 variant（点选用该 variant 新建会话）
+/plan         — 列出可用 plan（点选用该 plan 新建会话）
+/skills       — 列出可用 skill
 /project      — 当前项目信息
 /dir <path>   — 切换项目目录
 /help         — 显示此帮助`;
@@ -119,14 +122,6 @@ async function main() {
     if (text.startsWith("/")) {
       const [cmd, ...args] = text.slice(1).split(/\s+/);
       await handleCommand(state, from, us, cmd, args.join(" "));
-    } else if (us.mode === "tui") {
-      // TUI mode — append to TUI input and submit
-      try {
-        await sendTuiPrompt(state.client, text);
-        sendResponse(from, "✅ 已发送到 TUI，请等待 AI 回复...");
-      } catch (e: any) {
-        sendResponse(from, `TUI 发送失败: ${e.message ?? e}`);
-      }
     } else if (us.sessionId) {
       // SDK mode — send prompt directly
       const reply = await sendPrompt(state.client, us.sessionId, text);
@@ -168,7 +163,6 @@ async function handleCommand(
       break;
 
     case "new":
-      if (us.mode === "tui") us.mode = "sdk";
       await cmdNew(state, from, us, arg);
       saveStateImpl(state);
       break;
@@ -224,24 +218,64 @@ async function handleCommand(
       await cmdMessages(state, from, us, arg);
       break;
 
-    case "tui-connect":
-      us.mode = "tui";
-      sendResponse(from, "✅ 已连接到 TUI 模式，后续消息将发送到 TUI 输入框");
-      saveStateImpl(state);
+    case "models": {
+      const list = await listModels(state);
+      if (list.length === 0) {
+        sendResponse(from, "暂无可用模型");
+        break;
+      }
+      sendList(from, "请选择模型（将用该模型新建会话）：", "可用模型", list);
       break;
+    }
 
-    case "tui-detach":
-      us.mode = "sdk";
-      sendResponse(from, "✅ 已断开 TUI 模式，回到 SDK 直连模式");
-      saveStateImpl(state);
+    case "variants": {
+      if (!us.sessionId) {
+        sendResponse(from, "请先选择会话");
+        break;
+      }
+      const info = await getSessionInfo(state.client, us.sessionId);
+      const listVariants = async (): Promise<{ label: string; value: string; description: string }[]> => {
+        try {
+          const res = await fetch(`${state.baseUrl}/api/model`);
+          const data = await res.json();
+          const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+          return items.map((m: any) => ({
+            label: `${m.id ?? "?"} / ${m.variant ?? "default"}`,
+            value: JSON.stringify({ model: m.id, provider: m.providerID, variant: m.variant }),
+            description: `provider: ${m.providerID ?? "?"}`,
+          }));
+        } catch {
+          return [];
+        }
+      };
+      const vlist = await listVariants();
+      if (vlist.length === 0) {
+        sendResponse(from, "暂无可用 variant");
+        break;
+      }
+      sendList(from, "请选择 variant（将用该 model+variant 新建会话）：", "可用 Variant", vlist);
       break;
+    }
 
-    case "tui-status":
-      sendResponse(
-        from,
-        `TUI 模式: ${us.mode === "tui" ? "已连接" : "未连接"}\n会话: ${us.sessionId ?? "未选择"}`,
-      );
+    case "plan": {
+      const list = await listAgents(state);
+      if (list.length === 0) {
+        sendResponse(from, "暂无可用 plan");
+        break;
+      }
+      sendList(from, "请选择 plan（将用该 plan 新建会话）：", "可用 Plan", list);
       break;
+    }
+
+    case "skills": {
+      const list = await listSkills(state);
+      if (list.length === 0) {
+        sendResponse(from, "暂无可用 skill");
+        break;
+      }
+      sendResponse(from, list.map((s) => `• ${s.label}\n  ${s.description}`).join("\n\n"));
+      break;
+    }
 
     case "project":
       await cmdProject(state, from);
@@ -345,6 +379,40 @@ async function cmdProject(state: any, from: string) {
 
 async function handleListResponse(state: any, from: string, value: string) {
   const us = getUserState(state, from);
+  // Check if value is a JSON config (model/variant/plan selection)
+  if (value.startsWith("{")) {
+    let config: any;
+    try { config = JSON.parse(value); } catch { return; }
+    try {
+      const body: any = {};
+      if (config.model) {
+        body.model = { id: config.model, providerID: config.provider };
+        if (config.variant) body.model.variant = config.variant;
+      }
+      if (config.agent) body.agent = config.agent;
+      if (!body.model && !body.agent) body.agent = config;
+
+      const title = config.model
+        ? `${config.model}${config.variant ? ` (${config.variant})` : ""}`
+        : config.agent ?? "new";
+      const result = await state.client.session.create({
+        title,
+        directory: state.projectDir,
+        ...body,
+      });
+      const newId = (result.data as any)?.id;
+      if (!newId) { sendResponse(from, "创建失败"); return; }
+      us.sessionId = newId;
+      us.mode = "sdk";
+      const info = await getSessionInfo(state.client, newId);
+      sendResponse(from, `✅ 已新建会话「${title}」\n${info}`);
+      saveStateImpl(state);
+    } catch (e: any) {
+      sendResponse(from, `创建失败: ${e.message ?? e}`);
+    }
+    return;
+  }
+  // Session list selection
   us.sessionId = value;
   us.mode = "sdk";
   const info = await getSessionInfo(state.client, value);

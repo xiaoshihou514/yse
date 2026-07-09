@@ -12,6 +12,7 @@ process.on("exit", () => {
 export interface BotState {
   client: ReturnType<typeof createOpencodeClient>;
   projectDir: string;
+  baseUrl: string;
   sessions: {
     [userAddr: string]: {
       mode: "sdk" | "tui";
@@ -83,7 +84,7 @@ export async function initBot(): Promise<BotState | null> {
       directory: projectDir,
     });
 
-    return { client, projectDir, sessions: {}, serverProcess: child };
+    return { client, projectDir, baseUrl, sessions: {}, serverProcess: child };
   } catch (e: any) {
     process.stderr.write(`[opencode-bot] initBot failed: ${e.message ?? e}\n`);
     return null;
@@ -128,9 +129,60 @@ export async function sendPrompt(
   }
 }
 
-export async function sendTuiPrompt(client: any, text: string): Promise<void> {
-  await client.tui.appendPrompt({ text });
-  await client.tui.submitPrompt();
+export async function listModels(
+  state: BotState,
+): Promise<{ label: string; value: string; description: string }[]> {
+  try {
+    const res = await fetch(`${state.baseUrl}/api/model`);
+    const data = await res.json();
+    const items = Array.isArray(data) ? data : (data?.data ?? []);
+    return items.map((m: any) => ({
+      label: `${m.id ?? "?"}  (${m.providerID ?? "?"})`,
+      value: JSON.stringify({ model: m.id, provider: m.providerID }),
+      description: m.variant
+        ? `variant: ${m.variant}`
+        : `provider: ${m.providerID ?? "?"}`,
+    }));
+  } catch (e: any) {
+    process.stderr.write(`[opencode-bot] listModels failed: ${e.message ?? e}\n`);
+    return [];
+  }
+}
+
+export async function listSkills(
+  state: BotState,
+): Promise<{ label: string; value: string; description: string }[]> {
+  try {
+    const res = await fetch(`${state.baseUrl}/api/skill`);
+    const data = await res.json();
+    const items = Array.isArray(data) ? data : (data?.data ?? []);
+    return items.map((s: any) => ({
+      label: s.name || s.id || "?",
+      value: s.id ?? "",
+      description: s.description ?? "",
+    }));
+  } catch (e: any) {
+    process.stderr.write(`[opencode-bot] listSkills failed: ${e.message ?? e}\n`);
+    return [];
+  }
+}
+
+export async function listAgents(
+  state: BotState,
+): Promise<{ label: string; value: string; description: string }[]> {
+  try {
+    const res = await fetch(`${state.baseUrl}/api/agent`);
+    const data = await res.json();
+    const items = Array.isArray(data) ? data : (data?.data ?? []);
+    return items.map((a: any) => ({
+      label: a.name || a.id || "?",
+      value: JSON.stringify({ agent: a.id ?? a.name ?? "" }),
+      description: a.description ?? a.id ?? "",
+    }));
+  } catch (e: any) {
+    process.stderr.write(`[opencode-bot] listAgents failed: ${e.message ?? e}\n`);
+    return [];
+  }
 }
 
 export async function listSessions(
