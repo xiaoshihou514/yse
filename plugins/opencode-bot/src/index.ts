@@ -281,15 +281,28 @@ async function handleCommand(
       await cmdProject(state, from);
       break;
 
-    case "dir":
+    case "dir": {
       if (!arg) {
         sendResponse(from, "用法: /dir <path>");
         break;
       }
       state.projectDir = arg;
-      sendResponse(from, `✅ 已切换到目录: ${arg}\n当前会话: ${us.sessionId ?? "无"}\n请用 /new 或 /select 切换会话`);
+      if (us.sessionId) {
+        try {
+          await state.client.session.update({ sessionID: us.sessionId, directory: arg });
+        } catch (e: any) {
+          saveStateImpl(state);
+          sendResponse(from, `✅ 已切换到目录: ${arg}（会话更新失败: ${e.message ?? e}）`);
+          break;
+        }
+      }
+      const dirInfo = us.sessionId
+        ? await getSessionInfo(state.client, us.sessionId)
+        : "请用 /new 创建新会话";
+      sendResponse(from, `✅ 已切换到目录: ${arg}\n${dirInfo}`);
       saveStateImpl(state);
       break;
+    }
 
     default:
       sendResponse(from, `未知命令: /${cmd}\n输入 /help 查看可用命令`);
