@@ -652,6 +652,19 @@ pub async fn list_processes(state: State<'_, YseState>) -> Result<Vec<ProcessInf
 }
 
 #[tauri::command]
+pub async fn get_process_logs(
+    state: State<'_, YseState>,
+    id: String,
+) -> Result<Vec<String>, String> {
+    state
+        .core
+        .process_manager
+        .get_logs(&id)
+        .await
+        .ok_or_else(|| format!("process not found: {}", id))
+}
+
+#[tauri::command]
 pub async fn list_sessions(
     state: State<'_, YseState>,
 ) -> Result<Vec<yse_core::plugin::session::Session>, String> {

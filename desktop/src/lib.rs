@@ -75,6 +75,7 @@ pub fn run() {
             commands::stop_plugin,
             commands::list_running_plugins,
             commands::list_processes,
+            commands::get_process_logs,
             commands::list_sessions,
             commands::get_hostname,
             commands::set_local_hostname,

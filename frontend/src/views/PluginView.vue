@@ -72,18 +72,28 @@
           <t-space size="small">
             <t-button
               size="small"
-              variant="outline"
+              variant="text"
               @click="handleStopProcess(row.id)"
               :disabled="row.state === 'Stopped'"
+              title="结束进程"
             >
-              结束
+              <template #icon><StopCircleIcon /></template>
             </t-button>
             <t-button
               size="small"
-              variant="outline"
+              variant="text"
               @click="handleRestartProcess(row.id)"
+              title="重启进程"
             >
-              重启
+              <template #icon><RefreshIcon /></template>
+            </t-button>
+            <t-button
+              size="small"
+              variant="text"
+              @click="handleViewLogs(row.id)"
+              title="查看日志"
+            >
+              <template #icon><ViewListIcon /></template>
             </t-button>
           </t-space>
         </template>
@@ -154,13 +164,31 @@
         >
       </div>
     </div>
+
+    <!-- Process log dialog -->
+    <t-dialog
+      v-model:visible="logVisible"
+      :header="`进程日志 — ${logProcessName}`"
+      width="600px"
+      :close-on-overlay-click="true"
+      :footer="false"
+    >
+      <div class="log-viewer" v-if="logLines.length > 0">
+        <pre
+          class="log-content"
+          v-for="(line, i) in logLines"
+          :key="i"
+        >{{ line }}</pre>
+      </div>
+      <t-empty v-else description="暂无日志" />
+    </t-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import { MessagePlugin } from "tdesign-vue-next";
-import { QrcodeIcon, DeleteIcon } from "tdesign-icons-vue-next";
+import { QrcodeIcon, DeleteIcon, StopCircleIcon, RefreshIcon, ViewListIcon } from "tdesign-icons-vue-next";
 import { useYseStore } from "@/stores/yse";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { useQrCode } from "@/composables/useQrCode";
@@ -284,6 +312,21 @@ async function handleRestartProcess(processId: string) {
 }
 
 let procRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+const logVisible = ref(false);
+const logProcessName = ref("");
+const logLines = ref<string[]>([]);
+
+async function handleViewLogs(processId: string) {
+  try {
+    const p = store.processes.find((x) => x.id === processId);
+    logProcessName.value = p?.name ?? processId;
+    logLines.value = await api.getProcessLogs(processId);
+    logVisible.value = true;
+  } catch (e) {
+    showError("获取日志", e);
+  }
+}
 
 onMounted(async () => {
   loading.value = true;
@@ -457,5 +500,26 @@ onUnmounted(() => {
   .plugin-page .t-card {
     margin: 16px;
   }
+}
+
+.log-viewer {
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--td-bg-color-page);
+  border-radius: 6px;
+  padding: 8px;
+}
+.log-content {
+  margin: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--td-text-color-primary);
+  border-bottom: 1px solid var(--td-component-stroke);
+}
+.log-content:last-child {
+  border-bottom: none;
 }
 </style>

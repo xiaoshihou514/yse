@@ -276,6 +276,17 @@ impl PluginProcessManager {
             .count()
     }
 
+    pub async fn get_logs(&self, id: &str) -> Option<Vec<String>> {
+        let buf = {
+            let map = self.processes.lock().await;
+            map.get(id)
+                .and_then(|e| e.plugin.as_ref())
+                .map(|p| p.output.clone())?
+        };
+        let result = buf.lock().await.iter().cloned().collect();
+        Some(result)
+    }
+
     pub async fn send_notification(
         &self,
         plugin_id: &str,

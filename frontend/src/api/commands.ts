@@ -143,6 +143,10 @@ export async function listProcesses(): Promise<ProcessInfo[]> {
   return invoke("list_processes");
 }
 
+export async function getProcessLogs(id: string): Promise<string[]> {
+  return invoke("get_process_logs", { id });
+}
+
 export async function listSessions(): Promise<SessionInfo[]> {
   return invoke("list_sessions");
 }

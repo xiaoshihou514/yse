@@ -1,5 +1,5 @@
 use log::{info, warn};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -18,6 +18,7 @@ pub struct ManagedPlugin {
     stdin: Option<Arc<Mutex<ChildStdin>>>,
     #[allow(dead_code)]
     next_id: Arc<AtomicU64>,
+    pub output: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl ManagedPlugin {
@@ -54,17 +55,22 @@ impl ManagedPlugin {
             .ok_or("failed to open plugin stdin")?;
         let stdout = child.stdout.take().ok_or("failed to open plugin stdout")?;
 
+        let output_buf: Arc<Mutex<VecDeque<String>>> =
+            Arc::new(Mutex::new(VecDeque::with_capacity(200)));
+
         let plugin = ManagedPlugin {
             id: id.clone(),
             process: Some(child),
             stdin: Some(stdin),
             next_id: Arc::new(AtomicU64::new(1)),
+            output: output_buf.clone(),
         };
 
         // Spawn stdout reader task that routes plugin requests
         let id_clone = id.clone();
         let handler_id = id.clone();
         let exit_cb = on_exit;
+        let log_buf = output_buf;
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
@@ -72,6 +78,14 @@ impl ManagedPlugin {
             while let Ok(Some(line)) = lines.next_line().await {
                 if line.trim().is_empty() {
                     continue;
+                }
+                // Ring buffer: keep recent 200 lines
+                {
+                    let mut buf = log_buf.lock().await;
+                    if buf.len() >= 200 {
+                        buf.pop_front();
+                    }
+                    buf.push_back(line.clone());
                 }
                 let val: serde_json::Value = match serde_json::from_str(&line) {
                     Ok(v) => v,
@@ -174,6 +188,11 @@ impl ManagedPlugin {
         if let Some(mut child) = self.process.take() {
             let _ = child.start_kill();
         }
+    }
+
+    pub async fn recent_logs(&self) -> Vec<String> {
+        let buf = self.output.lock().await;
+        buf.iter().cloned().collect()
     }
 }
 

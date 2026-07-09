@@ -59,7 +59,16 @@
             @touchmove="onTouchMove"
           >
             <div class="contact-avatar">
-              <t-avatar size="40px">{{ initial(c.address) }}</t-avatar>
+              <div class="avatar-box">
+                <img
+                  v-if="loadAvatar(c.address)"
+                  :src="loadAvatar(c.address)!"
+                  class="avatar-img"
+                />
+                <span v-else class="avatar-initial">{{
+                  initial(c.address)
+                }}</span>
+              </div>
               <span v-if="c.hasNew" class="new-dot"></span>
             </div>
             <div class="contact-info">
@@ -102,7 +111,16 @@
                 @touchmove="onTouchMove"
               >
                 <div class="contact-avatar">
-                  <t-avatar size="40px">{{ initial(c.address) }}</t-avatar>
+                  <div class="avatar-box">
+                    <img
+                      v-if="loadAvatar(c.address)"
+                      :src="loadAvatar(c.address)!"
+                      class="avatar-img"
+                    />
+                    <span v-else class="avatar-initial">{{
+                      initial(c.address)
+                    }}</span>
+                  </div>
                   <span v-if="c.hasNew" class="new-dot"></span>
                 </div>
                 <div class="contact-info">
@@ -380,6 +398,23 @@
               <span class="settings-item-value">{{
                 resolveDisplayName(selectedContact!)
               }}</span>
+              <span class="settings-item-arrow">›</span>
+            </div>
+            <div
+              class="settings-item"
+              @click="pickAvatar(selectedContact!)"
+            >
+              <span class="settings-item-label">修改头像</span>
+              <div class="avatar-preview-sm">
+                <img
+                  v-if="loadAvatar(selectedContact!)"
+                  :src="loadAvatar(selectedContact!)!"
+                  class="avatar-preview-img"
+                />
+                <span v-else class="avatar-preview-txt">{{
+                  initial(selectedContact!)
+                }}</span>
+              </div>
               <span class="settings-item-arrow">›</span>
             </div>
           </div>
@@ -924,6 +959,35 @@ function initial(addr: string) {
   return (name.charAt(0) || "?").toUpperCase();
 }
 
+function avatarKey(addr: string) {
+  const p = parseAddress(addr);
+  return `yse-avatar-${p.name}@${p.hostname}`;
+}
+
+function loadAvatar(addr: string): string | null {
+  return localStorage.getItem(avatarKey(addr));
+}
+
+function saveAvatar(addr: string, dataUrl: string) {
+  localStorage.setItem(avatarKey(addr), dataUrl);
+}
+
+async function pickAvatar(addr: string) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.onchange = () => {
+    const f = input.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      saveAvatar(addr, reader.result as string);
+    };
+    reader.readAsDataURL(f);
+  };
+  input.click();
+}
+
 function displayName(addr: string) {
   return resolveDisplayName(addr);
 }
@@ -1228,6 +1292,27 @@ onMounted(async () => {
 .contact-avatar {
   position: relative;
   flex-shrink: 0;
+}
+.avatar-box {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--td-bg-color-secondarycontainer);
+}
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.avatar-initial {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--td-brand-color);
+  user-select: none;
 }
 .new-dot {
   --yse-dot-color: #2a52be;
@@ -1641,7 +1726,7 @@ onMounted(async () => {
 .settings-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 0;
+  padding: 4px 0 12px;
 }
 .settings-group {
   margin-bottom: 8px;
@@ -1684,6 +1769,27 @@ onMounted(async () => {
 }
 .settings-item-danger .settings-item-label {
   color: var(--td-error-color);
+}
+.avatar-preview-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--td-bg-color-secondarycontainer);
+  margin-right: 4px;
+}
+.avatar-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.avatar-preview-txt {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-brand-color);
 }
 @keyframes slideRight {
   from {
