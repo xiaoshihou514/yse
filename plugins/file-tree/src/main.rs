@@ -350,14 +350,14 @@ fn cmd_cat(cwd: &Path, arg: &str) -> String {
     };
     let max_lines = 50;
     let lines: Vec<&str> = content.lines().collect();
+    let ext = Path::new(arg).extension().and_then(|e| e.to_str()).unwrap_or("");
     if lines.len() <= max_lines {
-        format!("```\n{}\n```", content.trim_end())
+        format!("```{}\n{}\n```", ext, content.trim_end())
     } else {
         let truncated: Vec<&str> = lines[..max_lines].to_vec();
         format!(
-            "```\n{}\n```\n... (共 {} 行, 只显示前 {max_lines} 行)",
-            truncated.join("\n"),
-            lines.len()
+            "```{}\n{}\n```\n... (共 {} 行, 只显示前 {max_lines} 行)",
+            ext, truncated.join("\n"), lines.len()
         )
     }
 }
