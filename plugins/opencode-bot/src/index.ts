@@ -52,6 +52,12 @@ async function main() {
       continue;
     }
 
+    // Help trigger (protocol: ? or ？)
+    if (text === "?" || text === "？") {
+      sendResponse(from, HELP);
+      continue;
+    }
+
     // No OpenCode connection — only allow /help
     if (!state) {
       if (text === "/help") {
@@ -59,7 +65,7 @@ async function main() {
       } else {
         sendResponse(
           from,
-          "OpenCode 未连接，无法处理。输入 /help 查看可用命令。",
+          "OpenCode 未连接，无法处理。输入 ? 或 /help 查看可用命令。",
         );
       }
       continue;

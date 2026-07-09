@@ -4,15 +4,15 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 const HELP: &str = "📁 文件树插件
-cd <path>     — 切换目录
-pwd           — 显示当前目录
-ls [path]     — 列出目录（可点选进入）
-tree [path]   — 树形展示
-cat <file>    — 查看文件（前 50 行）
-stat <path>   — 文件详情
-find <name>   — 递归搜索
-size          — 目录总大小
-help          — 此帮助";
+/cd <path>    — 切换目录
+/pwd          — 显示当前目录
+/ls [path]    — 列出目录（可点选进入）
+/tree [path]  — 树形展示
+/cat <file>   — 查看文件（前 50 行）
+/stat <path>  — 文件详情
+/find <name>  — 递归搜索
+/size         — 目录总大小
+/help 或 ?     — 此帮助";
 
 fn main() {
     let stdin = io::stdin();
@@ -124,17 +124,28 @@ fn option(label: &str, value: &str, desc: &str) -> serde_json::Value {
 fn handle_and_respond(cwd: &mut PathBuf, text: &str, from: &str, to: &str, stdout: &mut impl Write) {
     let text = text.trim();
     if text.is_empty() {
-        send_text(to, from, "输入 help 查看可用命令", stdout);
+        send_text(to, from, "输入 ? 查看可用命令", stdout);
         return;
     }
 
-    let (cmd, arg) = match text.split_once(char::is_whitespace) {
+    // ? triggers help
+    if text == "?" || text == "？" || text == "help" {
+        send_text(to, from, HELP, stdout);
+        return;
+    }
+
+    // Commands must start with /
+    let Some(cmd_text) = text.strip_prefix('/') else {
+        send_text(to, from, &format!("未知命令: {text}\n输入 ? 查看可用命令"), stdout);
+        return;
+    };
+
+    let (cmd, arg) = match cmd_text.split_once(char::is_whitespace) {
         Some((c, a)) => (c, a.trim()),
-        None => (text, ""),
+        None => (cmd_text, ""),
     };
 
     match cmd {
-        "help" => send_text(to, from, HELP, stdout),
         "pwd" => send_text(to, from, &format!("📍 {}", cwd.display()), stdout),
         "cd" => {
             let result = cmd_cd(cwd, arg);
@@ -176,7 +187,7 @@ fn handle_and_respond(cwd: &mut PathBuf, text: &str, from: &str, to: &str, stdou
             let result = cmd_size(cwd);
             send_text(to, from, &result, stdout);
         }
-        _ => send_text(to, from, &format!("未知命令: {cmd}\n输入 help 查看可用命令"), stdout),
+        _ => send_text(to, from, &format!("未知命令: /{cmd}\n输入 ? 查看可用命令"), stdout),
     }
 }
 
@@ -276,7 +287,7 @@ fn cmd_ls_list(cwd: &Path, arg: &str) -> Option<(String, Vec<serde_json::Value>)
         let full = target.join(name);
         let display_path = full.display().to_string();
         if *is_dir {
-            opts.push(option(&format!("📁 {name}"), &format!("cd {name}"), &display_path));
+            opts.push(option(&format!("📁 {name}"), &format!("/cd {name}"), &display_path));
         } else {
             let size = fs::metadata(&full).ok().map(|m| m.len()).unwrap_or(0);
             let size_str = if size < 1024 {
@@ -286,7 +297,7 @@ fn cmd_ls_list(cwd: &Path, arg: &str) -> Option<(String, Vec<serde_json::Value>)
             } else {
                 format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
             };
-            opts.push(option(&format!("📄 {name}"), &format!("cat {name}"), &size_str));
+            opts.push(option(&format!("📄 {name}"), &format!("/cat {name}"), &size_str));
         }
     }
     Some((format!("📂 {}", target.display()), opts))
@@ -335,7 +346,7 @@ fn build_tree(path: &Path, prefix: &str, max_depth: usize, depth: usize, lines: 
 
 fn cmd_cat(cwd: &Path, arg: &str) -> String {
     if arg.is_empty() {
-        return "用法: cat <file>".into();
+        return "用法: /cat <file>".into();
     }
     let target = resolve_path(cwd, arg);
     if !target.exists() {
@@ -406,7 +417,7 @@ fn cmd_find_list(cwd: &Path, arg: &str) -> Option<(String, Vec<serde_json::Value
     results.truncate(50);
     let opts: Vec<serde_json::Value> = results
         .iter()
-        .map(|r| option(&format!("📄 {}", r), &format!("cat {}", r), ""))
+        .map(|r| option(&format!("📄 {}", r), &format!("/cat {}", r), ""))
         .collect();
     Some((format!("🔍 搜索「{arg}」(共 {} 个)", results.len()), opts))
 }

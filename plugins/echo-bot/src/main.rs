@@ -28,12 +28,24 @@ fn main() {
                 let _to = params["to"].as_str().unwrap_or("");
                 let text = params["text"].as_str().unwrap_or("");
 
+                let help = text == "?" || text == "？";
+                let reply = if help {
+                    "🔊 回声机器人\n\
+                     \n\
+                     发送任意文本，机器人会原样回复。\n\
+                     \n\
+                     可用命令：\n\
+                     /help  — 此帮助"
+                } else {
+                    &format!("Echo: {}", text)
+                };
+
                 let mut response = serde_json::json!({
                     "method": "send",
                     "params": {
                         "from": _to,
                         "to": from,
-                        "text": format!("Echo: {}", text)
+                        "text": reply
                     },
                     "id": 1
                 });
