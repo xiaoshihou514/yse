@@ -169,6 +169,9 @@
               <div
                 class="msg-bubble"
                 @contextmenu.prevent="onBubbleContext($event, msg)"
+                @touchstart.passive="onBubbleTouchStart($event, msg)"
+                @touchend="onBubbleTouchEnd"
+                @touchmove="onBubbleTouchMove"
               >
                 <div
                   class="msg-text"
@@ -351,6 +354,7 @@ import type { PluginMeta } from "@/types/plugin";
 import type { PendingDisplayMessage } from "@/api/commands";
 import { parseAddress, hostnameFromAddr, nameFromAddr } from "@/utils/address";
 import { showError } from "@/utils/helpers";
+import { MessagePlugin } from "tdesign-vue-next";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -469,8 +473,10 @@ function onContactContext(
 function copyCtxText() {
   if (ctxContact.value) {
     navigator.clipboard.writeText(ctxContact.value.address);
+    MessagePlugin.success("已复制地址").catch(() => {});
   } else if (ctxMenu.value.text) {
     navigator.clipboard.writeText(ctxMenu.value.text);
+    MessagePlugin.success("已复制").catch(() => {});
   }
   ctxMenu.value.visible = false;
 }
@@ -519,6 +525,48 @@ function onTouchMove(e: TouchEvent) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
     longPressContact = null;
+  }
+}
+
+// ---- Long press for messages (mobile copy) ----
+let bubbleLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+let bubbleLongPressMsg: { text?: string } | null = null;
+let bubbleTouchStartY = 0;
+
+function onBubbleTouchStart(e: TouchEvent, msg: { text?: string }) {
+  bubbleLongPressMsg = msg;
+  bubbleTouchStartY = e.touches[0].clientY;
+  bubbleLongPressTimer = setTimeout(() => {
+    if (bubbleLongPressMsg) {
+      const t = e.touches[0];
+      ctxMenu.value = {
+        visible: true,
+        x: t.clientX,
+        y: t.clientY,
+        text: bubbleLongPressMsg.text ?? "",
+      };
+      ctxContact.value = null;
+    }
+    bubbleLongPressTimer = null;
+  }, 500);
+}
+
+function onBubbleTouchEnd() {
+  if (bubbleLongPressTimer) {
+    clearTimeout(bubbleLongPressTimer);
+    bubbleLongPressTimer = null;
+  }
+  bubbleLongPressMsg = null;
+}
+
+function onBubbleTouchMove(e: TouchEvent) {
+  if (
+    bubbleLongPressTimer &&
+    Math.abs(e.touches[0].clientY - bubbleTouchStartY) > 10
+  ) {
+    clearTimeout(bubbleLongPressTimer);
+    bubbleLongPressTimer = null;
+    bubbleLongPressMsg = null;
   }
 }
 
@@ -1364,6 +1412,10 @@ onMounted(async () => {
     z-index: 10;
     padding-top: env(safe-area-inset-top, 0);
     background: var(--td-bg-color-page);
+  }
+  .msg-bubble {
+    user-select: none;
+    -webkit-user-select: none;
   }
   .message-area {
     padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
