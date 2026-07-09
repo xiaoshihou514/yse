@@ -17,7 +17,7 @@ const HELP = `可用命令：
 发消息 → 发送给 AI（需先用 /select 或 /new 选择会话）
 /sessions     — 列出所有会话（点选切换）
 /select <id>  — 直接按 ID 切换会话
-/new [标题]    — 新建会话
+/new [标题] [目录] — 新建会话（可选指定目录）
 /info         — 当前会话详情
 /abort        — 中止当前生成
 /undo         — 撤回上一条消息
@@ -28,7 +28,6 @@ const HELP = `可用命令：
 /plan         — 列出可用 plan（点选用该 plan 新建会话）
 /skills       — 列出可用 skill
 /project      — 当前项目信息
-/dir <path>   — 切换项目目录
 /help         — 显示此帮助`;
 
 let stateFile = "";
@@ -281,29 +280,6 @@ async function handleCommand(
       await cmdProject(state, from);
       break;
 
-    case "dir": {
-      if (!arg) {
-        sendResponse(from, "用法: /dir <path>");
-        break;
-      }
-      state.projectDir = arg;
-      if (us.sessionId) {
-        try {
-          await state.client.session.update({ sessionID: us.sessionId, directory: arg });
-        } catch (e: any) {
-          saveStateImpl(state);
-          sendResponse(from, `✅ 已切换到目录: ${arg}（会话更新失败: ${e.message ?? e}）`);
-          break;
-        }
-      }
-      const dirInfo = us.sessionId
-        ? await getSessionInfo(state.client, us.sessionId)
-        : "请用 /new 创建新会话";
-      sendResponse(from, `✅ 已切换到目录: ${arg}\n${dirInfo}`);
-      saveStateImpl(state);
-      break;
-    }
-
     default:
       sendResponse(from, `未知命令: /${cmd}\n输入 /help 查看可用命令`);
   }
@@ -318,10 +294,22 @@ async function cmdSessions(state: any, from: string) {
   sendList(from, "请选择会话：", "可选会话", list);
 }
 
-async function cmdNew(state: any, from: string, us: any, title: string) {
+async function cmdNew(state: any, from: string, us: any, arg: string) {
   try {
+    // Last word starting with / is the directory, rest is title
+    let title = arg;
+    let dir = state.projectDir;
+    const lastSpace = arg.lastIndexOf(" ");
+    if (lastSpace >= 0) {
+      const last = arg.slice(lastSpace + 1);
+      if (last.startsWith("/")) {
+        title = arg.slice(0, lastSpace).trim();
+        dir = last;
+      }
+    }
     const result = await state.client.session.create({
       title: title || undefined,
+      directory: dir,
     } as any);
     const sessionId = (result.data as any)?.id;
     if (!sessionId) {
@@ -329,10 +317,13 @@ async function cmdNew(state: any, from: string, us: any, title: string) {
       return;
     }
     us.sessionId = sessionId;
+    state.projectDir = dir;
+    const info = await getSessionInfo(state.client, sessionId);
     sendResponse(
       from,
-      `✅ 已新建会话「${title || "(无标题)"}」\nID: ${sessionId}\n现在可以发送消息了`,
+      `✅ 已新建会话「${title || "(无标题)"}」\n${info}`,
     );
+    saveStateImpl(state);
   } catch (e: any) {
     sendResponse(from, `创建会话失败: ${e.message ?? e}`);
   }
