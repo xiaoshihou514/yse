@@ -267,7 +267,7 @@ async function handleCommand(
         sendResponse(from, "暂无可用 plan");
         break;
       }
-      sendList(from, "请选择 plan（将用该 plan 新建会话）：", "可用 Plan", list);
+      sendList(from, "请选择 plan（将切换为 plan 只读规划模式）：", "可用 Plan", list);
       break;
     }
 
@@ -397,6 +397,14 @@ async function handleListResponse(state: any, from: string, value: string) {
         if (config.agent) us.agentId = config.agent;
         sendResponse(from, "✅ 已设置，下一条消息将使用新配置");
         saveStateImpl(state);
+        return;
+      }
+      // Agent/plan without session: ask to select one first
+      if (config.agent && !config.model) {
+        sendResponse(
+          from,
+          "请先用 /sessions 选择或 /new 创建会话后再选 plan",
+        );
         return;
       }
       // No active session → create new one with the chosen config
