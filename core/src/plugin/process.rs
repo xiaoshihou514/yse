@@ -81,6 +81,7 @@ impl ManagedPlugin {
             tokio::spawn(async move {
                 let notif = CoreNotification::Config {
                     state_dir: cfg_dir,
+                    virtual_addr: None,
                 };
                 let json = match serde_json::to_string(&notif) {
                     Ok(s) => s,

@@ -7,7 +7,15 @@ export interface YseMessage {
     to: string;
     text?: string;
     meta?: { plugin?: { response?: { value: string } } };
+    state_dir?: string;
+    virtual_addr?: string;
   };
+}
+
+export let pluginAddr = "";
+
+export function setPluginAddr(addr: string) {
+  pluginAddr = addr;
 }
 
 export function parseStdin(): AsyncGenerator<YseMessage> {
@@ -31,7 +39,7 @@ export function parseStdin(): AsyncGenerator<YseMessage> {
 export function sendResponse(to: string, text: string): void {
   const out = JSON.stringify({
     method: "send",
-    params: { from: "opencode@yse", to, text },
+    params: { from: pluginAddr || "opencode", to, text },
   });
   process.stdout.write(out + "\n");
 }
@@ -45,7 +53,7 @@ export function sendList(
   const out = JSON.stringify({
     method: "send",
     params: {
-      from: "opencode@yse",
+      from: pluginAddr || "opencode",
       to,
       text,
       meta: {

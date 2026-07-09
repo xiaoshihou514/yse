@@ -1,4 +1,4 @@
-import { parseStdin, sendResponse, sendList, sendLog } from "./yse.js";
+import { parseStdin, sendResponse, sendList, sendLog, setPluginAddr, pluginAddr } from "./yse.js";
 import {
   initBot,
   getUserState,
@@ -59,7 +59,11 @@ async function main() {
 
   for await (const msg of parseStdin()) {
     if (msg.method === "config") {
-      const dir = (msg.params as any)?.state_dir as string | undefined;
+      const params = msg.params as any;
+      if (params.virtual_addr) {
+        setPluginAddr(params.virtual_addr);
+      }
+      const dir = params.state_dir as string | undefined;
       if (dir) {
         stateFile = path.join(dir, "sessions.json");
         try {
@@ -77,6 +81,9 @@ async function main() {
     const text = msg.params.text?.trim();
     const from = msg.params.from;
     if (!text) continue;
+
+    // Use incoming message's "to" as our identity if config didn't provide one
+    if (!pluginAddr) setPluginAddr(msg.params.to);
 
     // Handle list selection response from user
     const respValue = msg.params.meta?.plugin?.response?.value;

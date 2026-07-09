@@ -54,6 +54,9 @@ pub enum CoreNotification {
     #[serde(rename = "config")]
     Config {
         state_dir: String,
+        /// The plugin's virtual address (name#hash@hostname), so it
+        /// can use the correct from-address when sending replies.
+        virtual_addr: Option<String>,
     },
     /// Plugin should shut down
     #[serde(rename = "shutdown")]
