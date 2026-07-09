@@ -70,7 +70,15 @@ export async function listSessions(
 ): Promise<{ label: string; value: string; description: string }[]> {
   try {
     const result = await client.session.list();
-    const sessions: any[] = result.data ?? [];
+    // Log raw response for debugging field structure
+    const raw = JSON.stringify(result).slice(0, 500);
+    process.stderr.write(`[opencode-bot] session.list raw: ${raw}\n`);
+    const sessions: any[] =
+      result?.data ?? result?.sessions ?? result?.items ?? (Array.isArray(result) ? result : []) ?? [];
+    if (sessions.length === 0 && result) {
+      const keys = typeof result === "object" && result !== null ? Object.keys(result).join(", ") : "not object";
+      process.stderr.write(`[opencode-bot] session.list response keys: [${keys}]\n`);
+    }
     return sessions.slice(0, 20).map((s: any) => ({
       label: s.title || s.id?.slice(0, 8) || "Untitled",
       value: s.id,
@@ -78,7 +86,8 @@ export async function listSessions(
         ? `📁 ${s.worktree}`
         : `🕐 ${s.time?.updatedAt ? new Date(s.time.updatedAt).toLocaleDateString("zh-CN") : "?"}`,
     }));
-  } catch {
+  } catch (e: any) {
+    process.stderr.write(`[opencode-bot] listSessions failed: ${e.message ?? e}\n`);
     return [];
   }
 }
