@@ -262,12 +262,21 @@ async function handleCommand(
     }
 
     case "plan": {
-      const list = await listAgents(state);
-      if (list.length === 0) {
-        sendResponse(from, "暂无可用 plan");
-        break;
+      if (us.planMode) {
+        us.planMode = false;
+        us.agentId = undefined;
+        sendResponse(from, "✅ 已切换为默认模式");
+      } else {
+        const list = await listAgents(state);
+        if (list.length === 0) {
+          sendResponse(from, "暂无可用 plan");
+          break;
+        }
+        us.planMode = true;
+        us.agentId = JSON.parse(list[0].value).agent;
+        sendResponse(from, "✅ 已切换为 plan 只读规划模式");
       }
-      sendList(from, "请选择 plan（将切换为 plan 只读规划模式）：", "可用 Plan", list);
+      saveStateImpl(state);
       break;
     }
 
