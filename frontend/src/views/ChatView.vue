@@ -717,6 +717,18 @@ async function scrollToBottom() {
 }
 watch(selectedContact, scrollToBottom);
 
+// Auto-scroll on new messages if already near bottom
+watch(conversation, () => {
+  const el = messagesContainer.value;
+  if (!el) return;
+  // If user is within 100px of bottom, auto-scroll
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+    nextTick(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }
+});
+
 watch(selectedContact, (newVal, oldVal) => {
   if (!newVal && oldVal && isMobile.value) {
     store.markRead(oldVal);
