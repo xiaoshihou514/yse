@@ -101,8 +101,8 @@ export const useYseStore = defineStore("yse", () => {
   function markAllRead() {
     const now = Date.now();
     for (const m of messages.value) {
-      readTimestamps[m.from] = now;
-      readTimestamps[m.to] = now;
+      if (m.from.includes("#")) readTimestamps[m.from] = now;
+      if (m.to.includes("#")) readTimestamps[m.to] = now;
     }
     readVersion.value++;
     localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));

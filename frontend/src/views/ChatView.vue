@@ -313,6 +313,8 @@ const contacts = computed<Contact[]>(() => {
   const selfAddr = ownName;
   for (const m of store.sortedMessages) {
     const addr = nameFromAddr(m.from) === ownName ? m.to : m.from;
+    // Skip bare addresses (no hash) — they don't represent valid contacts
+    if (!addr.includes("#")) continue;
     if (nameFromAddr(addr) === ownName) {
       map.set(selfAddr, { address: selfAddr, lastText: m.text ?? "(文件)", lastTime: m.timestamp, hostname: "文件传输助手", hidden: store.hiddenAddresses.has(selfAddr), lastIsSelf: true });
       continue;
@@ -366,7 +368,11 @@ const filteredContacts = computed(() => {
   }
   if (!searchText.value) return list;
   const q = searchText.value.toLowerCase();
-  return list.filter((c) => c.address.toLowerCase().includes(q) || c.hostname.toLowerCase().includes(q));
+  return list.filter(
+    (c) =>
+      resolveDisplayName(c.address).toLowerCase().includes(q) ||
+      c.hostname.toLowerCase().includes(q),
+  );
 });
 
 const conversation = computed(() => {
