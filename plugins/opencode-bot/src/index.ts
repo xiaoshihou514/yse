@@ -3,7 +3,7 @@ import {
   initBot,
   getUserState,
   sendPrompt,
-  listSessions,
+  fetchAllSessions,
   getSessionInfo,
   listModels,
   listSkills,
@@ -15,7 +15,7 @@ import * as path from "path";
 
 const HELP = `可用命令：
 发消息 → 发送给 AI（需先用 /select 或 /new 选择会话）
-/sessions     — 列出所有会话（点选切换）
+/sessions     — 按项目目录选择会话（点选切换）
 /select <id>  — 直接按 ID 切换会话
 /new [标题] [目录] — 新建会话（可选指定目录）
 /info         — 当前会话详情
@@ -310,12 +310,44 @@ async function handleCommand(
 }
 
 async function cmdSessions(state: any, from: string) {
-  const list = await listSessions(state.client);
-  if (list.length === 0) {
+  const sessions = await fetchAllSessions(state.client);
+  if (sessions.length === 0) {
     sendResponse(from, "暂无会话，输入 /new [标题] 创建一个");
     return;
   }
-  sendList(from, "请选择会话：", "可选会话", list);
+
+  // Group by directory
+  const groups = new Map<string, any[]>();
+  for (const s of sessions) {
+    const dir = s.directory || s.worktree || "";
+    if (!groups.has(dir)) groups.set(dir, []);
+    groups.get(dir)!.push(s);
+  }
+
+  if (groups.size === 1) {
+    // Single directory — show session list directly
+    const list = sessions.map(formatSessionItem);
+    sendList(from, "请选择会话：", "可选会话", list);
+    return;
+  }
+
+  // Multiple directories — show directory list first
+  const dirList = Array.from(groups.entries()).map(([dir, sList]) => ({
+    label: dir ? path.basename(dir) : "(默认)",
+    value: `dir:${dir}`,
+    description: `📁 ${dir || "(默认)"} — ${sList.length} 个会话`,
+  }));
+  sendList(from, "请选项目目录：", "项目目录", dirList);
+}
+
+function formatSessionItem(s: any): { label: string; value: string; description: string } {
+  return {
+    label: s.title || s.id?.slice(0, 8) || "Untitled",
+    value: s.id,
+    description: s.directory || s.worktree
+      ? `📁 ${s.directory || s.worktree}`
+      : `🕐 ${s.updatedAt || s.updated ? new Date((s.updatedAt || s.updated) as number).toLocaleDateString("zh-CN") : "?"}`,
+  };
 }
 
 async function cmdNew(state: any, from: string, us: any, arg: string) {
@@ -403,6 +435,20 @@ async function cmdProject(state: any, from: string) {
 
 async function handleListResponse(state: any, from: string, value: string) {
   const us = getUserState(state, from);
+  // Directory selection from /sessions flow
+  if (value.startsWith("dir:")) {
+    const dir = value.slice(4);
+    const sessions = await fetchAllSessions(state.client);
+    const filtered = sessions.filter(
+      (s: any) => (s.directory || s.worktree || "") === dir,
+    );
+    if (filtered.length === 0) {
+      sendResponse(from, "该目录下暂无会话");
+      return;
+    }
+    sendList(from, "请选择会话：", "可选会话", filtered.map(formatSessionItem));
+    return;
+  }
   // Check if value is a JSON config (model/variant/plan selection)
   if (value.startsWith("{")) {
     let config: any;

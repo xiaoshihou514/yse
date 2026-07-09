@@ -203,9 +203,9 @@ export async function listAgents(
   }
 }
 
-export async function listSessions(
+export async function fetchAllSessions(
   client: any,
-): Promise<{ label: string; value: string; description: string }[]> {
+): Promise<any[]> {
   try {
     const result = await client.experimental.session.list();
     let sessions: any[];
@@ -222,17 +222,24 @@ export async function listSessions(
       process.stderr.write(`[opencode-bot] unexpected session.list format: ${raw}\n`);
       return [];
     }
-    return sessions.slice(0, 20).map((s: any) => ({
-      label: s.title || s.id?.slice(0, 8) || "Untitled",
-      value: s.id,
-      description: s.directory || s.worktree
-        ? `📁 ${s.directory || s.worktree}`
-        : `🕐 ${s.updatedAt || s.updated ? new Date((s.updatedAt || s.updated) as number).toLocaleDateString("zh-CN") : "?"}`,
-    }));
+    return sessions.slice(0, 20);
   } catch (e: any) {
-    process.stderr.write(`[opencode-bot] listSessions failed: ${e.message ?? e}\n`);
+    process.stderr.write(`[opencode-bot] fetchAllSessions failed: ${e.message ?? e}\n`);
     return [];
   }
+}
+
+export async function listSessions(
+  client: any,
+): Promise<{ label: string; value: string; description: string }[]> {
+  const sessions = await fetchAllSessions(client);
+  return sessions.map((s: any) => ({
+    label: s.title || s.id?.slice(0, 8) || "Untitled",
+    value: s.id,
+    description: s.directory || s.worktree
+      ? `📁 ${s.directory || s.worktree}`
+      : `🕐 ${s.updatedAt || s.updated ? new Date((s.updatedAt || s.updated) as number).toLocaleDateString("zh-CN") : "?"}`,
+  }));
 }
 
 export async function getSessionInfo(
