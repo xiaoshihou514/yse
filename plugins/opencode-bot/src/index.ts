@@ -6,6 +6,7 @@ import {
   sendTuiPrompt,
   listSessions,
   getSessionInfo,
+  killServer,
 } from "./opencode.js";
 import * as fs from "fs";
 import * as path from "path";
@@ -354,4 +355,10 @@ async function handleListResponse(state: any, from: string, value: string) {
 main().catch((e) => {
   process.stderr.write(`[opencode-bot] fatal: ${e}\n`);
   process.exit(1);
+});
+
+process.on("exit", () => {
+  // Cleanup: kill the opencode server on exit
+  // Note: state is not accessible here, but the server will be orphaned
+  // which is fine — opencode serve exits when its parent pipe closes.
 });

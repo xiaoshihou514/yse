@@ -1,4 +1,13 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
+import { spawn, type ChildProcess } from "child_process";
+
+let _serverProcess: ChildProcess | null = null;
+
+process.on("exit", () => {
+  if (_serverProcess) {
+    _serverProcess.kill();
+  }
+});
 
 export interface BotState {
   client: ReturnType<typeof createOpencodeClient>;
@@ -9,40 +18,70 @@ export interface BotState {
       sessionId: string | null;
     };
   };
+  serverProcess: ChildProcess | null;
+}
+
+function startServer(): { child: ChildProcess; port: Promise<number> } {
+  const child = spawn("opencode", ["serve", "--port", "0", "--print-logs"], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let stdout = "";
+  const port = new Promise<number>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("opencode server start timeout (15s)"));
+    }, 15000);
+    child.stdout!.on("data", (data: Buffer) => {
+      stdout += data.toString();
+      const m = stdout.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/);
+      if (m) {
+        clearTimeout(timeout);
+        resolve(parseInt(m[1], 10));
+      }
+    });
+    child.on("error", (e) => {
+      clearTimeout(timeout);
+      reject(e);
+    });
+    child.on("exit", (code) => {
+      if (code !== null && code !== 0) {
+        clearTimeout(timeout);
+        reject(new Error(`opencode server exited with code ${code}`));
+      }
+    });
+  });
+  return { child, port };
 }
 
 export async function initBot(): Promise<BotState | null> {
   try {
+    const { child, port } = startServer();
+    _serverProcess = child;
+    const actualPort = await port;
+    process.stderr.write(`[opencode-bot] server started on port ${actualPort}\n`);
+
     const cwd = process.cwd();
     const client = createOpencodeClient({
-      baseUrl: "http://localhost:4096",
+      baseUrl: `http://127.0.0.1:${actualPort}`,
       directory: cwd,
     });
+
     let projectDir = cwd;
     try {
       const proj = await client.project.current();
       const data = proj.data as any;
       if (data?.worktree) projectDir = data.worktree;
     } catch {}
-    if (projectDir !== cwd) {
-      // Recreate client with correct directory
-      return initBotAt(projectDir);
-    }
-    return { client, projectDir, sessions: {} };
+
+    return { client, projectDir, sessions: {}, serverProcess: child };
   } catch (e: any) {
+    process.stderr.write(`[opencode-bot] initBot failed: ${e.message ?? e}\n`);
     return null;
   }
 }
 
-async function initBotAt(dir: string): Promise<BotState | null> {
-  try {
-    const client = createOpencodeClient({
-      baseUrl: "http://localhost:4096",
-      directory: dir,
-    });
-    return { client, projectDir: dir, sessions: {} };
-  } catch {
-    return null;
+export function killServer(state: BotState) {
+  if (state.serverProcess) {
+    state.serverProcess.kill();
   }
 }
 
@@ -90,7 +129,6 @@ export async function listSessions(
 ): Promise<{ label: string; value: string; description: string }[]> {
   try {
     const result = await client.session.list();
-    // The SDK might return { data: [...] }, { sessions: [...] }, or the array directly
     let sessions: any[];
     if (Array.isArray(result)) {
       sessions = result;
