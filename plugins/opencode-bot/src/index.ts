@@ -124,7 +124,7 @@ async function main() {
       await handleCommand(state, from, us, cmd, args.join(" "));
     } else if (us.sessionId) {
       // SDK mode — send prompt directly
-      const reply = await sendPrompt(state.client, us.sessionId, text);
+      const reply = await sendPrompt(state.client, us.sessionId, text, state.projectDir);
       sendResponse(from, reply);
     } else {
       sendResponse(from, "请先选择会话：/sessions 或 /new [标题]");

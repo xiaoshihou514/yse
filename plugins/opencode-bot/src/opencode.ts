@@ -111,11 +111,13 @@ export async function sendPrompt(
   client: any,
   sessionId: string,
   text: string,
+  directory?: string,
 ): Promise<string> {
   try {
     const result = await client.session.prompt({
       sessionID: sessionId,
       parts: [{ type: "text", text }],
+      ...(directory ? { directory } : {}),
     });
     const msg = result.data as any;
     const parts: any[] = msg?.parts ?? [];
