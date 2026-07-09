@@ -24,7 +24,14 @@
 
         <t-input v-model="searchText" placeholder="搜索名称或主机名" size="small" clearable class="search-input" />
 
-        <div class="contact-list">
+        <div class="contact-list" ref="contactListRef"
+             @touchstart.passive="onPullStart"
+             @touchmove.passive="onPullMove"
+             @touchend="onPullEnd">
+          <div class="pull-indicator" :style="{ height: pullOffset + 'px', opacity: Math.min(pullOffset / 60, 1) }">
+            <span v-if="pullRefreshing" class="pull-spinner"></span>
+            <span v-else class="pull-text">{{ pullOffset > 60 ? "释放刷新" : "下拉刷新" }}</span>
+          </div>
           <ContactListItem
             v-for="c in filteredContacts"
             :key="c.address"
@@ -72,13 +79,9 @@
             <span class="topbar-more" @click="showSettings = true"><t-icon name="ellipsis" /></span>
           </div>
           <div class="message-area" ref="messagesContainer"
-               @touchstart.passive="onMessageTouchStart"
-               @touchmove.passive="onMessageTouchMove"
-               @touchend="onMessageTouchEnd">
-            <div class="pull-indicator" :style="{ height: pullOffset + 'px', opacity: Math.min(pullOffset / 60, 1) }">
-              <span v-if="pullRefreshing" class="pull-spinner"></span>
-              <span v-else class="pull-text">{{ pullOffset > 60 ? "释放刷新" : "下拉刷新" }}</span>
-            </div>
+               @touchstart.passive="onSwipeStart"
+               @touchmove.passive="onSwipeMove"
+               @touchend="onSwipeEnd">
             <div v-for="msg in conversation" :key="msg.id"
                  :class="['msg-row', nameFromAddr(msg.from) === ownAddress ? 'row-self' : 'row-other']">
               <MessageBubble
@@ -184,6 +187,7 @@ watch(selectedContact, (v) => { mobileChatOpen.value = isMobile.value && !!v; },
 
 const searchText = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
+const contactListRef = ref<HTMLElement | null>(null);
 const selectedKey = ref("local");
 const showHidden = ref(false);
 const ctxContact = ref<{ address: string; hidden: boolean } | null>(null);
@@ -406,27 +410,42 @@ function resolveDisplayName(addr: string) {
 
 function selectContact(addr: string) { selectedContact.value = addr; store.markRead(addr); }
 
-function onMessageTouchStart(e: TouchEvent) {
-  const t = e.touches[0]; msgTouchStartX = t.clientX; msgTouchStartY = t.clientY; msgTouchIsSwipe = false;
-  if (messagesContainer.value && messagesContainer.value.scrollTop <= 0) { pullStartY = t.clientY; }
+// Pull-to-refresh on contact list
+function onPullStart(e: TouchEvent) {
+  if (!contactListRef.value || contactListRef.value.scrollTop > 0) return;
+  pullStartY = e.touches[0].clientY;
 }
-function onMessageTouchMove(e: TouchEvent) {
-  const t = e.touches[0];
-  const dx = t.clientX - msgTouchStartX; const dy = t.clientY - msgTouchStartY;
-  if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.5 && !msgTouchIsSwipe) { msgTouchIsSwipe = true; pullOffset.value = 0; pullStartY = 0; }
-  if (msgTouchIsSwipe) return;
+function onPullMove(e: TouchEvent) {
   if (!pullStartY) return;
-  const deltaY = t.clientY - pullStartY;
-  if (deltaY <= 0) { pullOffset.value = 0; return; }
-  pullOffset.value = Math.min(deltaY * 0.5, 100);
+  const delta = e.touches[0].clientY - pullStartY;
+  if (delta <= 0) { pullOffset.value = 0; return; }
+  pullOffset.value = Math.min(delta * 0.5, 100);
 }
-async function onMessageTouchEnd(e: TouchEvent) {
-  if (msgTouchIsSwipe) {
-    if (e.changedTouches[0].clientX - msgTouchStartX > 100 && isMobile.value && selectedContact.value) { selectedContact.value = ""; }
-    return;
+async function onPullEnd() {
+  if (pullOffset.value > 60 && !pullRefreshing.value) {
+    pullRefreshing.value = true;
+    await store.loadMessages();
+    pullRefreshing.value = false;
   }
-  if (pullOffset.value > 60 && !pullRefreshing.value) { pullRefreshing.value = true; await store.loadMessages(); pullRefreshing.value = false; }
-  pullOffset.value = 0; pullStartY = 0; msgTouchStartX = 0; msgTouchStartY = 0;
+  pullOffset.value = 0; pullStartY = 0;
+}
+
+// Swipe-back on message area
+function onSwipeStart(e: TouchEvent) {
+  msgTouchStartX = e.touches[0].clientX;
+}
+function onSwipeMove(e: TouchEvent) {
+  const dx = e.touches[0].clientX - msgTouchStartX;
+  const dy = e.touches[0].clientY - msgTouchStartY;
+  if (Math.abs(dx) > 20 && Math.abs(dx) > Math.abs(dy)) {
+    msgTouchIsSwipe = true;
+  }
+}
+function onSwipeEnd(e: TouchEvent) {
+  if (msgTouchIsSwipe && e.changedTouches[0].clientX - msgTouchStartX > 100 && isMobile.value && selectedContact.value) {
+    selectedContact.value = "";
+  }
+  msgTouchStartX = 0; msgTouchStartY = 0; msgTouchIsSwipe = false;
 }
 
 async function handleSend() {
