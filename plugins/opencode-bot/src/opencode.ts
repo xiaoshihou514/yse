@@ -13,15 +13,35 @@ export interface BotState {
 
 export async function initBot(): Promise<BotState | null> {
   try {
-    const client = createOpencodeClient({ baseUrl: "http://localhost:4096" });
-    let projectDir = process.cwd();
+    const cwd = process.cwd();
+    const client = createOpencodeClient({
+      baseUrl: "http://localhost:4096",
+      directory: cwd,
+    });
+    let projectDir = cwd;
     try {
       const proj = await client.project.current();
       const data = proj.data as any;
       if (data?.worktree) projectDir = data.worktree;
     } catch {}
+    if (projectDir !== cwd) {
+      // Recreate client with correct directory
+      return initBotAt(projectDir);
+    }
     return { client, projectDir, sessions: {} };
   } catch (e: any) {
+    return null;
+  }
+}
+
+async function initBotAt(dir: string): Promise<BotState | null> {
+  try {
+    const client = createOpencodeClient({
+      baseUrl: "http://localhost:4096",
+      directory: dir,
+    });
+    return { client, projectDir: dir, sessions: {} };
+  } catch {
     return null;
   }
 }
@@ -70,21 +90,27 @@ export async function listSessions(
 ): Promise<{ label: string; value: string; description: string }[]> {
   try {
     const result = await client.session.list();
-    // Log raw response for debugging field structure
-    const raw = JSON.stringify(result).slice(0, 500);
-    process.stderr.write(`[opencode-bot] session.list raw: ${raw}\n`);
-    const sessions: any[] =
-      result?.data ?? result?.sessions ?? result?.items ?? (Array.isArray(result) ? result : []) ?? [];
-    if (sessions.length === 0 && result) {
-      const keys = typeof result === "object" && result !== null ? Object.keys(result).join(", ") : "not object";
-      process.stderr.write(`[opencode-bot] session.list response keys: [${keys}]\n`);
+    // The SDK might return { data: [...] }, { sessions: [...] }, or the array directly
+    let sessions: any[];
+    if (Array.isArray(result)) {
+      sessions = result;
+    } else if (result?.data) {
+      sessions = result.data;
+    } else if (result?.sessions) {
+      sessions = result.sessions;
+    } else if (result?.items) {
+      sessions = result.items;
+    } else {
+      const raw = JSON.stringify(result).slice(0, 200);
+      process.stderr.write(`[opencode-bot] unexpected session.list format: ${raw}\n`);
+      return [];
     }
     return sessions.slice(0, 20).map((s: any) => ({
       label: s.title || s.id?.slice(0, 8) || "Untitled",
       value: s.id,
-      description: s.worktree
-        ? `📁 ${s.worktree}`
-        : `🕐 ${s.time?.updatedAt ? new Date(s.time.updatedAt).toLocaleDateString("zh-CN") : "?"}`,
+      description: s.directory || s.worktree
+        ? `📁 ${s.directory || s.worktree}`
+        : `🕐 ${s.updatedAt || s.updated ? new Date((s.updatedAt || s.updated) as number).toLocaleDateString("zh-CN") : "?"}`,
     }));
   } catch (e: any) {
     process.stderr.write(`[opencode-bot] listSessions failed: ${e.message ?? e}\n`);
