@@ -117,8 +117,8 @@ export async function sendPrompt(
       sessionID: sessionId,
       parts: [{ type: "text", text }],
     });
-    const info = result.data?.info as any;
-    const parts: any[] = info?.parts ?? [];
+    const msg = result.data as any;
+    const parts: any[] = msg?.parts ?? [];
     const texts = parts
       .filter((p: any) => p.type === "text")
       .map((p: any) => p.text)

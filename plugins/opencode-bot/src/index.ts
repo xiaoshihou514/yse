@@ -308,9 +308,7 @@ async function cmdSessions(state: any, from: string) {
 async function cmdNew(state: any, from: string, us: any, title: string) {
   try {
     const result = await state.client.session.create({
-      body: {
-        title: title || undefined,
-      },
+      title: title || undefined,
     } as any);
     const sessionId = (result.data as any)?.id;
     if (!sessionId) {
