@@ -179,16 +179,38 @@ function formatToolInput(input: any): string {
   return s;
 }
 
+function isWriteTool(name: string): boolean {
+  return name === "write_to_file" || name === "edit_file" || name === "write_file";
+}
+
 function makeEventHandler(from: string) {
   return (type: string, data: any) => {
     switch (type) {
-      case "tool_called":
-        sendResponse(from, `🔧 ${data.name}(${formatToolInput(data.input)})`);
+      case "tool_called": {
+        if (data.name === "bash") {
+          const cmd = data.input?.command || formatToolInput(data.input);
+          sendResponse(from, `🔧 bash\n\`\`\`bash\n${cmd.slice(0, 2000)}\n\`\`\``);
+        } else if (isWriteTool(data.name)) {
+          const path = data.input?.filePath || "";
+          const content = data.input?.content || "";
+          sendResponse(from, `🔧 ${data.name}${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 2000)}\n\`\`\``);
+        } else {
+          sendResponse(from, `🔧 ${data.name}(${formatToolInput(data.input)})`);
+        }
         break;
+      }
       case "tool_success": {
         let msg = `✅ ${data.name} 完成`;
         const out = (data.output || "").slice(0, 2000);
-        if (out) msg += `\n${out}`;
+        if (out) {
+          if (data.name === "bash") {
+            msg += `\n\`\`\`\n${out}\n\`\`\``;
+          } else if (isWriteTool(data.name)) {
+            msg += `\n\`\`\`diff\n${out}\n\`\`\``;
+          } else {
+            msg += `\n${out}`;
+          }
+        }
         sendResponse(from, msg);
         break;
       }
