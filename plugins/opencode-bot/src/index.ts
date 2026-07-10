@@ -180,6 +180,27 @@ function isWriteTool(name: string): boolean {
   return name === "write_to_file" || name === "edit_file" || name === "write_file";
 }
 
+function formatReadOutput(out: string): string {
+  const pathM = out.match(/<path>([^<]*)<\/path>/);
+  const path = pathM?.[1] || "";
+  const typeM = out.match(/<type>([^<]*)<\/type>/);
+  const type = typeM?.[1] || "";
+  const entriesM = out.match(/<entries>\n?([\s\S]*?)\n?<\/entries>/);
+  const entriesRaw = entriesM?.[1] || "";
+  const entries = entriesRaw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("(") && !l.startsWith("<"));
+
+  if (type === "directory" && entries.length > 0) {
+    return `📂 ${path}\n${entries.map((e) => `  ${e}`).join("\n")}`;
+  }
+  if (type === "file" && entriesRaw) {
+    return `📄 ${path}\n${entriesRaw.slice(0, 1000)}`;
+  }
+  return out;
+}
+
 function makeEventHandler(from: string) {
   return (type: string, data: any) => {
     switch (type) {
@@ -191,6 +212,9 @@ function makeEventHandler(from: string) {
           const path = data.input?.filePath || "";
           const content = data.input?.content || "";
           sendResponse(from, `🔧 ${data.name}${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 2000)}\n\`\`\``);
+        } else if (data.name === "read") {
+          const path = data.input?.filePath || data.input?.filePattern || formatToolInput(data.input);
+          sendResponse(from, `📂 read: ${path.slice(0, 200)}`);
         } else {
           sendResponse(from, `🔧 ${data.name}(${formatToolInput(data.input)})`);
         }
@@ -204,6 +228,8 @@ function makeEventHandler(from: string) {
             msg += `\n\`\`\`\n${out}\n\`\`\``;
           } else if (isWriteTool(data.name)) {
             msg += `\n\`\`\`diff\n${out}\n\`\`\``;
+          } else if (data.name === "read") {
+            msg += `\n${formatReadOutput(out)}`;
           } else {
             msg += `\n${out}`;
           }
