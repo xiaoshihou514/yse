@@ -24,7 +24,8 @@ pub fn run() {
                 )
                 .build(),
         )
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init());
 
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
@@ -68,6 +69,7 @@ pub fn run() {
             commands::delete_conversation,
             commands::get_contact_hashes,
             commands::get_known_hostnames,
+            commands::read_attachment,
         ])
         .run(tauri::generate_context!())
         .expect("error while running yse mobile");

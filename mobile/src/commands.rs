@@ -11,14 +11,22 @@ use yse_core::{
 pub struct AppState {
     pub core: CoreState,
     pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
+    pub files_dir: std::path::PathBuf,
 }
 
 impl AppState {
     pub fn new(db_path: impl AsRef<std::path::Path>) -> Result<Self, String> {
-        let core = CoreState::new(db_path, "me")?;
+        let core = CoreState::new(&db_path, "me")?;
+        let files_dir = db_path
+            .as_ref()
+            .parent()
+            .unwrap_or_else(|| db_path.as_ref())
+            .join("files");
+        std::fs::create_dir_all(&files_dir).ok();
         Ok(Self {
             core,
             app_handle: Arc::new(std::sync::Mutex::new(None)),
+            files_dir,
         })
     }
 }
@@ -140,6 +148,7 @@ pub async fn start_polling(
         let key = key.as_ref().copied().ok_or("crypto key not set")?;
         (imap, key, state.core.store.clone(), cfg.own_address.clone())
     };
+    let files_dir = state.files_dir.clone();
 
     let last_uid = store
         .get_config_value("imap_last_uid")
@@ -204,6 +213,19 @@ pub async fn start_polling(
                             return;
                         }
                     };
+
+                    // Decrypt and save incoming file attachments
+                    if let Some(ref meta_files) = msg.files {
+                        if !parsed.files.is_empty() && !meta_files.is_empty() {
+                            let msg_dir = files_dir.join(&msg.id);
+                            std::fs::create_dir_all(&msg_dir).ok();
+                            for pf in &parsed.files {
+                                if let Ok(decrypted) = yse_core::crypto::decrypt(&key, &pf.data) {
+                                    let _ = std::fs::write(msg_dir.join(&pf.filename), decrypted);
+                                }
+                            }
+                        }
+                    }
 
                     let result = tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(async {
@@ -316,4 +338,14 @@ pub async fn get_contact_hashes(
         .get_contact_hashes()
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn read_attachment(
+    state: State<'_, AppState>,
+    message_id: String,
+    enc_name: String,
+) -> Result<Vec<u8>, String> {
+    let path = state.files_dir.join(&message_id).join(&enc_name);
+    std::fs::read(&path).map_err(|e| format!("读取附件失败: {}", e))
 }

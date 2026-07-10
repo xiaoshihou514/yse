@@ -28,6 +28,31 @@ md.validateLink = function (url: string): boolean {
   return /^(https?:\/\/|mailto:)/i.test(url);
 };
 
+// Open external links via Tauri shell plugin or window.open fallback
+md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
+  const token = tokens[idx];
+  const href = token.attrGet("href");
+  if (href && /^https?:\/\//i.test(href)) {
+    token.attrSet("target", "_blank");
+    token.attrSet("rel", "noopener noreferrer");
+  }
+  return self.renderToken(tokens, idx, options);
+};
+
 export function renderMarkdown(text: string): string {
   return md.render(text);
+}
+
+export function handleLinkClick(e: MouseEvent): void {
+  const target = e.target as HTMLElement;
+  const anchor = target.closest("a");
+  if (!anchor) return;
+  const href = anchor.getAttribute("href");
+  if (!href || !/^https?:\/\//i.test(href)) return;
+  e.preventDefault();
+  import("@tauri-apps/plugin-shell")
+    .then((mod) => mod.open(href))
+    .catch(() => {
+      window.open(href, "_blank", "noopener,noreferrer");
+    });
 }

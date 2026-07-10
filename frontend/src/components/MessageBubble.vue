@@ -14,6 +14,7 @@
         class="msg-text"
         v-if="message.text"
         v-html="renderMarkdown(message.text)"
+        @click="handleLinkClick"
       ></div>
       <PluginComponent
         v-if="(message.meta as any)?.plugin?.component"
@@ -21,15 +22,24 @@
         @respond="$emit('respond', $event)"
       />
       <div class="msg-files" v-if="message.files?.length">
-        <t-link
-          v-for="f in message.files"
-          :key="f.enc_name"
-          theme="primary"
-          size="small"
-          @click.prevent="downloadFile(message.id, f.enc_name, f.name)"
-        >
-          {{ f.name }} ({{ formatSize(f.size) }})
-        </t-link>
+        <template v-for="f in message.files" :key="f.enc_name">
+          <img
+            v-if="isImage(f.mime) && thumbUrls[f.enc_name]"
+            :src="thumbUrls[f.enc_name]"
+            :alt="f.name"
+            class="msg-img"
+            @click="openViewer(f)"
+            @error="onImgError(f.enc_name)"
+          />
+          <t-link
+            v-else
+            theme="primary"
+            size="small"
+            @click.prevent="downloadFile(message.id, f.enc_name, f.name)"
+          >
+            {{ f.name }} ({{ formatSize(f.size) }})
+          </t-link>
+        </template>
       </div>
       <div class="msg-time">{{ formatTime(message.timestamp) }}</div>
     </div>
@@ -43,19 +53,38 @@
         >⚠</span
       >
     </div>
+
+    <div v-if="viewerFile" class="viewer-overlay" @click.self="closeViewer">
+      <button class="viewer-close" @click="closeViewer">✕</button>
+      <img
+        v-if="viewerSrc"
+        :src="viewerSrc"
+        class="viewer-img"
+        @click.stop
+      />
+      <div v-else class="viewer-loading">加载中...</div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, reactive } from "vue";
 import PluginComponent from "./PluginComponent.vue";
-import { renderMarkdown } from "@/composables/useMarkdown";
+import { renderMarkdown, handleLinkClick } from "@/composables/useMarkdown";
 import { readAttachment } from "@/api/commands";
+
+interface FileItem {
+  name: string;
+  mime: string;
+  size: number;
+  enc_name: string;
+}
 
 interface Message {
   id: string;
   text?: string;
   timestamp: number;
-  files?: { name: string; enc_name: string; size: number }[];
+  files?: FileItem[];
   meta?: unknown;
 }
 
@@ -75,6 +104,59 @@ defineEmits<{
   respond: [value: string];
   retry: [msg: unknown];
 }>();
+
+const thumbUrls = reactive<Record<string, string>>({});
+const viewerFile = ref<FileItem | null>(null);
+const viewerSrc = ref("");
+
+function isImage(mime: string): boolean {
+  return mime.startsWith("image/");
+}
+
+async function loadThumb(
+  messageId: string,
+  encName: string,
+  fileName: string,
+) {
+  if (thumbUrls[encName]) return;
+  try {
+    const data = await readAttachment(messageId, encName);
+    const blob = new Blob([new Uint8Array(data)]);
+    thumbUrls[encName] = URL.createObjectURL(blob);
+  } catch {
+    // fall through — thumb stays broken
+  }
+}
+
+function onImgError(encName: string) {
+  // Clear broken thumb URL so v-if hides it
+  delete thumbUrls[encName];
+}
+
+async function openViewer(f: FileItem) {
+  viewerFile.value = f;
+  viewerSrc.value = "";
+  try {
+    const data = await readAttachment(props.message.id, f.enc_name);
+    const blob = new Blob([new Uint8Array(data)], { type: f.mime });
+    viewerSrc.value = URL.createObjectURL(blob);
+  } catch {
+    viewerSrc.value = "";
+  }
+}
+
+function closeViewer() {
+  if (viewerSrc.value) URL.revokeObjectURL(viewerSrc.value);
+  viewerFile.value = null;
+  viewerSrc.value = "";
+}
+
+// Load thumbs for image files on mount
+for (const f of props.message.files ?? []) {
+  if (isImage(f.mime)) {
+    loadThumb(props.message.id, f.enc_name, f.name);
+  }
+}
 
 function formatTime(ts: number) {
   const d = new Date(ts);
@@ -105,7 +187,8 @@ async function downloadFile(messageId: string, encName: string, fileName: string
     a.click();
     URL.revokeObjectURL(url);
   } catch {
-    // file not available
+    const { MessagePlugin } = await import("tdesign-vue-next");
+    MessagePlugin.error("附件下载失败：该文件可能已被删除或尚未下载完成").catch(() => {});
   }
 }
 </script>
@@ -177,6 +260,14 @@ async function downloadFile(messageId: string, encName: string, fileName: string
   flex-direction: column;
   gap: 2px;
 }
+.msg-img {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 6px;
+  cursor: pointer;
+  object-fit: cover;
+  margin-top: 4px;
+}
 .msg-time {
   font-size: 11px;
   margin-top: 4px;
@@ -202,5 +293,41 @@ async function downloadFile(messageId: string, encName: string, fileName: string
 .msg-retry {
   cursor: pointer;
   font-size: 14px;
+}
+
+.viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.9);
+}
+.viewer-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: #fff;
+  font-size: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.viewer-img {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+}
+.viewer-loading {
+  color: #fff;
+  font-size: 16px;
 }
 </style>
