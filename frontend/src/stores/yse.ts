@@ -170,6 +170,7 @@ export const useYseStore = defineStore("yse", () => {
   async function sendMessage(
     to: string,
     text: string,
+    files?: string[],
     meta?: Record<string, unknown>,
   ) {
     const own = config.value?.own_address ?? "";
@@ -183,7 +184,7 @@ export const useYseStore = defineStore("yse", () => {
     };
     pendingMessages.value.push(pending);
     try {
-      await api.sendMessage(to, text, undefined, meta);
+      await api.sendMessage(to, text, files, meta);
       // Remove pending immediately to avoid showing two messages simultaneously
       pendingMessages.value = pendingMessages.value.filter(
         (p) => p.id !== pending.id,
@@ -200,7 +201,7 @@ export const useYseStore = defineStore("yse", () => {
     componentId: string,
     value: string,
   ) {
-    await sendMessage(to, `[${componentId}] ${value}`, {
+    await sendMessage(to, `[${componentId}] ${value}`, undefined, {
       plugin: { response: { component_id: componentId, value } },
     });
   }

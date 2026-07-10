@@ -58,6 +58,11 @@ impl Message {
         self
     }
 
+    pub fn with_files(mut self, files: Vec<FileAttachment>) -> Self {
+        self.files = Some(files);
+        self
+    }
+
     pub fn to_json(&self) -> Result<Vec<u8>, MessageError> {
         serde_json::to_vec(self).map_err(|e| MessageError::Serialize(e.to_string()))
     }

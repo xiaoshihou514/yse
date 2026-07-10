@@ -221,16 +221,48 @@ pub async fn send_message(
     state: State<'_, YseState>,
     to: String,
     text: String,
-    _files: Option<Vec<String>>,
+    files: Option<Vec<String>>,
     meta: Option<serde_json::Value>,
 ) -> Result<(), String> {
-    // Format sender address using session registry (name#hash@hostname)
+    use yse_core::crypto::encrypt;
+    use yse_core::message::FileAttachment;
+
     let from_addr = state.core.session_registry.format_sender_address(&to);
 
-    let msg = match meta {
+    let mut msg = match meta {
         Some(m) => Message::new(from_addr, to.clone(), Some(text)).with_meta(m),
         None => Message::new(from_addr, to.clone(), Some(text)),
     };
+
+    // Process file attachments: read → encrypt → add metadata
+    let mut attachments: Vec<(String, Vec<u8>)> = Vec::new();
+    if let Some(ref file_paths) = files {
+        if !file_paths.is_empty() {
+            let key = {
+                let guard = state.core.crypto_key.read().await;
+                guard.as_ref().copied().ok_or("crypto key not set")?
+            };
+            let mut file_meta = Vec::new();
+            for (i, path) in file_paths.iter().enumerate() {
+                let bytes = std::fs::read(path).map_err(|e| format!("读取文件失败: {}", e))?;
+                let enc_name = format!("f{i}.bin");
+                let encrypted = encrypt(&key, &bytes).map_err(|e| e.to_string())?;
+                let name = std::path::Path::new(path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                file_meta.push(FileAttachment {
+                    name,
+                    mime: "application/octet-stream".into(),
+                    size: bytes.len() as u64,
+                    enc_name: enc_name.clone(),
+                });
+                attachments.push((enc_name, encrypted));
+            }
+            msg = msg.with_files(file_meta);
+        }
+    }
 
     // Save message
     state
@@ -257,7 +289,7 @@ pub async fn send_message(
         .await;
 
     // Send via SMTP — fail the command if delivery fails
-    if let Err(e) = state.core.send_encrypted(&msg).await {
+    if let Err(e) = state.core.send_encrypted(&msg, attachments).await {
         log::error!("SMTP send failed: {}", e);
         return Err(format!("SMTP 发送失败: {}", e));
     }
@@ -440,7 +472,7 @@ impl YseState {
                                     msg.from_addr.clone(),
                                     Some(reply_text),
                                 );
-                                if let Err(e) = core_clone.send_encrypted(&reply_msg).await {
+                                if let Err(e) = core_clone.send_encrypted(&reply_msg, vec![]).await {
                                     log::warn!("send_plugin_error_reply failed: {}", e);
                                 }
                             }

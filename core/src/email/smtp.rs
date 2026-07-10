@@ -38,7 +38,7 @@ impl SmtpSender {
         from: (&str, &str),
         to: &str,
         body: Vec<u8>,
-        attachments: Vec<(&str, Vec<u8>)>,
+        attachments: Vec<(String, Vec<u8>)>,
     ) -> Result<(), SmtpError> {
         let mut multipart = MultiPart::mixed().singlepart(
             SinglePart::builder()
@@ -49,7 +49,7 @@ impl SmtpSender {
         for (fname, data) in attachments {
             let part = SinglePart::builder()
                 .header(ContentType::parse("application/octet-stream").unwrap())
-                .header(ContentDisposition::attachment(fname))
+                .header(ContentDisposition::attachment(&fname))
                 .body(data);
             multipart = multipart.singlepart(part);
         }

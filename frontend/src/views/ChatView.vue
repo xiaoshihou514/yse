@@ -164,6 +164,7 @@
             v-if="!(showSettings && !isMobile)"
             v-model="inputText"
             @send="handleSend"
+            @attach="handleAttach"
           />
         </template>
         <div class="chat-panel chat-empty" v-else>
@@ -265,6 +266,7 @@ const route = useRoute();
 const store = useYseStore();
 const isMobile = useIsMobile();
 const inputText = ref("");
+const pendingFiles = ref<string[]>([]);
 const selectedContact = ref("");
 
 let msgTouchStartX = 0;
@@ -720,13 +722,27 @@ function onSwipeEnd(e: TouchEvent) {
 }
 
 async function handleSend() {
-  if (!inputText.value.trim() || !selectedContact.value) return;
+  if (!selectedContact.value) return;
+  const text = inputText.value.trim();
+  const files = pendingFiles.value.length > 0 ? [...pendingFiles.value] : undefined;
   try {
-    await store.sendMessage(selectedContact.value, inputText.value.trim());
+    await store.sendMessage(selectedContact.value, text, files);
     inputText.value = "";
+    pendingFiles.value = [];
     await scrollToBottom();
-  } catch (e) {
-    MessagePlugin.error(`发送失败: ${e}`).catch(() => {});
+  } catch (e) { MessagePlugin.error(`发送失败: ${e}`).catch(() => {}); }
+}
+
+async function handleAttach() {
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({ multiple: true, title: "选择文件" });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    pendingFiles.value = [...pendingFiles.value, ...paths];
+    MessagePlugin.info(`已选择 ${paths.length} 个文件`).catch(() => {});
+  } catch {
+    // Not in Tauri environment
   }
 }
 
