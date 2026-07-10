@@ -9,22 +9,91 @@ process.on("exit", () => {
   }
 });
 
+// ---- Model configuration types ----
+
+export interface ModelSpec {
+  modelId: string;
+  providerId: string;
+  variant?: string;
+}
+
+export interface ModelConfig {
+  defaultModel?: ModelSpec;
+  fallbackChain: ModelSpec[];
+}
+
+export interface SessionState {
+  mode: "sdk" | "tui";
+  sessionId: string | null;
+  modelId?: string;
+  providerId?: string;
+  modelVariant?: string;
+  agentId?: string;
+  modelMode?: "global" | "manual";
+}
+
 export interface BotState {
   client: ReturnType<typeof createOpencodeClient>;
   projectDir: string;
   baseUrl: string;
   sessions: {
-    [userAddr: string]: {
-      mode: "sdk" | "tui";
-      sessionId: string | null;
-      modelId?: string;
-      providerId?: string;
-      modelVariant?: string;
-      agentId?: string;
-    };
+    [userAddr: string]: SessionState;
   };
+  modelConfig: ModelConfig;
   serverProcess: ChildProcess | null;
 }
+
+// ---- Pure model resolution logic (testable without server) ----
+
+export function resolveModelChain(
+  session: { modelMode?: string; modelId?: string; providerId?: string; modelVariant?: string },
+  globalConfig: ModelConfig,
+): ModelSpec[] {
+  if (session.modelMode === "manual" && session.modelId && session.providerId) {
+    return [{ modelId: session.modelId, providerId: session.providerId, variant: session.modelVariant }];
+  }
+  const chain: ModelSpec[] = [];
+  if (globalConfig.defaultModel) {
+    chain.push(globalConfig.defaultModel);
+  }
+  chain.push(...globalConfig.fallbackChain);
+  if (chain.length === 0) {
+    return [{ modelId: "", providerId: "" }];
+  }
+  return chain;
+}
+
+export function isQuotaError(e: any): boolean {
+  if (!e?.message) return false;
+  const msg = String(e.message).toLowerCase();
+  return ["quota", "rate", "limit", "exhausted", "insufficient", "429"].some(k => msg.includes(k));
+}
+
+export async function tryModelsWithFallback(
+  chain: ModelSpec[],
+  attemptFn: (spec: ModelSpec, index: number) => Promise<string>,
+  onSwitch?: (from: ModelSpec, to: ModelSpec) => void,
+): Promise<string> {
+  const attempts = chain.length > 0 ? chain : [{ modelId: "", providerId: "" }];
+  let lastError: any = null;
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      return await attemptFn(attempts[i], i);
+    } catch (e: any) {
+      if (isQuotaError(e)) {
+        lastError = e;
+        if (i + 1 < attempts.length) {
+          onSwitch?.(attempts[i], attempts[i + 1]);
+        }
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError || new Error("所有模型均不可用");
+}
+
+// ---- Server management ----
 
 function startServer(): { child: ChildProcess; port: Promise<number> } {
   const child = spawn("opencode", ["serve", "--port", "0", "--print-logs"], {
@@ -68,7 +137,6 @@ export async function initBot(): Promise<BotState | null> {
     const baseUrl = `http://127.0.0.1:${actualPort}`;
     let projectDir = cwd;
 
-    // Retry project.current() — server may not be ready immediately
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const probe = createOpencodeClient({ baseUrl, directory: projectDir });
@@ -88,7 +156,12 @@ export async function initBot(): Promise<BotState | null> {
       directory: projectDir,
     });
 
-    return { client, projectDir, baseUrl, sessions: {}, serverProcess: child };
+    return {
+      client, projectDir, baseUrl,
+      sessions: {},
+      modelConfig: { defaultModel: undefined, fallbackChain: [] },
+      serverProcess: child,
+    };
   } catch (e: any) {
     process.stderr.write(`[opencode-bot] initBot failed: ${e.message ?? e}\n`);
     return null;
@@ -104,11 +177,37 @@ export function killServer(state: BotState) {
 export function getUserState(
   state: BotState,
   userAddr: string,
-): BotState["sessions"][string] {
+): SessionState {
   if (!state.sessions[userAddr]) {
-    state.sessions[userAddr] = { mode: "sdk", sessionId: null };
+    state.sessions[userAddr] = { mode: "sdk", sessionId: null, modelMode: "global" };
   }
   return state.sessions[userAddr];
+}
+
+// ---- Prompt helpers ----
+
+function buildPromptParams(
+  sessionId: string,
+  text: string,
+  directory: string | undefined,
+  spec: ModelSpec,
+  agentId: string | undefined,
+): any {
+  const params: any = {
+    sessionID: sessionId,
+    parts: [{ type: "text", text }],
+    ...(directory ? { directory } : {}),
+  };
+  if (spec.modelId && spec.providerId) {
+    params.model = {
+      id: spec.modelId,
+      providerID: spec.providerId,
+      ...(spec.variant ? { variant: spec.variant } : {}),
+    };
+  } else if (agentId) {
+    params.agent = agentId;
+  }
+  return params;
 }
 
 export async function sendPromptStreaming(
@@ -116,32 +215,15 @@ export async function sendPromptStreaming(
   sessionId: string,
   text: string,
   directory: string | undefined,
-  modelOpts: { modelId?: string; providerId?: string; variant?: string; agentId?: string } | undefined,
+  chain: ModelSpec[],
+  agentId: string | undefined,
   onEvent: (type: string, data: any) => void,
 ): Promise<string> {
-  const promptParams: any = {
-    sessionID: sessionId,
-    parts: [{ type: "text", text }],
-    ...(directory ? { directory } : {}),
-  };
-  if (modelOpts?.modelId && modelOpts?.providerId) {
-    promptParams.model = {
-      id: modelOpts.modelId,
-      providerID: modelOpts.providerId,
-      ...(modelOpts.variant ? { variant: modelOpts.variant } : {}),
-    };
-  }
-  if (modelOpts?.agentId && !modelOpts?.modelId) {
-    promptParams.agent = modelOpts.agentId;
-  }
-
-  // Track assistant message ID for this prompt
   let ourMessageId: string | null = null;
   const abortController = new AbortController();
-
-  // Subscribe to global SSE events and process events directly from the generator
   let eventStream: any = null;
   let eventConsumer: Promise<void> | null = null;
+
   try {
     const sub = await client.global.event({ signal: abortController.signal });
     eventStream = sub.stream;
@@ -149,14 +231,11 @@ export async function sendPromptStreaming(
     eventConsumer = (async () => {
       try {
         for await (const raw of eventStream) {
-          // /global/event wraps in payload; /event does not
           const ev = raw?.payload || raw;
           if (!ev?.type) continue;
           const p = ev.properties;
-
           if (!p?.sessionID || p.sessionID !== sessionId) continue;
 
-          // Capture assistant message ID from first assistant message.updated
           if (!ourMessageId && ev.type === "message.updated") {
             const info = p.info || p;
             if (info?.role === "assistant" && info?.id) {
@@ -165,8 +244,7 @@ export async function sendPromptStreaming(
           }
           if (!ourMessageId) continue;
 
-          // Helper to get messageID from event properties
-          const msgId = p.info?.part?.messageID || p.messageID || (p.info?.messageID);
+          const msgId = p.info?.part?.messageID || p.messageID || p.info?.messageID;
           if (msgId && msgId !== ourMessageId) continue;
 
           if (ev.type === "message.part.updated") {
@@ -177,8 +255,7 @@ export async function sendPromptStreaming(
             if (s.status === "running" || s.status === "pending") {
               onEvent("tool_called", { name: part.tool, input: s.input });
             } else if (s.status === "completed") {
-              const output = s.output || "";
-              onEvent("tool_success", { name: part.tool, output, result: s.metadata });
+              onEvent("tool_success", { name: part.tool, output: s.output || "", result: s.metadata });
             }
           }
         }
@@ -191,14 +268,26 @@ export async function sendPromptStreaming(
   }
 
   try {
-    const result = await client.session.prompt(promptParams);
-    const msg = result.data as any;
-    const parts: any[] = msg?.parts ?? [];
-    const texts = parts
-      .filter((p: any) => p.type === "text")
-      .map((p: any) => p.text)
-      .filter(Boolean);
-    return texts.join("\n") || "(empty response)";
+    return await tryModelsWithFallback(
+      chain,
+      async (spec) => {
+        ourMessageId = null;
+        const params = buildPromptParams(sessionId, text, directory, spec, agentId);
+        const result = await client.session.prompt(params);
+        const msg = result.data as any;
+        const texts = (msg?.parts ?? [])
+          .filter((p: any) => p.type === "text")
+          .map((p: any) => p.text)
+          .filter(Boolean);
+        return texts.join("\n") || "(empty response)";
+      },
+      (from, to) => {
+        onEvent("model_switched", {
+          from: { modelId: from.modelId, providerId: from.providerId },
+          to: { modelId: to.modelId, providerId: to.providerId },
+        });
+      },
+    );
   } catch (e: any) {
     return `Error: ${e.message ?? e}`;
   } finally {
@@ -214,36 +303,29 @@ export async function sendPrompt(
   sessionId: string,
   text: string,
   directory?: string,
-  modelOpts?: { modelId?: string; providerId?: string; variant?: string; agentId?: string },
+  chain?: ModelSpec[],
+  agentId?: string,
 ): Promise<string> {
   try {
-    const promptParams: any = {
-      sessionID: sessionId,
-      parts: [{ type: "text", text }],
-      ...(directory ? { directory } : {}),
-    };
-    if (modelOpts?.modelId && modelOpts?.providerId) {
-      promptParams.model = {
-        id: modelOpts.modelId,
-        providerID: modelOpts.providerId,
-        ...(modelOpts.variant ? { variant: modelOpts.variant } : {}),
-      };
-    }
-    if (modelOpts?.agentId && !modelOpts?.modelId) {
-      promptParams.agent = modelOpts.agentId;
-    }
-    const result = await client.session.prompt(promptParams);
-    const msg = result.data as any;
-    const parts: any[] = msg?.parts ?? [];
-    const texts = parts
-      .filter((p: any) => p.type === "text")
-      .map((p: any) => p.text)
-      .filter(Boolean);
-    return texts.join("\n") || "(empty response)";
+    return await tryModelsWithFallback(
+      chain ?? [{ modelId: "", providerId: "" }],
+      async (spec) => {
+        const params = buildPromptParams(sessionId, text, directory, spec, agentId);
+        const result = await client.session.prompt(params);
+        const msg = result.data as any;
+        const texts = (msg?.parts ?? [])
+          .filter((p: any) => p.type === "text")
+          .map((p: any) => p.text)
+          .filter(Boolean);
+        return texts.join("\n") || "(empty response)";
+      },
+    );
   } catch (e: any) {
     return `Error: ${e.message ?? e}`;
   }
 }
+
+// ---- Listing helpers ----
 
 export async function listModels(
   state: BotState,
@@ -305,7 +387,6 @@ export async function fetchAllSessions(
   client: any,
   baseUrl?: string,
 ): Promise<any[]> {
-  // Use a temp client without directory scope to get cross-project sessions
   const listingClient = (baseUrl ? createOpencodeClient({ baseUrl }) : client);
 
   try {
@@ -320,10 +401,8 @@ export async function fetchAllSessions(
       }));
     }
   } catch {
-    // fall through
   }
 
-  // Fallback: experimental API
   try {
     const result = await listingClient.experimental.session.list();
     let sessions: any[];
@@ -355,7 +434,6 @@ export async function fetchAllSessions(
     return [];
   } finally {
     if (listingClient !== client && typeof listingClient === "object") {
-      // no explicit cleanup needed for in-memory client
     }
   }
 }
