@@ -102,7 +102,7 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 - Child processes, JSON-RPC over stdin/stdout. Plugin sends `send`/`log`. Core sends `message`/`config`/`shutdown`.
 - No auto-start on boot. `SessionRegistry::route()` starts plugin on demand.
 - Crashed plugins auto-restart up to 3 times.
-- Plugins outside workspace: `plugins/echo-bot` (Rust), `plugins/opencode-bot` (TypeScript), `plugins/file-tree` (Rust).
+- Plugins outside workspace: `plugins/echo-bot` (Rust), `plugins/opencode-bot` (TypeScript), `plugins/file-tree` (Rust), `plugins/project-manager` (Rust + rig-core + Ollama).
 
 ## Mobile (Android)
 

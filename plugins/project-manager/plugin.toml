@@ -1,0 +1,6 @@
+[plugin]
+id = "project-manager"
+name = "项目经理"
+version = "0.1.0"
+exec = "project-manager"
+description = "AI 项目经理，为项目争取开发经费"
