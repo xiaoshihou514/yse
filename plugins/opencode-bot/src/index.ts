@@ -152,6 +152,7 @@ async function main() {
         makeEventHandler(from),
       );
       sendResponse(from, reply);
+      sendResponse(from, "✅ 处理完成");
     } else {
       sendResponse(from, "请先选择会话：/sessions 或 /new [标题]");
     }
@@ -352,6 +353,7 @@ async function handleCommand(
           makeEventHandler(from),
         );
         sendResponse(from, reply);
+        sendResponse(from, "✅ 处理完成");
       }
       break;
     }
