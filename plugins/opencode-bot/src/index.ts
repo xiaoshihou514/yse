@@ -18,17 +18,13 @@ const HELP = `可用命令：
 /sessions     — 按项目目录选择会话（点选切换）
 /select <id>  — 直接按 ID 切换会话
 /new [标题] [目录] — 新建会话（可选指定目录）
-/info         — 当前会话详情
 /curr         — 查看当前选中的会话和模式
 /abort        — 中止当前生成
 /undo         — 撤回上一条消息
-/redo         — 恢复撤回
-/messages [n] — 查看最近 n 条消息（默认 5）
 /models       — 列出可用模型（点选用该模型新建会话）
 /variants     — 列出当前模型可用 variant（点选用该 variant 新建会话）
 /plan         — 列出可用 plan（点选用该 plan 新建会话）
 /skills       — 列出可用 skill
-/project      — 当前项目信息
 /help         — 显示此帮助`;
 
 let stateFile = "";
@@ -268,14 +264,6 @@ async function handleCommand(
       break;
     }
 
-    case "info":
-      if (!us.sessionId) {
-        sendResponse(from, "未选择会话");
-        break;
-      }
-      sendResponse(from, await getSessionInfo(state.client, us.sessionId));
-      break;
-
     case "abort":
       if (!us.sessionId) {
         sendResponse(from, "未选择会话");
@@ -300,23 +288,6 @@ async function handleCommand(
       } catch (e: any) {
         sendResponse(from, `撤回失败: ${e.message ?? e}`);
       }
-      break;
-
-    case "redo":
-      if (!us.sessionId) {
-        sendResponse(from, "未选择会话");
-        break;
-      }
-      try {
-        await state.client.session.unrevert({ sessionID: us.sessionId });
-        sendResponse(from, "✅ 已恢复撤回");
-      } catch (e: any) {
-        sendResponse(from, `恢复失败: ${e.message ?? e}`);
-      }
-      break;
-
-    case "messages":
-      await cmdMessages(state, from, us, arg);
       break;
 
     case "models": {
@@ -394,10 +365,6 @@ async function handleCommand(
       sendResponse(from, list.map((s) => `• ${s.label}\n  ${s.description}`).join("\n\n"));
       break;
     }
-
-    case "project":
-      await cmdProject(state, from);
-      break;
 
     default:
       sendResponse(from, `未知命令: /${cmd}\n输入 /help 查看可用命令`);
@@ -480,54 +447,6 @@ async function cmdNew(state: any, from: string, us: any, arg: string) {
     saveStateImpl(state);
   } catch (e: any) {
     sendResponse(from, `创建会话失败: ${e.message ?? e}`);
-  }
-}
-
-async function cmdMessages(state: any, from: string, us: any, arg: string) {
-  if (!us.sessionId) {
-    sendResponse(from, "未选择会话");
-    return;
-  }
-  const limit = parseInt(arg, 10) || 5;
-  try {
-    const result = await state.client.session.messages({ sessionID: us.sessionId });
-    const msgs = (result.data as any[]) ?? [];
-    const recent = msgs.slice(-limit);
-    if (recent.length === 0) {
-      sendResponse(from, "暂无消息");
-      return;
-    }
-    const lines = recent.map((m: any, i: number) => {
-      const role = m.info?.role ?? "?";
-      const text =
-        m.parts
-          ?.filter((p: any) => p.type === "text")
-          .map((p: any) => p.text)
-          .join(" ")
-          .slice(0, 200) ?? "";
-      return `${i + 1}. [${role}] ${text}`;
-    });
-    sendResponse(from, lines.join("\n\n"));
-  } catch (e: any) {
-    sendResponse(from, `获取消息失败: ${e.message ?? e}`);
-  }
-}
-
-async function cmdProject(state: any, from: string) {
-  try {
-    const p = await state.client.project.current();
-    const data = p.data as any;
-    if (!data) {
-      sendResponse(from, "未获取到项目信息");
-      return;
-    }
-    const lines: string[] = [];
-    if (data.name) lines.push(`📁 项目: ${data.name}`);
-    if (data.directory) lines.push(`📂 目录: ${data.directory}`);
-    lines.push(`📍 当前目录: ${state.projectDir}`);
-    sendResponse(from, lines.join("\n"));
-  } catch {
-    sendResponse(from, "获取项目信息失败");
   }
 }
 
