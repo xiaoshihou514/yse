@@ -122,6 +122,7 @@ const initial = computed(() => {
   width: 100%;
   max-width: 100%;
   animation: slideUp 0.3s ease;
+  padding-top: env(safe-area-inset-top, 0);
 }
 .settings-header {
   display: flex;
