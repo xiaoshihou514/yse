@@ -174,6 +174,13 @@ export async function getContactHashes(): Promise<[string, string][]> {
   return invoke("get_contact_hashes");
 }
 
+export async function readAttachment(
+  messageId: string,
+  encName: string,
+): Promise<number[]> {
+  return invoke("read_attachment", { messageId, encName });
+}
+
 export async function getKnownHostnames(): Promise<string[]> {
   return invoke("get_known_hostnames");
 }

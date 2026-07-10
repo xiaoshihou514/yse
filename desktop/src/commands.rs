@@ -24,13 +24,17 @@ use yse_core::{
 pub struct YseState {
     pub core: yse_core::app::CoreState,
     pub app_handle: Arc<std::sync::Mutex<Option<tauri::AppHandle>>>,
+    pub files_dir: std::path::PathBuf,
 }
 
 impl YseState {
     pub fn new(db_path: std::path::PathBuf) -> Result<Self, String> {
+        let files_dir = db_path.parent().unwrap_or(&db_path).join("files");
+        std::fs::create_dir_all(&files_dir).ok();
         Ok(Self {
             core: yse_core::app::CoreState::new(db_path, "me")?,
             app_handle: Arc::new(std::sync::Mutex::new(None)),
+            files_dir,
         })
     }
 
@@ -325,6 +329,16 @@ pub async fn save_config(state: State<'_, YseState>, config: YseConfig) -> Resul
     state.update_config(config).await
 }
 
+#[tauri::command]
+pub async fn read_attachment(
+    state: State<'_, YseState>,
+    message_id: String,
+    enc_name: String,
+) -> Result<Vec<u8>, String> {
+    let path = state.files_dir.join(&message_id).join(&enc_name);
+    std::fs::read(&path).map_err(|e| format!("读取附件失败: {}", e))
+}
+
 impl YseState {
     /// Start IMAP polling. Called from Tauri command or auto-start.
     pub async fn start_polling_inner(&self, app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -370,6 +384,7 @@ impl YseState {
         let save_store = store.clone();
 
         let core_clone = self.core.clone();
+        let file_dir = self.files_dir.clone();
         let poller_flag = self.core.poller_running.clone();
         tokio::spawn(async move {
             let mut poller = ImapPoller::new(imap_cfg, last_uid);
@@ -417,6 +432,19 @@ impl YseState {
                                 return;
                             }
                         };
+
+                        // Decrypt and save incoming file attachments
+                        if let Some(ref meta_files) = msg.files {
+                            if !parsed.files.is_empty() && !meta_files.is_empty() {
+                                let msg_dir = file_dir.join(&msg.id);
+                                std::fs::create_dir_all(&msg_dir).ok();
+                                for pf in &parsed.files {
+                                    if let Ok(decrypted) = decrypt(&key, &pf.data) {
+                                        let _ = std::fs::write(msg_dir.join(&pf.filename), decrypted);
+                                    }
+                                }
+                            }
+                        }
 
                         let store = store.clone();
                         let handle = app_handle.clone();

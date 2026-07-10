@@ -26,6 +26,7 @@
           :key="f.enc_name"
           theme="primary"
           size="small"
+          @click.prevent="downloadFile(message.id, f.enc_name, f.name)"
         >
           {{ f.name }} ({{ formatSize(f.size) }})
         </t-link>
@@ -48,8 +49,10 @@
 <script setup lang="ts">
 import PluginComponent from "./PluginComponent.vue";
 import { renderMarkdown } from "@/composables/useMarkdown";
+import { readAttachment } from "@/api/commands";
 
 interface Message {
+  id: string;
   text?: string;
   timestamp: number;
   files?: { name: string; enc_name: string; size: number }[];
@@ -89,6 +92,21 @@ function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function downloadFile(messageId: string, encName: string, fileName: string) {
+  try {
+    const data = await readAttachment(messageId, encName);
+    const blob = new Blob([new Uint8Array(data)]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    // file not available
+  }
 }
 </script>
 
