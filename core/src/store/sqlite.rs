@@ -64,12 +64,16 @@ impl SqliteStorage {
                 address TEXT PRIMARY KEY
             );
 
-            CREATE TABLE IF NOT EXISTS processed_ids (
+                CREATE TABLE IF NOT EXISTS processed_ids (
                 id TEXT PRIMARY KEY
             );
             ",
         )
         .map_err(|e| StoreError::Db(e.to_string()))?;
+
+        // Migration v2: add auto_start column (ignore if already exists)
+        conn.execute_batch("ALTER TABLE plugins ADD COLUMN auto_start INTEGER DEFAULT 0;")
+            .ok();
 
         // Migrate: copy existing processed marks from messages table to processed_ids
         conn.execute(
@@ -183,7 +187,7 @@ impl Storage for SqliteStorage {
             .lock()
             .map_err(|e| StoreError::Db(e.to_string()))?;
         let mut stmt = conn
-            .prepare("SELECT id, name, exec_path, args, enabled FROM plugins")
+            .prepare("SELECT id, name, exec_path, args, enabled, auto_start FROM plugins")
             .map_err(|e| StoreError::Db(e.to_string()))?;
         let rows = stmt
             .query_map([], |row| {
@@ -194,6 +198,7 @@ impl Storage for SqliteStorage {
                     exec_path: row.get(2)?,
                     args: serde_json::from_str(&args_str).unwrap_or_default(),
                     enabled: row.get::<_, i32>(4)? != 0,
+                    auto_start: row.get::<_, i32>(5)? != 0,
                 })
             })
             .map_err(|e| StoreError::Db(e.to_string()))?;
@@ -209,8 +214,8 @@ impl Storage for SqliteStorage {
             .map_err(|e| StoreError::Db(e.to_string()))?;
         let args_str = serde_json::to_string(&plugin.args).unwrap_or_default();
         conn.execute(
-            "INSERT OR REPLACE INTO plugins (id, name, exec_path, args, enabled) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![plugin.id, plugin.name, plugin.exec_path, args_str, i32::from(plugin.enabled)],
+            "INSERT OR REPLACE INTO plugins (id, name, exec_path, args, enabled, auto_start) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![plugin.id, plugin.name, plugin.exec_path, args_str, i32::from(plugin.enabled), i32::from(plugin.auto_start)],
         )
         .map_err(|e| StoreError::Db(e.to_string()))?;
         Ok(())
@@ -389,6 +394,7 @@ mod tests {
                 exec_path: "/usr/bin/echo".into(),
                 args: vec!["hello".into()],
                 enabled: true,
+                auto_start: true,
             };
             db.save_plugin(&plugin).await.unwrap();
             let plugins = db.list_plugins().await.unwrap();

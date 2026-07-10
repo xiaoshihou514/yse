@@ -54,6 +54,7 @@ export interface PluginConfig {
   exec_path: string;
   args: string[];
   enabled: boolean;
+  auto_start: boolean;
 }
 
 export interface YseConfig {

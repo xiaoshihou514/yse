@@ -71,6 +71,7 @@ pub fn run() {
             commands::add_plugin,
             commands::remove_plugin,
             commands::toggle_plugin,
+            commands::set_plugin_auto_start,
             commands::start_plugin,
             commands::stop_plugin,
             commands::list_running_plugins,

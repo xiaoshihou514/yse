@@ -14,6 +14,13 @@
         <template #exec_path="{ row }">
           <span class="path-cell">{{ row.exec_path }}</span>
         </template>
+        <template #auto_start="{ row }">
+          <t-switch
+            :value="row.auto_start"
+            size="small"
+            @change="(v: boolean) => toggleAutoStart(row.id, v)"
+          />
+        </template>
         <template #operation="{ row }">
           <div class="row-actions">
             <t-button
@@ -44,6 +51,7 @@
           style="width: 300px"
         />
         <t-button variant="outline" @click="pickFile">选择文件</t-button>
+        <t-checkbox v-model="autoStart">随应用启动</t-checkbox>
         <t-button @click="handleAdd">添加</t-button>
       </t-space>
     </t-card>
@@ -136,6 +144,9 @@
             </template>
           </t-form-item>
           <t-form-item>
+            <t-checkbox v-model="autoStart">随应用启动</t-checkbox>
+          </t-form-item>
+          <t-form-item>
             <t-button block @click="handleAdd">添加</t-button>
           </t-form-item>
         </t-form>
@@ -210,6 +221,7 @@ const store = useYseStore();
 const loading = ref(false);
 const newName = ref("");
 const newExec = ref("");
+const autoStart = ref(false);
 const showAdd = ref(false);
 const showPluginQrDialog = ref(false);
 const { qrDataUrl: pluginQrUrl, generate: generateQr } = useQrCode();
@@ -219,6 +231,7 @@ const qrPluginAddr = ref("");
 const columns = [
   { colKey: "name", title: "名称" },
   { colKey: "exec_path", title: "路径" },
+  { colKey: "auto_start", title: "自启动" },
   { colKey: "operation", title: "操作" },
 ];
 
@@ -255,6 +268,16 @@ async function handleDelete(row: PluginConfig) {
   }
 }
 
+async function toggleAutoStart(id: string, auto_start: boolean) {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_plugin_auto_start", { id, autoStart: auto_start });
+    await store.loadPlugins();
+  } catch (e) {
+    showError("设置自启动", e);
+  }
+}
+
 async function handleAdd() {
   if (!newName.value || !newExec.value) {
     await MessagePlugin.warning("请填写插件名称和执行路径");
@@ -265,9 +288,11 @@ async function handleAdd() {
     await invoke("add_plugin", {
       name: newName.value,
       execPath: newExec.value,
+      autoStart: autoStart.value,
     });
     newName.value = "";
     newExec.value = "";
+    autoStart.value = false;
     showAdd.value = false;
     await store.loadPlugins();
     await store.loadConfig();

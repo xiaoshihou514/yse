@@ -542,15 +542,20 @@ impl YseState {
         Ok(())
     }
 
-    /// Load plugin configs into memory (no auto-start).
-    /// Plugins are started on demand by SessionRegistry when messages arrive.
+    /// Auto-start plugins with auto_start flag set.
     pub async fn auto_start_plugins(&self) {
         let plugins = match self.core.store.list_plugins().await {
             Ok(p) => p,
             Err(_) => return,
         };
-        let count = plugins.iter().filter(|p| p.enabled).count();
-        log::info!("loaded {} enabled plugin config(s), no auto-start", count);
+        let to_start: Vec<_> = plugins.iter().filter(|p| p.enabled && p.auto_start).collect();
+        log::info!("auto-starting {}/{} plugin(s)", to_start.len(), plugins.len());
+        for p in &to_start {
+            log::info!("auto-starting plugin: {} ({})", p.name, p.id);
+            if let Err(e) = self.core.process_manager.start(&p.id, &p.name, &p.exec_path, &p.args).await {
+                log::error!("failed to auto-start plugin {}: {}", p.id, e);
+            }
+        }
     }
 }
 
@@ -595,6 +600,7 @@ pub async fn add_plugin(
     state: State<'_, YseState>,
     name: String,
     exec_path: String,
+    auto_start: bool,
 ) -> Result<(), String> {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -607,6 +613,7 @@ pub async fn add_plugin(
         exec_path: exec_path.clone(),
         args: vec![],
         enabled: true,
+        auto_start,
     };
     state
         .core
@@ -644,17 +651,18 @@ pub async fn toggle_plugin(
     id: String,
     enabled: bool,
 ) -> Result<(), String> {
+    let plugins = state
+        .core
+        .store
+        .list_plugins()
+        .await
+        .map_err(|e| e.to_string())?;
+    let p = plugins
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or("plugin not found")?;
+
     if enabled {
-        let plugins = state
-            .core
-            .store
-            .list_plugins()
-            .await
-            .map_err(|e| e.to_string())?;
-        let p = plugins
-            .iter()
-            .find(|p| p.id == id)
-            .ok_or("plugin not found")?;
         state
             .core
             .process_manager
@@ -663,19 +671,55 @@ pub async fn toggle_plugin(
     } else {
         state.core.process_manager.stop(&id).await?;
     }
+
     state
         .core
         .store
         .save_plugin(&PluginConfig {
-            id,
-            name: String::new(),
-            exec_path: String::new(),
-            args: vec![],
+            id: id.clone(),
+            name: p.name.clone(),
+            exec_path: p.exec_path.clone(),
+            args: p.args.clone(),
             enabled,
+            auto_start: p.auto_start,
         })
         .await
         .map_err(|e| e.to_string())?;
     log::info!("plugin toggled");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_plugin_auto_start(
+    state: State<'_, YseState>,
+    id: String,
+    auto_start: bool,
+) -> Result<(), String> {
+    let plugins = state
+        .core
+        .store
+        .list_plugins()
+        .await
+        .map_err(|e| e.to_string())?;
+    let p = plugins
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or("plugin not found")?;
+
+    state
+        .core
+        .store
+        .save_plugin(&PluginConfig {
+            id: id.clone(),
+            name: p.name.clone(),
+            exec_path: p.exec_path.clone(),
+            args: p.args.clone(),
+            enabled: p.enabled,
+            auto_start,
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    log::info!("plugin auto_start set: {} -> {}", id, auto_start);
     Ok(())
 }
 

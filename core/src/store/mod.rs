@@ -46,6 +46,7 @@ pub struct PluginConfig {
     pub exec_path: String,
     pub args: Vec<String>,
     pub enabled: bool,
+    pub auto_start: bool,
 }
 
 pub mod sqlite;
