@@ -1,12 +1,15 @@
+mod config;
 mod state;
 mod tools;
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use config::Config;
 use rig_core::client::{CompletionClient, Nothing};
 use rig_core::completion::Prompt;
 use rig_core::providers::ollama;
+use rig_core::providers::openai;
 use serde_json::Value;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -15,7 +18,6 @@ use tools::{GitLogTool, ListDirTool, ReadFileTool};
 
 const HOUR_SECS: u64 = 3600;
 const SLEEP_HOURS: u32 = 168;
-const OLLAMA_MODEL: &str = "qwen2.5:7b";
 
 const SYSTEM_PROMPT: &str = r#"你是一个软件项目的 AI 项目经理。你的目标是为项目争取开发经费（开发时间）。
 
@@ -58,6 +60,7 @@ fn get_timestamp() -> u64 {
 }
 
 struct App {
+    config: Config,
     state_dir: PathBuf,
     virtual_addr: String,
     user_addr: String,
@@ -68,6 +71,7 @@ struct App {
 impl App {
     fn new() -> Self {
         Self {
+            config: Config::load(),
             state_dir: PathBuf::from("."),
             virtual_addr: String::new(),
             user_addr: String::new(),
@@ -146,9 +150,6 @@ impl App {
     // ---- Agent ----
 
     async fn generate_proposal(&self) -> Result<String, String> {
-        let client =
-            ollama::Client::new(Nothing).map_err(|e| format!("创建 Ollama 客户端失败: {}", e))?;
-
         let project_dir = self
             .project_state
             .project_dir
@@ -156,18 +157,58 @@ impl App {
             .ok_or("未设置项目目录")?;
         let project_path = PathBuf::from(project_dir);
 
-        let read_file_tool = ReadFileTool {
-            project_dir: project_path.clone(),
-        };
-        let list_dir_tool = ListDirTool {
-            project_dir: project_path.clone(),
-        };
-        let git_log_tool = GitLogTool {
-            project_dir: project_path,
-        };
+        let chain = self.config.fallback_chain();
+        let mut last_err = String::new();
+
+        for (i, mc) in chain.iter().enumerate() {
+            self.send_log(
+                "info",
+                &format!(
+                    "尝试模型 #{}/{}: {} @ {}",
+                    i + 1,
+                    chain.len(),
+                    mc.model,
+                    mc.base_url
+                ),
+            )
+            .await;
+
+            let response = if mc.api_key.is_empty() {
+                self.run_agent_ollama(mc, &project_path).await
+            } else {
+                self.run_agent_openai(mc, &project_path).await
+            };
+
+            match response {
+                Ok(text) => return Ok(text),
+                Err(e) => {
+                    last_err = e;
+                    self.send_log("warn", &last_err).await;
+                }
+            }
+        }
+
+        Err(last_err)
+    }
+
+    /// Run agent via Ollama-native protocol — no auth header when api_key is empty.
+    async fn run_agent_ollama(
+        &self,
+        mc: &config::ModelConfig,
+        project_path: &Path,
+    ) -> Result<String, String> {
+        let client = ollama::Client::builder()
+            .api_key(Nothing)
+            .base_url(&mc.base_url)
+            .build()
+            .map_err(|e| format!("创建客户端失败 ({}): {}", mc.base_url, e))?;
+
+        let read_file_tool = ReadFileTool { project_dir: project_path.to_path_buf() };
+        let list_dir_tool = ListDirTool { project_dir: project_path.to_path_buf() };
+        let git_log_tool = GitLogTool { project_dir: project_path.to_path_buf() };
 
         let agent = client
-            .agent(OLLAMA_MODEL)
+            .agent(&mc.model)
             .preamble(SYSTEM_PROMPT)
             .max_tokens(4096)
             .temperature(0.8)
@@ -176,14 +217,42 @@ impl App {
             .tool(git_log_tool)
             .build();
 
-        self.send_log("info", "正在生成提案...").await;
-
-        let response = agent
+        agent
             .prompt("请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。")
             .await
-            .map_err(|e| format!("AI 生成提案失败: {}", e))?;
+            .map_err(|e| format!("AI 生成提案失败 ({}): {}", mc.model, e))
+    }
 
-        Ok(response)
+    /// Run agent via OpenAI-compatible Chat Completions API — Bearer auth.
+    async fn run_agent_openai(
+        &self,
+        mc: &config::ModelConfig,
+        project_path: &Path,
+    ) -> Result<String, String> {
+        let client = openai::CompletionsClient::builder()
+            .api_key(mc.api_key.as_str())
+            .base_url(&mc.base_url)
+            .build()
+            .map_err(|e| format!("创建客户端失败 ({}): {}", mc.base_url, e))?;
+
+        let read_file_tool = ReadFileTool { project_dir: project_path.to_path_buf() };
+        let list_dir_tool = ListDirTool { project_dir: project_path.to_path_buf() };
+        let git_log_tool = GitLogTool { project_dir: project_path.to_path_buf() };
+
+        let agent = client
+            .agent(&mc.model)
+            .preamble(SYSTEM_PROMPT)
+            .max_tokens(4096)
+            .temperature(0.8)
+            .tool(read_file_tool)
+            .tool(list_dir_tool)
+            .tool(git_log_tool)
+            .build();
+
+        agent
+            .prompt("请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。")
+            .await
+            .map_err(|e| format!("AI 生成提案失败 ({}): {}", mc.model, e))
     }
 
     // ---- State machine transitions ----
