@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use config::Config;
-use rig_core::client::{CompletionClient, Nothing};
+use rig_core::client::CompletionClient;
 use rig_core::completion::Prompt;
 use rig_core::providers::ollama;
 use rig_core::providers::openai;
+use rig_core::providers::openai::client::OpenAICompletionsExt;
 use serde_json::Value;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -173,13 +174,7 @@ impl App {
             )
             .await;
 
-            let response = if mc.api_key.is_empty() {
-                self.run_agent_ollama(mc, &project_path).await
-            } else {
-                self.run_agent_openai(mc, &project_path).await
-            };
-
-            match response {
+            match self.run_agent(mc, &project_path).await {
                 Ok(text) => return Ok(text),
                 Err(e) => {
                     last_err = e;
@@ -191,49 +186,21 @@ impl App {
         Err(last_err)
     }
 
-    /// Run agent via Ollama-native protocol — no auth header when api_key is empty.
-    async fn run_agent_ollama(
+    async fn run_agent(
         &self,
         mc: &config::ModelConfig,
         project_path: &Path,
     ) -> Result<String, String> {
-        let client = ollama::Client::builder()
-            .api_key(Nothing)
-            .base_url(&mc.base_url)
-            .build()
-            .map_err(|e| format!("创建客户端失败 ({}): {}", mc.base_url, e))?;
-
-        let read_file_tool = ReadFileTool { project_dir: project_path.to_path_buf() };
-        let list_dir_tool = ListDirTool { project_dir: project_path.to_path_buf() };
-        let git_log_tool = GitLogTool { project_dir: project_path.to_path_buf() };
-
-        let agent = client
-            .agent(&mc.model)
-            .preamble(SYSTEM_PROMPT)
-            .max_tokens(4096)
-            .temperature(0.8)
-            .tool(read_file_tool)
-            .tool(list_dir_tool)
-            .tool(git_log_tool)
-            .build();
-
-        agent
-            .prompt("请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。")
-            .await
-            .map_err(|e| format!("AI 生成提案失败 ({}): {}", mc.model, e))
-    }
-
-    /// Run agent via OpenAI-compatible Chat Completions API — Bearer auth.
-    async fn run_agent_openai(
-        &self,
-        mc: &config::ModelConfig,
-        project_path: &Path,
-    ) -> Result<String, String> {
-        let client = openai::CompletionsClient::builder()
+        // Build via Ollama client for correct no-auth handling:
+        // empty api_key → OllamaApiKey(None) → into_header() returns None → no auth header.
+        let base = ollama::Client::builder()
             .api_key(mc.api_key.as_str())
             .base_url(&mc.base_url)
             .build()
             .map_err(|e| format!("创建客户端失败 ({}): {}", mc.base_url, e))?;
+
+        // Convert to OpenAI-compatible protocol (POST /chat/completions).
+        let client: openai::CompletionsClient = base.with_ext(OpenAICompletionsExt);
 
         let read_file_tool = ReadFileTool { project_dir: project_path.to_path_buf() };
         let list_dir_tool = ListDirTool { project_dir: project_path.to_path_buf() };
