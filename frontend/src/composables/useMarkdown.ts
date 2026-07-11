@@ -39,8 +39,23 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
   return self.renderToken(tokens, idx, options);
 };
 
+const THINK_RE = /<think>([\s\S]*?)<\/think>/g;
+
 export function renderMarkdown(text: string): string {
-  return md.render(text);
+  const blocks: string[] = [];
+  const cleaned = text.replace(THINK_RE, (_, content) => {
+    blocks.push(content.trim());
+    return `\x00THINK_${blocks.length - 1}\x00`;
+  });
+
+  let html = md.render(cleaned);
+
+  html = html.replace(/\x00THINK_(\d+)\x00/g, (_, idx) => {
+    const rendered = md.render(blocks[+idx]);
+    return `<details class="think-block"><summary class="think-summary">🤔 思考过程</summary><div class="think-content">${rendered}</div></details>`;
+  });
+
+  return html;
 }
 
 export function handleLinkClick(e: MouseEvent): void {

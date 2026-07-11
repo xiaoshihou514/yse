@@ -245,6 +245,27 @@ async function downloadFile(messageId: string, encName: string, fileName: string
 .msg-text :deep(a) {
   color: var(--td-brand-color);
 }
+.msg-text :deep(.think-block) {
+  margin: 8px 0;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.msg-text :deep(.think-summary) {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.7;
+  user-select: none;
+  background: var(--td-bg-color-component);
+}
+.msg-text :deep(.think-content) {
+  padding: 8px 10px;
+  font-size: 13px;
+  opacity: 0.8;
+  border-top: 1px solid var(--td-component-stroke);
+  line-height: 1.5;
+}
 .msg-text :deep(table) {
   border-collapse: collapse;
   margin: 6px 0;
