@@ -56,11 +56,15 @@ pub async fn set_local_hostname(
 }
 
 #[tauri::command]
-pub async fn get_messages(state: State<'_, AppState>, limit: u32) -> Result<Vec<Message>, String> {
+pub async fn get_messages(
+    state: State<'_, AppState>,
+    limit: u32,
+    offset: Option<u32>,
+) -> Result<Vec<Message>, String> {
     state
         .core
         .store
-        .list_messages(limit, 0)
+        .list_messages(limit, offset.unwrap_or(0))
         .await
         .map_err(|e| e.to_string())
 }

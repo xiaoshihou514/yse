@@ -108,13 +108,20 @@ export const useYseStore = defineStore("yse", () => {
     localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));
   }
 
+  const INITIAL_MSG_COUNT = 100;
+  const MSG_PAGE_SIZE = 50;
+  const messagesOffset = ref(0);
+  const loadingMore = ref(false);
+
   const sortedMessages = computed(() =>
     [...messages.value].sort((a, b) => a.timestamp - b.timestamp),
   );
 
   async function loadMessages() {
     try {
-      messages.value = await api.getMessages(100);
+      messagesOffset.value = 0;
+      messages.value = await api.getMessages(INITIAL_MSG_COUNT, 0);
+      messagesOffset.value = messages.value.length;
       // Clean up pending "sent" entries that have a matching real message
       pendingMessages.value = pendingMessages.value.filter((p) => {
         if (p.status !== "sent") return true;
@@ -125,6 +132,23 @@ export const useYseStore = defineStore("yse", () => {
       });
     } catch (e) {
       error(`loadMessages failed: ${String(e)}`);
+    }
+  }
+
+  async function loadOlderMessages(): Promise<boolean> {
+    if (loadingMore.value) return false;
+    loadingMore.value = true;
+    try {
+      const older = await api.getMessages(MSG_PAGE_SIZE, messagesOffset.value);
+      if (older.length === 0) return false;
+      messagesOffset.value += older.length;
+      messages.value = [...older, ...messages.value];
+      return true;
+    } catch (e) {
+      error(`loadOlderMessages failed: ${String(e)}`);
+      return false;
+    } finally {
+      loadingMore.value = false;
     }
   }
 
@@ -452,7 +476,11 @@ export const useYseStore = defineStore("yse", () => {
     markRead,
     markAllRead,
     sortedMessages,
+    INITIAL_MSG_COUNT,
+    messagesOffset,
+    loadingMore,
     loadMessages,
+    loadOlderMessages,
     loadPlugins,
     loadConfig,
     saveConfigAndApply,

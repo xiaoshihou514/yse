@@ -127,10 +127,18 @@
           <div
             class="message-area"
             ref="messagesContainer"
+            @scroll="onMessageScroll"
             @touchstart.passive="onSwipeStart"
             @touchmove.passive="onSwipeMove"
             @touchend="onSwipeEnd"
           >
+            <div v-if="store.loadingMore" class="msg-loading-top">
+              <span class="msg-loading-spinner"></span>
+              加载更早消息...
+            </div>
+            <div v-else-if="canLoadMore" class="msg-load-top" @click="loadOlder">
+              点击加载更早消息
+            </div>
             <div
               v-for="msg in conversation"
               :key="msg.id"
@@ -783,6 +791,29 @@ watch(conversation, () => {
     });
   }
 });
+
+// Incremental load on scroll-to-top
+let loadMoreOldScrollHeight = 0;
+
+const canLoadMore = computed(() => store.messagesOffset >= store.INITIAL_MSG_COUNT && !store.loadingMore);
+
+async function onMessageScroll() {
+  const el = messagesContainer.value;
+  if (!el || store.loadingMore) return;
+  if (el.scrollTop > 50) return;
+  await loadOlder();
+}
+
+async function loadOlder() {
+  const el = messagesContainer.value;
+  if (!el || store.loadingMore) return;
+  loadMoreOldScrollHeight = el.scrollHeight;
+  const loaded = await store.loadOlderMessages();
+  if (loaded) {
+    await nextTick();
+    el.scrollTop = el.scrollHeight - loadMoreOldScrollHeight;
+  }
+}
 
 watch(selectedContact, (newVal, oldVal) => {
   if (!newVal && oldVal && isMobile.value) {
