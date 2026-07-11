@@ -11,6 +11,8 @@ import {
   killServer,
   resolveModelChain,
   type BotState,
+  type SessionState,
+  type ModelConfig,
   type ModelSpec,
 } from "./opencode.js";
 import * as fs from "fs";
@@ -35,21 +37,24 @@ let stateFile = "";
 let pendingUserRestore: any = null;
 const pendingQuestions = new Map<string, { requestID: string }>();
 
-function saveStateImpl(s: any) {
-  if (!stateFile || !s) return;
+function saveStateImpl(state: BotState) {
+  if (!stateFile) return;
   try {
     fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-    let lastUserState: any = null;
-    for (const us of Object.values(s.sessions) as any[]) {
-      if (us.sessionId) {
+    let lastUserState: {
+      sessionId: string; planMode: boolean; agentId?: string;
+      modelId?: string; providerId?: string; modelVariant?: string; modelMode?: string;
+    } | null = null;
+    for (const s of Object.values(state.sessions)) {
+      if (s.sessionId) {
         lastUserState = {
-          sessionId: us.sessionId,
-          planMode: us.planMode ?? false,
-          agentId: us.agentId,
-          modelId: us.modelId,
-          providerId: us.providerId,
-          modelVariant: us.modelVariant,
-          modelMode: us.modelMode ?? "global",
+          sessionId: s.sessionId,
+          planMode: s.planMode ?? false,
+          agentId: s.agentId,
+          modelId: s.modelId,
+          providerId: s.providerId,
+          modelVariant: s.modelVariant,
+          modelMode: s.modelMode ?? "global",
         };
         break;
       }
@@ -57,41 +62,47 @@ function saveStateImpl(s: any) {
     fs.writeFileSync(
       stateFile,
       JSON.stringify({
-        sessions: s.sessions,
-        projectDir: s.projectDir,
+        sessions: state.sessions,
+        projectDir: state.projectDir,
         lastUserState,
-        modelConfig: s.modelConfig,
+        modelConfig: state.modelConfig,
       }),
     );
-  } catch {}
+  } catch (e: unknown) {
+    process.stderr.write(`[opencode-bot] saveState failed: ${e instanceof Error ? e.message : String(e)}\n`);
+  }
 }
 
 async function main() {
   sendLog("info", "opencode-bot starting...");
-  let state: Awaited<ReturnType<typeof initBot>>;
+  let state: BotState | null = null;
   try {
     state = await initBot();
-  } catch (e: any) {
-    sendLog("error", `failed to connect to OpenCode: ${e.message ?? e}`);
+  } catch (e: unknown) {
+    sendLog("error", `failed to connect to OpenCode: ${e instanceof Error ? e.message : String(e)}`);
     sendLog(
       "info",
       "opencode-bot running in degraded mode — OpenCode unavailable",
     );
-    state = null as any;
   }
 
   for await (const msg of parseStdin()) {
     if (msg.method === "config") {
-      const params = msg.params as any;
+      const params = msg.params;
       if (params.virtual_addr) {
         setPluginAddr(params.virtual_addr);
       }
-      const dir = params.state_dir as string | undefined;
+      const dir = params.state_dir;
       if (dir) {
         stateFile = path.join(dir, "sessions.json");
         try {
           const raw = fs.readFileSync(stateFile, "utf-8");
-          const saved = JSON.parse(raw);
+          const saved: {
+            sessions?: BotState["sessions"];
+            projectDir?: string;
+            modelConfig?: ModelConfig;
+            lastUserState?: { sessionId: string; planMode: boolean; agentId?: string; modelId?: string; providerId?: string; modelVariant?: string; modelMode?: string };
+          } = JSON.parse(raw);
           if (state && saved.sessions) state.sessions = saved.sessions;
           if (state && saved.projectDir) state.projectDir = saved.projectDir;
           if (state && saved.modelConfig) state.modelConfig = saved.modelConfig;
@@ -99,7 +110,9 @@ async function main() {
             pendingUserRestore = saved.lastUserState;
           }
           sendLog("info", `loaded state from ${stateFile}`);
-        } catch { /* no state file yet */ }
+        } catch (e: unknown) {
+          process.stderr.write(`[opencode-bot] failed to load state: ${e instanceof Error ? e.message : String(e)}\n`);
+        }
       }
       continue;
     }
@@ -123,9 +136,13 @@ async function main() {
             answers: [[respValue]],
           });
           pendingQuestions.delete(from);
-        } catch (e: any) {
-          sendResponse(from, `❌ 提交回答失败: ${e.message ?? e}`);
+        } catch (e: unknown) {
+          sendResponse(from, `❌ 提交回答失败: ${e instanceof Error ? e.message : String(e)}`);
         }
+        continue;
+      }
+      if (!state) {
+        sendResponse(from, "OpenCode 未连接，无法处理列表选择。");
         continue;
       }
       await handleListResponse(state, from, respValue);
@@ -150,17 +167,16 @@ async function main() {
       continue;
     }
 
-    const us = getUserState(state, from);
+    const userState = getUserState(state, from);
 
-    if (pendingUserRestore && !us.sessionId) {
-      const u: any = us;
-      u.sessionId = pendingUserRestore.sessionId;
-      u.planMode = pendingUserRestore.planMode ?? false;
-      u.agentId = pendingUserRestore.agentId;
-      u.modelId = pendingUserRestore.modelId;
-      u.providerId = pendingUserRestore.providerId;
-      u.modelVariant = pendingUserRestore.modelVariant;
-      u.modelMode = pendingUserRestore.modelMode ?? "global";
+    if (pendingUserRestore && !userState.sessionId) {
+      userState.sessionId = pendingUserRestore.sessionId;
+      userState.planMode = pendingUserRestore.planMode ?? false;
+      userState.agentId = pendingUserRestore.agentId;
+      userState.modelId = pendingUserRestore.modelId;
+      userState.providerId = pendingUserRestore.providerId;
+      userState.modelVariant = pendingUserRestore.modelVariant;
+      userState.modelMode = pendingUserRestore.modelMode ?? "global";
       pendingUserRestore = null;
       saveStateImpl(state);
     }
@@ -168,13 +184,13 @@ async function main() {
     // Command routing
     if (text.startsWith("/")) {
       const [cmd, ...args] = text.slice(1).split(/\s+/);
-      await handleCommand(state, from, us, cmd, args.join(" "));
-    } else if (us.sessionId) {
-      const chain = resolveModelChain(us, state.modelConfig);
+      await handleCommand(state, from, userState, cmd, args.join(" "));
+    } else if (userState.sessionId) {
+      const chain = resolveModelChain(userState, state.modelConfig);
       pendingQuestions.delete(from);
       const reply = await sendPromptStreaming(
-        state.client, us.sessionId, text, state.projectDir,
-        chain, us.agentId,
+        state.client, userState.sessionId, text, state.projectDir,
+        chain, userState.agentId,
         makeEventHandler(from),
       );
       pendingQuestions.delete(from);
@@ -318,9 +334,9 @@ function formatModelChain(chain: ModelSpec[]): string {
 // ---- Command handlers ----
 
 async function handleCommand(
-  state: any,
+  state: BotState,
   from: string,
-  us: any,
+  userState: SessionState,
   cmd: string,
   arg: string,
 ) {
@@ -338,54 +354,54 @@ async function handleCommand(
         sendResponse(from, "用法: /select <session_id>");
         break;
       }
-      us.sessionId = arg;
-      us.mode = "sdk";
+      userState.sessionId = arg;
+      userState.mode = "sdk";
       const info = await getSessionInfo(state.client, arg);
       sendResponse(from, `✅ 已切换\n${info}`);
       saveStateImpl(state);
       break;
 
     case "new":
-      await cmdNew(state, from, us, arg);
+      await cmdNew(state, from, userState, arg);
       saveStateImpl(state);
       break;
 
     case "curr": {
-      const lines = [`会话ID: ${us.sessionId || "(无)"}`];
-      lines.push(`模式: ${us.planMode ? "plan 只读" : "默认"}`);
-      lines.push(`agentId: ${us.agentId || "(无)"}`);
-      lines.push(`策略: ${us.modelMode ?? "global"}`);
-      if (us.modelId) lines.push(`模型: ${us.modelId} (${us.providerId || "?"})`);
-      if (us.modelVariant) lines.push(`variant: ${us.modelVariant}`);
-      if (us.mode) lines.push(`mode: ${us.mode}`);
+      const lines = [`会话ID: ${userState.sessionId || "(无)"}`];
+      lines.push(`模式: ${userState.planMode ? "plan 只读" : "默认"}`);
+      lines.push(`agentId: ${userState.agentId || "(无)"}`);
+      lines.push(`策略: ${userState.modelMode ?? "global"}`);
+      if (userState.modelId) lines.push(`模型: ${userState.modelId} (${userState.providerId || "?"})`);
+      if (userState.modelVariant) lines.push(`variant: ${userState.modelVariant}`);
+      if (userState.mode) lines.push(`mode: ${userState.mode}`);
       if (state.projectDir) lines.push(`项目目录: ${state.projectDir}`);
       sendResponse(from, lines.join("\n"));
       break;
     }
 
     case "abort":
-      if (!us.sessionId) {
+      if (!userState.sessionId) {
         sendResponse(from, "未选择会话");
         break;
       }
       try {
-        await state.client.session.abort({ sessionID: us.sessionId });
+        await state.client.session.abort({ sessionID: userState.sessionId });
         sendResponse(from, "✅ 已中止");
-      } catch (e: any) {
-        sendResponse(from, `中止失败: ${e.message ?? e}`);
+      } catch (e: unknown) {
+        sendResponse(from, `中止失败: ${e instanceof Error ? e.message : String(e)}`);
       }
       break;
 
     case "undo":
-      if (!us.sessionId) {
+      if (!userState.sessionId) {
         sendResponse(from, "未选择会话");
         break;
       }
       try {
-        await state.client.session.revert({ sessionID: us.sessionId });
+        await state.client.session.revert({ sessionID: userState.sessionId });
         sendResponse(from, "✅ 已撤回上一条消息");
-      } catch (e: any) {
-        sendResponse(from, `撤回失败: ${e.message ?? e}`);
+      } catch (e: unknown) {
+        sendResponse(from, `撤回失败: ${e instanceof Error ? e.message : String(e)}`);
       }
       break;
 
@@ -400,7 +416,7 @@ async function handleCommand(
     }
 
     case "variants": {
-      if (!us.sessionId) {
+      if (!userState.sessionId) {
         sendResponse(from, "请先选择会话");
         break;
       }
@@ -428,9 +444,9 @@ async function handleCommand(
     }
 
     case "plan": {
-      if (us.planMode) {
-        us.planMode = false;
-        us.agentId = undefined;
+      if (userState.planMode) {
+        userState.planMode = false;
+        userState.agentId = undefined;
         sendResponse(from, "✅ 已切换为默认模式");
       } else {
         const list = await listAgents(state);
@@ -438,16 +454,16 @@ async function handleCommand(
           sendResponse(from, "暂无可用 plan");
           break;
         }
-        us.planMode = true;
-        us.agentId = JSON.parse(list[0].value).agent;
+        userState.planMode = true;
+        userState.agentId = JSON.parse(list[0].value).agent;
         sendResponse(from, "✅ 已切换为 plan 只读规划模式");
       }
       saveStateImpl(state);
-      if (arg && us.sessionId) {
-        const chain = resolveModelChain(us, state.modelConfig);
+      if (arg && userState.sessionId) {
+        const chain = resolveModelChain(userState, state.modelConfig);
         const reply = await sendPromptStreaming(
-          state.client, us.sessionId, arg, state.projectDir,
-          chain, us.agentId,
+          state.client, userState.sessionId, arg, state.projectDir,
+          chain, userState.agentId,
           makeEventHandler(from),
         );
         sendResponse(from, reply);
@@ -457,7 +473,7 @@ async function handleCommand(
     }
 
     case "model":
-      await cmdModel(state, from, us, arg);
+      await cmdModel(state, from, userState, arg);
       saveStateImpl(state);
       break;
 
@@ -476,7 +492,7 @@ async function handleCommand(
   }
 }
 
-async function cmdModel(state: any, from: string, us: any, arg: string) {
+async function cmdModel(state: BotState, from: string, userState: SessionState, arg: string) {
   const parts = arg.split(/\s+/);
   const sub = parts[0] || "";
   const subArg = parts.slice(1).join(" ");
@@ -496,12 +512,12 @@ async function cmdModel(state: any, from: string, us: any, arg: string) {
 
       lines.push("");
       lines.push("【当前会话】");
-      const mode = us.modelMode ?? "global";
-      if (mode === "manual" && us.modelId && us.providerId) {
-        lines.push(`  策略: manual → ${formatModelSpec({ modelId: us.modelId, providerId: us.providerId, variant: us.modelVariant })}`);
+      const mode = userState.modelMode ?? "global";
+      if (mode === "manual" && userState.modelId && userState.providerId) {
+        lines.push(`  策略: manual → ${formatModelSpec({ modelId: userState.modelId, providerId: userState.providerId, variant: userState.modelVariant })}`);
       } else {
         lines.push(`  策略: global（继承全局）`);
-        const chain = resolveModelChain(us, state.modelConfig);
+        const chain = resolveModelChain(userState, state.modelConfig);
         lines.push(`  实际使用: ${formatModelSpec(chain[0])}`);
       }
       sendResponse(from, lines.join("\n"));
@@ -529,10 +545,10 @@ async function cmdModel(state: any, from: string, us: any, arg: string) {
 
     case "override": {
       if (!subArg || subArg === "clear") {
-        us.modelMode = "global";
-        delete us.modelId;
-        delete us.providerId;
-        delete us.modelVariant;
+        userState.modelMode = "global";
+        delete userState.modelId;
+        delete userState.providerId;
+        delete userState.modelVariant;
         sendResponse(from, "✅ 当前会话已切回全局策略");
       } else {
         sendResponse(from, "用法: /model override clear — 清空当前会话的模型覆盖");
@@ -545,7 +561,7 @@ async function cmdModel(state: any, from: string, us: any, arg: string) {
   }
 }
 
-async function cmdModelDefault(state: any, from: string, arg: string) {
+async function cmdModelDefault(state: BotState, from: string, arg: string) {
   const [action, ...rest] = arg.split(/\s+/);
   switch (action) {
     case "":
@@ -576,7 +592,7 @@ async function cmdModelDefault(state: any, from: string, arg: string) {
   }
 }
 
-async function cmdModelFallback(state: any, from: string, arg: string) {
+async function cmdModelFallback(state: BotState, from: string, arg: string) {
   const [action, ...rest] = arg.split(/\s+/);
   switch (action) {
     case "":
@@ -631,7 +647,7 @@ async function cmdModelFallback(state: any, from: string, arg: string) {
 }
 
 async function listModelsWithAction(
-  state: any,
+  state: BotState,
   action: string,
 ): Promise<{ label: string; value: string; description: string }[]> {
   const list = await listModels(state);
@@ -645,7 +661,7 @@ async function listModelsWithAction(
   });
 }
 
-async function cmdSessions(state: any, from: string) {
+async function cmdSessions(state: BotState, from: string) {
   const sessions = await fetchAllSessions(state.client, state.baseUrl);
   if (sessions.length === 0) {
     sendResponse(from, "暂无会话，输入 /new [标题] 创建一个");
@@ -676,140 +692,147 @@ async function cmdSessions(state: any, from: string) {
   sendList(from, "请选项目目录：", "项目目录", dirList);
 }
 
-async function cmdNew(state: any, from: string, us: any, arg: string) {
+async function cmdNew(state: BotState, from: string, userState: SessionState, arg: string) {
   const parts = arg.split(/\s+/);
   const title = parts[0] || `Chat ${Date.now()}`;
   const dir = parts[1] || state.projectDir;
   try {
     const body: any = { title, directory: dir };
-    const chain = resolveModelChain(us, state.modelConfig);
+    const chain = resolveModelChain(userState, state.modelConfig);
     if (chain[0]?.modelId && chain[0]?.providerId) {
       body.model = { id: chain[0].modelId, providerID: chain[0].providerId };
       if (chain[0].variant) body.model.variant = chain[0].variant;
     }
-    const result = await state.client.session.create(body);
-    us.sessionId = (result.data as any)?.id;
-    us.mode = "sdk";
-    if (!us.sessionId) {
+    const result: { data?: { id?: string } } = await state.client.session.create(body);
+    userState.sessionId = result.data?.id ?? null;
+    userState.mode = "sdk";
+    if (!userState.sessionId) {
       sendResponse(from, "创建失败: 无 sessionId");
       return;
     }
-    const info = await getSessionInfo(state.client, us.sessionId);
+    const info = await getSessionInfo(state.client, userState.sessionId);
     sendResponse(from, `✅ 已新建会话「${title}」\n${info}`);
-  } catch (e: any) {
-    sendResponse(from, `创建失败: ${e.message ?? e}`);
+  } catch (e: unknown) {
+    sendResponse(from, `创建失败: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
-function formatSessionItem(s: any): { label: string; value: string; description: string } {
+function formatSessionItem(s: { id?: string; title?: string; updatedAt?: number; updated?: number; directory?: string }): { label: string; value: string; description: string } {
   const title = s.title || s.id?.slice(0, 8) || "Untitled";
   const time = s.updatedAt || s.updated || 0;
   const timeStr = time ? new Date(time).toLocaleDateString("zh-CN") : "?";
   return {
     label: title,
-    value: s.id,
+    value: s.id ?? "",
     description: `🕐 ${timeStr}${s.directory ? ` 📁 ${path.basename(s.directory)}` : ""}`,
   };
 }
 
-async function handleListResponse(state: any, from: string, value: string) {
-  const us = getUserState(state, from);
-  // Directory selection from /sessions flow
+interface JsonListValue {
+  action?: string; model?: string; provider?: string;
+  variant?: string; agent?: string;
+}
+
+async function handleDirSelection(state: BotState, from: string, value: string) {
+  const dir = value.slice(4);
+  const sessions = await fetchAllSessions(state.client, state.baseUrl);
+  const filtered = sessions.filter(
+    (s) => s.directory === dir,
+  );
+  if (filtered.length === 0) {
+    sendResponse(from, "该目录下暂无会话");
+    return;
+  }
+  sendList(from, "请选择会话：", "可选会话", filtered.map(formatSessionItem));
+}
+
+async function handleModelConfigAction(state: BotState, from: string, config: JsonListValue): Promise<boolean> {
+  const { action, model, provider } = config;
+  if (action === "default-set" && model && provider) {
+    state.modelConfig.defaultModel = { modelId: model, providerId: provider };
+    sendResponse(from, `✅ 全局默认模型已设为 ${model} (${provider})`);
+    saveStateImpl(state);
+    return true;
+  }
+  if (action === "fallback-add" && model && provider) {
+    state.modelConfig.fallbackChain.push({ modelId: model, providerId: provider });
+    sendResponse(from, `✅ 已追加 ${model} (${provider}) 到备用链末尾`);
+    saveStateImpl(state);
+    return true;
+  }
+  if (action === "fallback-set" && model && provider) {
+    state.modelConfig.fallbackChain = [{ modelId: model, providerId: provider }];
+    sendResponse(from, `✅ 备用链已替换为: ${model} (${provider})`);
+    saveStateImpl(state);
+    return true;
+  }
+  return false;
+}
+
+async function handleJsonConfig(state: BotState, from: string, value: string) {
+  const userState = getUserState(state, from);
+  let config: JsonListValue;
+  try { config = JSON.parse(value); } catch { return; }
+
+  if (await handleModelConfigAction(state, from, config)) return;
+
+  if (userState.sessionId) {
+    if (config.model) {
+      userState.modelId = config.model;
+      userState.providerId = config.provider;
+      userState.modelMode = "manual";
+    }
+    if (config.variant) userState.modelVariant = config.variant;
+    if (config.agent) userState.agentId = config.agent;
+    sendResponse(from, "✅ 已设置，下一条消息将使用新配置");
+    saveStateImpl(state);
+    return;
+  }
+
+  if (config.agent && !config.model) {
+    sendResponse(from, "请先用 /sessions 选择或 /new 创建会话后再选 plan");
+    return;
+  }
+
+  try {
+    const body: any = {};
+    if (config.model) {
+      body.model = { id: config.model, providerID: config.provider };
+      if (config.variant) body.model.variant = config.variant;
+      userState.modelMode = "manual";
+    }
+    if (config.agent) body.agent = config.agent;
+    if (!body.model && !body.agent) body.agent = config;
+
+    const title = config.model
+      ? `${config.model}${config.variant ? ` (${config.variant})` : ""}`
+      : config.agent ?? "new";
+    const result: { data?: { id?: string } } =
+      await state.client.session.create({ title, directory: state.projectDir, ...body } as Record<string, unknown>);
+    const newId = result.data?.id ?? null;
+    if (!newId) { sendResponse(from, "创建失败"); return; }
+    userState.sessionId = newId;
+    userState.mode = "sdk";
+    const info = await getSessionInfo(state.client, newId);
+    sendResponse(from, `✅ 已新建会话「${title}」\n${info}`);
+    saveStateImpl(state);
+  } catch (e: unknown) {
+    sendResponse(from, `创建失败: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+async function handleListResponse(state: BotState, from: string, value: string) {
   if (value.startsWith("dir:")) {
-    const dir = value.slice(4);
-    const sessions = await fetchAllSessions(state.client, state.baseUrl);
-    const filtered = sessions.filter(
-      (s: any) => (s.directory || "") === dir,
-    );
-    if (filtered.length === 0) {
-      sendResponse(from, "该目录下暂无会话");
-      return;
-    }
-    sendList(from, "请选择会话：", "可选会话", filtered.map(formatSessionItem));
+    await handleDirSelection(state, from, value);
     return;
   }
-  // Check if value is a JSON config (model/variant/plan/config selection)
   if (value.startsWith("{")) {
-    let config: any;
-    try { config = JSON.parse(value); } catch { return; }
-
-    const action = config.action;
-
-    // Model config actions: default-set, fallback-add, fallback-set
-    if (action === "default-set") {
-      state.modelConfig.defaultModel = { modelId: config.model, providerId: config.provider };
-      sendResponse(from, `✅ 全局默认模型已设为 ${config.model} (${config.provider})`);
-      saveStateImpl(state);
-      return;
-    }
-
-    if (action === "fallback-add") {
-      state.modelConfig.fallbackChain.push({ modelId: config.model, providerId: config.provider });
-      sendResponse(from, `✅ 已追加 ${config.model} (${config.provider}) 到备用链末尾`);
-      saveStateImpl(state);
-      return;
-    }
-
-    if (action === "fallback-set") {
-      state.modelConfig.fallbackChain = [{ modelId: config.model, providerId: config.provider }];
-      sendResponse(from, `✅ 备用链已替换为: ${config.model} (${config.provider})`);
-      saveStateImpl(state);
-      return;
-    }
-
-    // Model/variant/plan selection (no action or action model-select)
-    try {
-      if (us.sessionId) {
-        if (config.model) {
-          us.modelId = config.model;
-          us.providerId = config.provider;
-          us.modelMode = "manual";
-        }
-        if (config.variant) us.modelVariant = config.variant;
-        if (config.agent) us.agentId = config.agent;
-        sendResponse(from, "✅ 已设置，下一条消息将使用新配置");
-        saveStateImpl(state);
-        return;
-      }
-      if (config.agent && !config.model) {
-        sendResponse(
-          from,
-          "请先用 /sessions 选择或 /new 创建会话后再选 plan",
-        );
-        return;
-      }
-      const body: any = {};
-      if (config.model) {
-        body.model = { id: config.model, providerID: config.provider };
-        if (config.variant) body.model.variant = config.variant;
-        us.modelMode = "manual";
-      }
-      if (config.agent) body.agent = config.agent;
-      if (!body.model && !body.agent) body.agent = config;
-
-      const title = config.model
-        ? `${config.model}${config.variant ? ` (${config.variant})` : ""}`
-        : config.agent ?? "new";
-      const result = await state.client.session.create({
-        title,
-        directory: state.projectDir,
-        ...body,
-      });
-      const newId = (result.data as any)?.id;
-      if (!newId) { sendResponse(from, "创建失败"); return; }
-      us.sessionId = newId;
-      us.mode = "sdk";
-      const info = await getSessionInfo(state.client, newId);
-      sendResponse(from, `✅ 已新建会话「${title}」\n${info}`);
-      saveStateImpl(state);
-    } catch (e: any) {
-      sendResponse(from, `创建失败: ${e.message ?? e}`);
-    }
+    await handleJsonConfig(state, from, value);
     return;
   }
-  // Session list selection
-  us.sessionId = value;
-  us.mode = "sdk";
+  const userState = getUserState(state, from);
+  userState.sessionId = value;
+  userState.mode = "sdk";
   saveStateImpl(state);
   const info = await getSessionInfo(state.client, value);
   sendResponse(from, `✅ 已切换\n${info}`);
