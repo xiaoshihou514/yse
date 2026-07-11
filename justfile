@@ -63,6 +63,13 @@ plugin-opencode:
 plugin-file-tree:
     cd plugins/file-tree && cargo build
 
+# 编译 project-manager 插件
+plugin-pm:
+    cd plugins/project-manager && cargo build
+
+# 编译所有插件
+plugin-all: plugin-echo plugin-file-tree plugin-pm plugin-opencode
+
 # ── Lint / 格式化 ───────────────────────────────────────────────────────
 
 # 格式化（frontend prettier + rustfmt）
