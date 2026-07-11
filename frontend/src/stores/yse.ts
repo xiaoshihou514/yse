@@ -394,7 +394,7 @@ export const useYseStore = defineStore("yse", () => {
         if (messageReloadTimer) clearTimeout(messageReloadTimer);
         messageReloadTimer = setTimeout(loadMessages, 500);
         // System notification for external messages (not local echo)
-        if (!wasPending) {
+        if (!wasPending && nameFromAddr(p.from) !== config.value?.own_address) {
           sendMessageNotification(p).catch(() => {});
         }
       });
