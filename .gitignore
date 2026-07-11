@@ -15,3 +15,4 @@ mobile/*.apk
 
 # Plugin build artifacts
 plugins/*/target/
+desktop/icons

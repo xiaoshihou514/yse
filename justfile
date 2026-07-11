@@ -53,7 +53,7 @@ android-build:
 
 # 编译 echo-bot 插件
 plugin-echo:
-    cd plugins/echo-bot && cargo build
+    cd plugins/echo-bot && cargo build --release
 
 # 编译 opencode-bot 插件
 plugin-opencode:
@@ -61,11 +61,11 @@ plugin-opencode:
 
 # 编译 file-tree 插件
 plugin-file-tree:
-    cd plugins/file-tree && cargo build
+    cd plugins/file-tree && cargo build --release
 
 # 编译 project-manager 插件
 plugin-pm:
-    cd plugins/project-manager && cargo build
+    cd plugins/project-manager && cargo build --release
 
 # 编译所有插件
 plugin-all: plugin-echo plugin-file-tree plugin-pm plugin-opencode
