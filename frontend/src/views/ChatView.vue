@@ -136,9 +136,6 @@
               <span class="msg-loading-spinner"></span>
               加载更早消息...
             </div>
-            <div v-else-if="canLoadMore" class="msg-load-top" @click="loadOlder">
-              点击加载更早消息
-            </div>
             <div
               v-for="msg in conversation"
               :key="msg.id"
@@ -794,8 +791,6 @@ watch(conversation, () => {
 
 // Incremental load on scroll-to-top
 let loadMoreOldScrollHeight = 0;
-
-const canLoadMore = computed(() => store.messagesOffset >= store.INITIAL_MSG_COUNT && !store.loadingMore);
 
 async function onMessageScroll() {
   const el = messagesContainer.value;
