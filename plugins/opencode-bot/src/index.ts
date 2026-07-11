@@ -207,6 +207,12 @@ function isWriteTool(name: string): boolean {
   return name === "write_to_file" || name === "edit_file" || name === "write_file";
 }
 
+function extLang(filePath: string): string {
+  const i = filePath.lastIndexOf(".");
+  if (i < 0) return "";
+  return filePath.slice(i + 1);
+}
+
 function formatReadOutput(out: string): string {
   const pathM = out.match(/<path>([^<]*)<\/path>/);
   const path = pathM?.[1] || "";
@@ -223,7 +229,10 @@ function formatReadOutput(out: string): string {
     return `📂 ${path}\n${entries.map((e) => `  ${e}`).join("\n")}`;
   }
   if (type === "file" && entriesRaw) {
-    return `📄 ${path}\n${entriesRaw.slice(0, 1000)}`;
+    const lang = extLang(path);
+    const content = entriesRaw.slice(0, 1000);
+    const truncated = entriesRaw.length > 1000 ? "\n... (truncated)" : "";
+    return `📄 ${path}\n\`\`\`${lang}\n${content}\n\`\`\`${truncated}`;
   }
   return out;
 }
@@ -250,8 +259,9 @@ function makeEventHandler(from: string) {
         break;
       }
       case "tool_success": {
-        let msg = `✅ ${data.name} 完成`;
         const out = (data.output || "").slice(0, 2000);
+        if (data.name === "bash" && !out) break;
+        let msg = `✅ ${data.name} 完成`;
         if (out) {
           if (data.name === "bash") {
             msg += `\n\`\`\`\n${out}\n\`\`\``;
