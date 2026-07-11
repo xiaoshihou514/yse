@@ -146,6 +146,20 @@ impl YseState {
                         // Save locally BEFORE sending via SMTP, so the IMAP poll finds
                         // this message already in the DB and skips re-routing.
                         let _ = store.save_message(&msg).await;
+                        let _ = store.mark_processed(&msg.id).await;
+
+                        // Skip SMTP send for messages with empty target (e.g. plugin welcome)
+                        if to_addr.is_empty() {
+                            if let Some(h) = app_handle.lock().unwrap().as_ref() {
+                                let _ = h.emit("new-message", &msg);
+                            }
+                            log::info!(
+                                "plugin Send saved local-only msg {}: {}",
+                                msg.id,
+                                text.as_deref().unwrap_or("")
+                            );
+                            return;
+                        }
 
                         let payload = match msg.to_json() {
                             Ok(p) => p,

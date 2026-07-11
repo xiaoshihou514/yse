@@ -185,6 +185,10 @@ impl SessionRegistry {
             .clone();
         let plugin_id = config.id.clone();
 
+        // Build the plugin's virtual address so it knows its own identity.
+        let our_host = self.local_hostname.lock().unwrap().clone();
+        let virtual_addr = identity::format_address(name, hash, &our_host);
+
         // If the plugin is already running, just register a session for this hash.
         if process_manager.is_running(&plugin_id).await {
             let mut sessions = self.sessions.lock().await;
@@ -200,6 +204,8 @@ impl SessionRegistry {
                 "session registered for existing process: name={} hash={}",
                 name, hash
             );
+            // Push updated config so the plugin knows its virtual address.
+            let _ = process_manager.update_plugin_config(&plugin_id, &virtual_addr).await;
             return Some(plugin_id);
         }
 
@@ -226,6 +232,10 @@ impl SessionRegistry {
             "session registered: name={} hash={} plugin_id={}",
             name, hash, plugin_id
         );
+
+        // Push updated config so the plugin knows its virtual address.
+        let _ = process_manager.update_plugin_config(&plugin_id, &virtual_addr).await;
+
         Some(plugin_id)
     }
 

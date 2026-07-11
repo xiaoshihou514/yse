@@ -40,6 +40,7 @@ struct ProcessEntry {
     start_time: Option<Instant>,
     restart_count: u32,
     last_exit: Option<String>,
+    state_dir: String,
 }
 
 #[derive(Clone)]
@@ -148,6 +149,7 @@ impl PluginProcessManager {
                         start_time: Some(Instant::now()),
                         restart_count: 0,
                         last_exit: None,
+                        state_dir: state_dir.clone(),
                     },
                 );
                 info!("process started: {} ({})", name, id);
@@ -234,6 +236,7 @@ impl PluginProcessManager {
                         start_time: Some(Instant::now()),
                         restart_count,
                         last_exit: None,
+                        state_dir: state_dir.clone(),
                     },
                 );
                 info!("process restarted: {} (attempt {})", id, restart_count);
@@ -336,6 +339,26 @@ impl PluginProcessManager {
                 }
             }
             None => Err(format!("plugin {} not found in process manager", plugin_id)),
+        }
+    }
+
+    /// Send an updated Config notification with the plugin's virtual address.
+    /// Called after a session is registered so the plugin knows its own address.
+    pub async fn update_plugin_config(
+        &self,
+        plugin_id: &str,
+        virtual_addr: &str,
+    ) -> Result<(), String> {
+        let map = self.processes.lock().await;
+        let entry = map.get(plugin_id).ok_or_else(|| format!("plugin {} not found", plugin_id))?;
+        let notif = CoreNotification::Config {
+            state_dir: entry.state_dir.clone(),
+            virtual_addr: Some(virtual_addr.to_string()),
+        };
+        if let Some(ref plugin) = entry.plugin {
+            plugin.send_notification(&notif).await
+        } else {
+            Err(format!("plugin {} has no process handle", plugin_id))
         }
     }
 }

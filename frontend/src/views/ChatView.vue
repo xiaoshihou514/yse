@@ -699,6 +699,7 @@ async function onPullEnd() {
 // Swipe-back on message area
 function onSwipeStart(e: TouchEvent) {
   msgTouchStartX = e.touches[0].clientX;
+  msgTouchStartY = e.touches[0].clientY;
 }
 function onSwipeMove(e: TouchEvent) {
   const dx = e.touches[0].clientX - msgTouchStartX;

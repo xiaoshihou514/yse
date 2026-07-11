@@ -69,7 +69,14 @@ Plugin→user messages MUST skip `route()` in IMAP callback. Handled by `ingest_
 3. `mark_processed` — prevent IMAP from re-routing the SMTP copy
 4. SMTP send — external delivery
 
-Same order in plugin Send handler: save_message BEFORE SMTP send.
+Same order applies in plugin Send handler: save_message → mark_processed → then SMTP send.
+
+### Plugin `virtual_addr`
+
+`CoreNotification::Config` is sent to plugins on startup with `virtual_addr: None`.
+The plugin gets its actual virtual address (`name#hash@hostname`) only after a session is registered in `SessionRegistry::resolve_plugin()` (`session.rs:159`), which pushes an updated Config with the virtual_addr.
+
+A plugin that sends a welcome message before receiving any user message will have empty `from`/`to` addresses. The plugin Send handler in `commands.rs` detects empty `to_addr` and saves the message locally **without** sending via SMTP. `ingest_core` in `imap_ingest.rs` also skips routing for messages with empty `to_addr`.
 
 ### Setup runtime
 

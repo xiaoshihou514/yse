@@ -148,7 +148,7 @@ defineExpose({ inputRef });
     gap: 10px;
   }
   .chat-textarea {
-    min-height: 44px;
+    min-height: 24px;
     font-size: 16px;
   }
   .send-btn {

@@ -43,6 +43,11 @@ async fn ingest_core(msg: &Message, store: &dyn Storage, own_addr: &str) -> (boo
         return (for_user, false);
     }
 
+    if msg.to_addr.is_empty() {
+        info!("imap: msg {} has empty to_addr, skipping route", msg.id);
+        return (for_user, false);
+    }
+
     if for_self {
         if let Err(e) = store.mark_processed(&msg.id).await {
             warn!("imap: mark_processed failed for {}: {}", msg.id, e);
