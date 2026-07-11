@@ -11,7 +11,7 @@ import type {
 import * as api from "@/api/commands";
 import { platform } from "@tauri-apps/plugin-os";
 import { error, LogLevel } from "@tauri-apps/plugin-log";
-import { hostnameFromAddr } from "@/utils/address";
+import { hostnameFromAddr, nameFromAddr } from "@/utils/address";
 
 function generateId(): string {
   return Math.random().toString(16).slice(2, 10);
@@ -381,6 +381,10 @@ export const useYseStore = defineStore("yse", () => {
         // before loadMessages runs. Prevents brief double-display when the
         // event arrives before the send() promise resolves.
         const p = event.payload;
+        const wasPending = pendingMessages.value.some(
+          (x) =>
+            x.text === p.text && Math.abs(x.timestamp - p.timestamp) < 30000,
+        );
         pendingMessages.value = pendingMessages.value.filter(
           (x) =>
             !(x.text === p.text && Math.abs(x.timestamp - p.timestamp) < 30000),
@@ -389,7 +393,41 @@ export const useYseStore = defineStore("yse", () => {
         ingestHostnamesFromMessage(event.payload);
         if (messageReloadTimer) clearTimeout(messageReloadTimer);
         messageReloadTimer = setTimeout(loadMessages, 500);
+        // System notification for external messages (not local echo)
+        if (!wasPending) {
+          sendMessageNotification(p).catch(() => {});
+        }
       });
+    } catch {
+      // Not in Tauri environment
+    }
+  }
+
+  async function sendMessageNotification(msg: Message) {
+    try {
+      const { sendNotification, isPermissionGranted } = await import(
+        "@tauri-apps/plugin-notification"
+      );
+      if (await isPermissionGranted()) {
+        sendNotification({
+          title: nameFromAddr(msg.from),
+          body: msg.text?.slice(0, 200) ?? "(文件)",
+        });
+      }
+    } catch {
+      // Not in Tauri environment
+    }
+  }
+
+  async function requestNotificationPermission() {
+    if (platform() !== "android") return;
+    try {
+      const { isPermissionGranted, requestPermission } = await import(
+        "@tauri-apps/plugin-notification"
+      );
+      if (!(await isPermissionGranted())) {
+        await requestPermission();
+      }
     } catch {
       // Not in Tauri environment
     }
@@ -428,6 +466,7 @@ export const useYseStore = defineStore("yse", () => {
     stopPolling,
     listenForLogs,
     listenForMessages,
+    requestNotificationPermission,
     loadHostnames,
     loadHiddenAddresses,
     loadLocalHostname,

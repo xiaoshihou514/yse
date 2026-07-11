@@ -128,6 +128,7 @@ onMounted(async () => {
   // ready yet and await would hang, preventing polling from starting.
   store.listenForLogs();
   store.listenForMessages();
+  store.requestNotificationPermission();
   await store.initializeApp();
   // Explicitly load data after init in case events were missed during startup.
   store.loadMessages();
