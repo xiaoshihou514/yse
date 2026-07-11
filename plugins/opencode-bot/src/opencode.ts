@@ -1,17 +1,7 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import { spawn, type ChildProcess } from "child_process";
+import { type ChildProcess } from "child_process";
 
-type OpenCodeClient = ReturnType<typeof createOpencodeClient>;
-
-let _serverProcess: ChildProcess | null = null;
-
-process.on("exit", () => {
-  if (_serverProcess) {
-    _serverProcess.kill();
-  }
-});
-
-// ---- Model configuration types ----
+export type OpenCodeClient = ReturnType<typeof createOpencodeClient>;
 
 export interface ModelSpec {
   modelId: string;
@@ -36,7 +26,7 @@ export interface SessionState {
 }
 
 export interface BotState {
-  client: ReturnType<typeof createOpencodeClient>;
+  client: OpenCodeClient;
   projectDir: string;
   baseUrl: string;
   sessions: {
@@ -46,32 +36,23 @@ export interface BotState {
   serverProcess: ChildProcess | null;
 }
 
-interface SessionShape {
+export interface SessionShape {
   id: string; title: string; directory: string; updatedAt: number;
 }
 
-function formatSession(raw: { id?: string; title?: string; directory?: string; updatedAt?: number }): SessionShape {
-  return {
-    id: raw.id ?? "",
-    title: raw.title ?? "",
-    directory: raw.directory ?? "",
-    updatedAt: raw.updatedAt ?? 0,
-  };
-}
-
-interface ApiModel {
+export interface ApiModel {
   id?: string;
   providerID?: string;
   variant?: string;
 }
 
-interface ApiSkill {
+export interface ApiSkill {
   id?: string;
   name?: string;
   description?: string;
 }
 
-interface ApiAgent {
+export interface ApiAgent {
   id?: string;
   name?: string;
   description?: string;
@@ -82,7 +63,47 @@ interface PromptPart {
   text?: string;
 }
 
-// ---- Pure model resolution logic (testable without server) ----
+interface PromptParams {
+  sessionID: string;
+  parts: { type: "text"; text: string }[];
+  directory?: string;
+  model?: { modelID: string; providerID: string; variant?: string };
+  agent?: string;
+}
+
+function extractTextParts(msg: { parts?: PromptPart[] }): string {
+  const texts = (msg?.parts ?? [])
+    .filter((p) => p.type === "text")
+    .map((p) => p.text)
+    .filter((t): t is string => !!t);
+  return texts.join("\n") || "(empty response)";
+}
+
+function buildPromptParams(
+  sessionId: string,
+  text: string,
+  directory: string | undefined,
+  spec: ModelSpec,
+  agentId: string | undefined,
+): PromptParams {
+  const params: PromptParams = {
+    sessionID: sessionId,
+    parts: [{ type: "text", text }],
+    ...(directory ? { directory } : {}),
+  };
+  if (spec.modelId && spec.providerId) {
+    params.model = {
+      modelID: spec.modelId,
+      providerID: spec.providerId,
+      ...(spec.variant ? { variant: spec.variant } : {}),
+    };
+  } else if (agentId) {
+    params.agent = agentId;
+  }
+  return params;
+}
+
+// ---- Pure model resolution logic ----
 
 export function resolveModelChain(
   session: { modelMode?: string; modelId?: string; providerId?: string; modelVariant?: string },
@@ -132,86 +153,7 @@ export async function tryModelsWithFallback(
   throw lastError || new Error("所有模型均不可用");
 }
 
-// ---- Server management ----
-
-function startServer(): { child: ChildProcess; port: Promise<number> } {
-  const child = spawn("opencode", ["serve", "--port", "0", "--print-logs"], {
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  let stdout = "";
-  const port = new Promise<number>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("opencode server start timeout (15s)"));
-    }, 15000);
-    child.stdout!.on("data", (data: Buffer) => {
-      stdout += data.toString();
-      const m = stdout.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/);
-      if (m) {
-        clearTimeout(timeout);
-        resolve(parseInt(m[1], 10));
-      }
-    });
-    child.on("error", (e) => {
-      clearTimeout(timeout);
-      reject(e);
-    });
-    child.on("exit", (code) => {
-      if (code !== null && code !== 0) {
-        clearTimeout(timeout);
-        reject(new Error(`opencode server exited with code ${code}`));
-      }
-    });
-  });
-  return { child, port };
-}
-
-export async function initBot(): Promise<BotState | null> {
-  try {
-    const { child, port } = startServer();
-    _serverProcess = child;
-    const actualPort = await port;
-    process.stderr.write(`[opencode-bot] server started on port ${actualPort}\n`);
-
-    const cwd = process.cwd();
-    const baseUrl = `http://127.0.0.1:${actualPort}`;
-    let projectDir = cwd;
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const probe = createOpencodeClient({ baseUrl, directory: projectDir });
-        const proj: { data?: { worktree?: string } } = await probe.project.current();
-        if (proj.data?.worktree) projectDir = proj.data.worktree;
-        break;
-      } catch (e: unknown) {
-        process.stderr.write(`[opencode-bot] project.current attempt ${attempt} failed: ${e instanceof Error ? e.message : String(e)}\n`);
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 1500));
-        }
-      }
-    }
-
-    const client = createOpencodeClient({
-      baseUrl,
-      directory: projectDir,
-    });
-
-    return {
-      client, projectDir, baseUrl,
-      sessions: {},
-      modelConfig: { defaultModel: undefined, fallbackChain: [] },
-      serverProcess: child,
-    };
-  } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] initBot failed: ${e instanceof Error ? e.message : String(e)}\n`);
-    return null;
-  }
-}
-
-export function killServer(state: BotState) {
-  if (state.serverProcess) {
-    state.serverProcess.kill();
-  }
-}
+// ---- State management ----
 
 export function getUserState(
   state: BotState,
@@ -223,47 +165,7 @@ export function getUserState(
   return state.sessions[userAddr];
 }
 
-export function getSessionState(
-  state: BotState | null,
-  userAddr: string,
-): SessionState | null {
-  if (!state) return null;
-  return getUserState(state, userAddr);
-}
-
-// ---- Prompt helpers ----
-
-function extractTextParts(msg: { parts?: PromptPart[] }): string {
-  const texts = (msg?.parts ?? [])
-    .filter((p) => p.type === "text")
-    .map((p) => p.text)
-    .filter((t): t is string => !!t);
-  return texts.join("\n") || "(empty response)";
-}
-
-function buildPromptParams(
-  sessionId: string,
-  text: string,
-  directory: string | undefined,
-  spec: ModelSpec,
-  agentId: string | undefined,
-): any {
-  const params: any = {
-    sessionID: sessionId,
-    parts: [{ type: "text", text }],
-    ...(directory ? { directory } : {}),
-  };
-  if (spec.modelId && spec.providerId) {
-    params.model = {
-      id: spec.modelId,
-      providerID: spec.providerId,
-      ...(spec.variant ? { variant: spec.variant } : {}),
-    };
-  } else if (agentId) {
-    params.agent = agentId;
-  }
-  return params;
-}
+// ---- Prompt sending ----
 
 export async function sendPromptStreaming(
   client: OpenCodeClient,
@@ -380,161 +282,3 @@ export async function sendPrompt(
     return `Error: ${e instanceof Error ? e.message : String(e)}`;
   }
 }
-
-// ---- Listing helpers ----
-
-export async function listModels(
-  state: BotState,
-): Promise<{ label: string; value: string; description: string }[]> {
-  try {
-    const res = await fetch(`${state.baseUrl}/api/model`);
-    const data = await res.json();
-    const items = Array.isArray(data) ? data : (data?.data ?? []);
-    return items.map((m: ApiModel) => ({
-      label: `${m.id ?? "?"}  (${m.providerID ?? "?"})`,
-      value: JSON.stringify({ model: m.id, provider: m.providerID }),
-      description: m.variant
-        ? `variant: ${m.variant}`
-        : `provider: ${m.providerID ?? "?"}`,
-    }));
-  } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] listModels failed: ${e instanceof Error ? e.message : String(e)}\n`);
-    return [];
-  }
-}
-
-export async function listSkills(
-  state: BotState,
-): Promise<{ label: string; value: string; description: string }[]> {
-  try {
-    const res = await fetch(`${state.baseUrl}/api/skill`);
-    const data = await res.json();
-    const items = Array.isArray(data) ? data : (data?.data ?? []);
-    return items.map((s: ApiSkill) => ({
-      label: s.name || s.id || "?",
-      value: s.id ?? "",
-      description: s.description ?? "",
-    }));
-  } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] listSkills failed: ${e instanceof Error ? e.message : String(e)}\n`);
-    return [];
-  }
-}
-
-export async function listAgents(
-  state: BotState,
-): Promise<{ label: string; value: string; description: string }[]> {
-  try {
-    const res = await fetch(`${state.baseUrl}/api/agent`);
-    const data = await res.json();
-    const items = Array.isArray(data) ? data : (data?.data ?? []);
-    return items.map((a: ApiAgent) => ({
-      label: a.name || a.id || "?",
-      value: JSON.stringify({ agent: a.id ?? a.name ?? "" }),
-      description: a.description ?? a.id ?? "",
-    }));
-  } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] listAgents failed: ${e instanceof Error ? e.message : String(e)}\n`);
-    return [];
-  }
-}
-
-export async function fetchAllSessions(
-  client: OpenCodeClient,
-  baseUrl?: string,
-): Promise<SessionShape[]> {
-  const listingClient = (baseUrl ? createOpencodeClient({ baseUrl }) : client);
-
-  try {
-    const result = await listingClient.v2.session.list({ limit: 200 });
-    const arr: unknown = result?.data?.data;
-    if (Array.isArray(arr) && arr.length > 0) {
-      return (arr as Array<{ id?: string; title?: string; location?: { directory?: string }; time?: { updated?: number } }>)
-        .slice(0, 100).map((s) => formatSession({
-          id: s.id, title: s.title,
-          directory: s.location?.directory,
-          updatedAt: s.time?.updated,
-        }));
-    }
-  } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] v2 session.list failed: ${e instanceof Error ? e.message : String(e)}\n`);
-  }
-
-  try {
-    const result: unknown = await listingClient.experimental.session.list();
-    const rawArray: unknown =
-      Array.isArray(result) ? result
-        : (result as Record<string, unknown>)?.data
-        ?? (result as Record<string, unknown>)?.sessions
-        ?? (result as Record<string, unknown>)?.items
-        ?? null;
-    if (!rawArray) {
-      const raw = JSON.stringify(result).slice(0, 200);
-      process.stderr.write(`[opencode-bot] unexpected session.list format: ${raw}\n`);
-      return [];
-    }
-    if (!Array.isArray(rawArray)) {
-      process.stderr.write(`[opencode-bot] sessions is not an array: ${JSON.stringify(rawArray).slice(0, 200)}\n`);
-      return [];
-    }
-    return (rawArray as Array<{ id?: string; title?: string; directory?: string; worktree?: string; location?: { directory?: string }; updatedAt?: number; time?: { updated?: number }; updated?: number }>)
-      .slice(0, 100).map((s) => formatSession({
-        id: s.id, title: s.title,
-        directory: s.directory || s.worktree || s.location?.directory,
-        updatedAt: s.updatedAt || s.time?.updated || s.updated,
-      }));
-  } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] fetchAllSessions failed: ${e instanceof Error ? e.message : String(e)}\n`);
-    return [];
-  } finally {
-    if (listingClient !== client && typeof listingClient === "object") {
-    }
-  }
-}
-
-export async function listSessions(
-  client: OpenCodeClient,
-  baseUrl?: string,
-): Promise<{ label: string; value: string; description: string }[]> {
-  const sessions = await fetchAllSessions(client, baseUrl);
-  return sessions.map((s: SessionShape) => ({
-    label: s.title || s.id.slice(0, 8) || "Untitled",
-    value: s.id,
-    description: s.directory
-      ? `📁 ${s.directory}`
-      : `🕐 ${s.updatedAt ? new Date(s.updatedAt).toLocaleDateString("zh-CN") : "?"}`,
-  }));
-}
-
-interface SessionDetail {
-  title?: string;
-  id?: string;
-  directory?: string;
-  worktree?: string;
-  time?: { createdAt?: number };
-  created?: number;
-}
-
-export async function getSessionInfo(
-  client: OpenCodeClient,
-  sessionId: string,
-): Promise<string> {
-  try {
-    const result: unknown = await client.session.get({ sessionID: sessionId });
-    const data = (result as { data?: SessionDetail })?.data;
-    if (!data) return "未找到会话";
-    const lines: string[] = [];
-    lines.push(`📋 会话: ${data.title ?? "(无标题)"}  (${data.id || sessionId})`);
-    if (data.directory || data.worktree)
-      lines.push(`📁 目录: ${data.directory || data.worktree}`);
-    if (data.time?.createdAt)
-      lines.push(`🕐 创建: ${new Date(data.time.createdAt).toLocaleString("zh-CN")}`);
-    else if (data.created)
-      lines.push(`🕐 创建: ${new Date(data.created).toLocaleString("zh-CN")}`);
-    return lines.join("\n");
-  } catch (e: unknown) {
-    return `获取会话信息失败: ${e instanceof Error ? e.message : String(e)}`;
-  }
-}
-
-

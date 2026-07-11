@@ -1,14 +1,12 @@
 import { parseStdin, sendResponse, sendList, sendLog, setPluginAddr, pluginAddr } from "./yse.js";
+import { initBot, killServer } from "./server.js";
 import {
-  initBot,
+  listModels, listSkills, listAgents, listVariants,
+  fetchAllSessions, getSessionInfo,
+} from "./api.js";
+import {
   getUserState,
   sendPromptStreaming,
-  fetchAllSessions,
-  getSessionInfo,
-  listModels,
-  listSkills,
-  listAgents,
-  killServer,
   resolveModelChain,
   type BotState,
   type SessionState,
@@ -420,21 +418,7 @@ async function handleCommand(
         sendResponse(from, "请先选择会话");
         break;
       }
-      const listVariants = async (): Promise<{ label: string; value: string; description: string }[]> => {
-        try {
-          const res = await fetch(`${state.baseUrl}/api/model`);
-          const data = await res.json();
-          const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
-          return items.map((m: any) => ({
-            label: `${m.id ?? "?"} / ${m.variant ?? "default"}`,
-            value: JSON.stringify({ model: m.id, provider: m.providerID, variant: m.variant }),
-            description: `provider: ${m.providerID ?? "?"}`,
-          }));
-        } catch {
-          return [];
-        }
-      };
-      const vlist = await listVariants();
+      const vlist = await listVariants(state.baseUrl);
       if (vlist.length === 0) {
         sendResponse(from, "暂无可用 variant");
         break;
