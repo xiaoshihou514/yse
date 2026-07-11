@@ -231,8 +231,7 @@ export const TmuxPlugin: Plugin = async ({ client, $, directory }) => {
       "tmux-start": tool({
         description: `在后台 tmux session 中启动一个长期任务（如 ML 训练），
 自动打开 kitty 窗口（如有 DISPLAY），
-每 15 秒自动检查进度，进度变化超过 5% 时回调子会话。
-返回 taskID 和子会话 sessionID。`,
+每 15 秒自动检查进度，进度变化超过 5% 时回调到当前会话。`,
         args: {
           command: tool.schema.string().describe("要在 tmux 中执行的命令，例如 'python train.py --epochs 100'"),
           description: tool.schema.string().describe("任务简短描述，用于显示和子会话标题"),
@@ -253,18 +252,10 @@ export const TmuxPlugin: Plugin = async ({ client, $, directory }) => {
             $`kitty --detach tmux attach -t ${id}`.quiet().nothrow().catch(() => {})
           }
 
-          let sessionID: string
-          try {
-            const sess = await client.session.create({ body: { title: `tmux: ${description}` } })
-            sessionID = (sess as any).data?.id ?? (sess as any).id
-          } catch (e) {
-            sessionID = "unknown"
-          }
-
           const task: Task = {
             id,
             tmuxSession: id,
-            opencodeSessionID: sessionID,
+            opencodeSessionID: ctx.sessionID,
             description,
             command: cmd,
             server,
@@ -282,12 +273,11 @@ export const TmuxPlugin: Plugin = async ({ client, $, directory }) => {
             output: [
               `✅ 任务已启动`,
               `   tmux session: ${id}`,
-              `   子会话: ${description}`,
+              `   描述: ${description}`,
               `   命令: ${cmd}`,
-              sessionID !== "unknown" ? `   子会话 ID: ${sessionID}` : "",
               !display ? "   ⚠️ 无 DISPLAY，未开 kitty 窗口（后台运行）" : "",
             ].filter(Boolean).join("\n"),
-            metadata: { taskID: id, sessionID },
+            metadata: { taskID: id },
           }
         },
       }),
