@@ -110,7 +110,8 @@ impl YseState {
     pub fn setup_plugin_handler(&self) {
         use tauri::Emitter;
         use yse_core::crypto::encrypt;
-        use yse_core::plugin::protocol::PluginRequest;
+        use yse_core::identity;
+use yse_core::plugin::protocol::PluginRequest;
 
         let store = self.core.store.clone();
         let config = self.core.config.clone();
@@ -126,13 +127,45 @@ impl YseState {
                     text,
                     meta,
                     files,
+                    plugin_id,
                 } => {
                     let store = store.clone();
                     let config = config.clone();
                     let crypto_key = crypto_key.clone();
                     let sender = sender.clone();
                     let app_handle = app_handle.clone();
+                    let core_store = store.clone(); // for validation
                     tokio::spawn(async move {
+                        // Validate plugin's from_addr matches its registered virtual address
+                        if let Some(pid) = &plugin_id {
+                            if !from_addr.is_empty() {
+                                // Look up expected virtual address from phash
+                                let hash_key = format!("phash:{}", pid);
+                                if let Ok(Some(hash)) = core_store.get_config_value(&hash_key).await {
+                                    let hostname = identity::local_hostname();
+                                    let expected_addr = identity::format_address(&pid, &hash, &hostname);
+                                    if from_addr != expected_addr {
+                                        log::error!(
+                                            "plugin {} sent from_addr {} but expected {}, dropping SMTP",
+                                            pid, from_addr, expected_addr
+                                        );
+                                        // Still save locally for debugging, but skip SMTP
+                                        let mut msg =
+                                            Message::new(from_addr.clone(), to_addr.clone(), text.clone());
+                                        if let Some(m) = meta {
+                                            msg = msg.with_meta(m);
+                                        }
+                                        if let Some(f) = files {
+                                            msg.files = Some(f);
+                                        }
+                                        let _ = store.save_message(&msg).await;
+                                        let _ = store.mark_processed(&msg.id).await;
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+
                         let email_user = config.read().await.email_username.clone();
                         let mut msg =
                             Message::new(from_addr.clone(), to_addr.clone(), text.clone());
@@ -596,6 +629,43 @@ impl YseState {
             let virtual_addr = identity::format_address(&p.name, &hash, &our_host);
             if let Err(e) = self.core.process_manager.update_plugin_config(&p.id, &virtual_addr, &user_addr).await {
                 log::error!("failed to push config to auto-started plugin {}: {}", p.id, e);
+            }
+
+            // Sync plugin_mappings to match the persistent phash.
+            if let Ok(Some(mut cfg)) = self.core.store.get_config_value("config").await {
+                if let Some(mut val) = serde_json::from_str::<serde_json::Value>(&cfg).ok() {
+                    let mut changed = false;
+                    if let Some(mappings) = val["plugin_mappings"].as_array_mut() {
+                        for m in mappings.iter_mut() {
+                            if m["plugin_id"].as_str() == Some(&p.id) || m["display_name"].as_str() == Some(&p.name) {
+                                if m["virtual_addr"].as_str() != Some(&virtual_addr) {
+                                    log::info!(
+                                        "updating plugin_mappings: {} -> {} (plugin_id={}, name={})",
+                                        m["virtual_addr"].as_str().unwrap_or(""),
+                                        virtual_addr,
+                                        p.id,
+                                        p.name
+                                    );
+                                    m["virtual_addr"] = serde_json::Value::String(virtual_addr.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                        // Remove stale entries with different hash for same plugin_id
+                        mappings.retain(|m| {
+                            if m["plugin_id"].as_str() == Some(&p.id) && m["virtual_addr"].as_str() != Some(&virtual_addr) {
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                    }
+                    if changed {
+                        if let Ok(new_cfg) = serde_json::to_string(&val) {
+                            let _ = self.core.store.set_config_value("config", &new_cfg).await;
+                        }
+                    }
+                }
             }
         }
     }

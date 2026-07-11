@@ -16,6 +16,8 @@ pub enum PluginRequest {
         meta: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
         files: Option<Vec<crate::message::FileAttachment>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        plugin_id: Option<String>,
     },
     /// Plugin logs a message
     #[serde(rename = "log")]

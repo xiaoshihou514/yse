@@ -139,6 +139,7 @@ impl ManagedPlugin {
                                             text: p["text"].as_str().map(String::from),
                                             meta: p.get("meta").cloned(),
                                             files: None,
+                                            plugin_id: Some(pid.clone()),
                                         });
                                     }
                                 }
