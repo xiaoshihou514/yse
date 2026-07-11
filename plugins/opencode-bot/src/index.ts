@@ -242,7 +242,8 @@ function makeEventHandler(from: string) {
     switch (type) {
       case "tool_called": {
         if (data.name === "bash") {
-          const cmd = data.input?.command || formatToolInput(data.input);
+          const cmd = data.input?.command || "";
+          if (!cmd.trim()) break;
           sendResponse(from, `🔧 bash\n\`\`\`bash\n${cmd.slice(0, 2000)}\n\`\`\``);
         } else if (isWriteTool(data.name)) {
           const path = data.input?.filePath || "";
