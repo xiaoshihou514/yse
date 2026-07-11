@@ -19,6 +19,8 @@ interface Task {
   lastCheckAt: string
   status: "running" | "completed" | "stalled" | "error"
   completedAt?: string
+  notifiedPct?: number | null
+  notifiedLine?: string
 }
 
 interface PersistedData {
@@ -27,8 +29,9 @@ interface PersistedData {
 
 /* ===== Constants ===== */
 
-const CHECK_INTERVAL_MS = 30 * 60 * 1000
-const STALL_LIMIT = 2
+const CHECK_INTERVAL_MS = 15 * 1000
+const NOTIFY_THRESHOLD = 5
+const STALL_LIMIT = 6
 const PERSISTENCE_DIR = ".opencode"
 
 /* ===== Top-level Helpers (no plugin types needed) ===== */
@@ -126,6 +129,7 @@ export const TmuxPlugin: Plugin = async ({ client, $, directory }) => {
           task.status = "completed"
           task.completedAt = new Date().toISOString()
           await notifySession(task.opencodeSessionID, "✅ 任务已结束（tmux session 已关闭）", false)
+          await saveTasks(directory, tasks)
           continue
         }
 
@@ -134,24 +138,47 @@ export const TmuxPlugin: Plugin = async ({ client, $, directory }) => {
         const lastLine = lines.length > 0 ? lines[lines.length - 1] : task.lastLine
         const { pct, raw } = parseProgress(lastLine)
 
+        const prevPct = task.lastPct
+        const prevLine = task.lastLine
+
         task.lastLine = lastLine
         task.lastCheckAt = new Date().toISOString()
 
+        let shouldNotify = false
+        let message = ""
+
         if (pct !== null) {
-          if (task.lastPct !== null && pct === task.lastPct) {
+          if (prevPct !== null && pct === prevPct) {
             task.stalledCount++
           } else {
             task.stalledCount = 0
           }
           task.lastPct = pct
 
-          if (task.stalledCount >= STALL_LIMIT) {
-            await notifySession(task.opencodeSessionID, `⚠️ 进度卡住: ${raw || lastLine}`, false)
-          } else {
-            await notifySession(task.opencodeSessionID, `📊 ${raw || lastLine} (${pct}%)`, true)
+          const notifiedPct = task.notifiedPct ?? -100
+
+          if (pct >= 100) {
+            shouldNotify = true
+            message = `🎉 任务完成: ${pct}%${raw ? ` (${raw})` : ""}`
+            task.status = "completed"
+            task.completedAt = new Date().toISOString()
+          } else if (task.stalledCount >= STALL_LIMIT) {
+            shouldNotify = true
+            message = `⚠️ 进度卡住: ${raw || lastLine.slice(0, 200)}`
+          } else if (pct - notifiedPct >= NOTIFY_THRESHOLD) {
+            shouldNotify = true
+            message = `📊 ${raw || lastLine.slice(0, 200)} (${pct}%)`
           }
-        } else if (lastLine !== task.lastLine) {
-          await notifySession(task.opencodeSessionID, `📋 ${lastLine.slice(0, 200)}`, true)
+
+          if (shouldNotify) task.notifiedPct = pct
+        } else if (lastLine !== prevLine && lastLine !== task.notifiedLine) {
+          shouldNotify = true
+          message = `📋 ${lastLine.slice(0, 200)}`
+          task.notifiedLine = lastLine
+        }
+
+        if (shouldNotify) {
+          await notifySession(task.opencodeSessionID, message, task.status !== "running")
         }
 
         await saveTasks(directory, tasks)
@@ -204,7 +231,7 @@ export const TmuxPlugin: Plugin = async ({ client, $, directory }) => {
       "tmux-start": tool({
         description: `在后台 tmux session 中启动一个长期任务（如 ML 训练），
 自动打开 kitty 窗口（如有 DISPLAY），
-每 30 分钟自动检查进度并回调子会话。
+每 15 秒自动检查进度，进度变化超过 5% 时回调子会话。
 返回 taskID 和子会话 sessionID。`,
         args: {
           command: tool.schema.string().describe("要在 tmux 中执行的命令，例如 'python train.py --epochs 100'"),
