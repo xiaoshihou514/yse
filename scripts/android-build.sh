@@ -83,7 +83,13 @@ settingsEvaluated { settings ->
 }
 GRADLE
 
-# 1c. fix broken URLs from previous patches (remove double-quote artifacts)
+# 1c. add POST_NOTIFICATIONS permission for Android 13+ notifications
+MANIFEST="gen/android/app/src/main/AndroidManifest.xml"
+if [ -f "$MANIFEST" ] && ! grep -q 'POST_NOTIFICATIONS' "$MANIFEST"; then
+  sed -i '/<uses-permission android:name="android.permission.INTERNET"\/>/a\    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/>' "$MANIFEST"
+fi
+
+# 1d. fix broken URLs from previous patches (remove double-quote artifacts)
 for f in $(find gen/android -name '*.kts' -o -name '*.gradle' 2>/dev/null); do
   sed -i 's|maven { setUrl(""https://maven.aliyun|maven { url = uri("https://maven.aliyun|g; s|maven { setUrl("https://maven.aliyun|maven { url = uri("https://maven.aliyun|g' "$f"
 done
