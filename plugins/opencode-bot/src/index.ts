@@ -33,6 +33,7 @@ const HELP = `可用命令：
 
 let stateFile = "";
 let pendingUserRestore: any = null;
+const pendingQuestions = new Map<string, { requestID: string }>();
 
 function saveStateImpl(s: any) {
   if (!stateFile || !s) return;
@@ -113,6 +114,20 @@ async function main() {
     // Handle list selection response from user
     const respValue = msg.params.meta?.plugin?.response?.value;
     if (respValue) {
+      // Check if this answers a pending AI question
+      const pending = pendingQuestions.get(from);
+      if (pending && state) {
+        try {
+          await state.client.question.reply({
+            requestID: pending.requestID,
+            answers: [[respValue]],
+          });
+          pendingQuestions.delete(from);
+        } catch (e: any) {
+          sendResponse(from, `❌ 提交回答失败: ${e.message ?? e}`);
+        }
+        continue;
+      }
       await handleListResponse(state, from, respValue);
       saveStateImpl(state);
       continue;
@@ -156,11 +171,13 @@ async function main() {
       await handleCommand(state, from, us, cmd, args.join(" "));
     } else if (us.sessionId) {
       const chain = resolveModelChain(us, state.modelConfig);
+      pendingQuestions.delete(from);
       const reply = await sendPromptStreaming(
         state.client, us.sessionId, text, state.projectDir,
         chain, us.agentId,
         makeEventHandler(from),
       );
+      pendingQuestions.delete(from);
       sendResponse(from, reply);
       sendResponse(from, "✅ 处理完成");
     } else {
@@ -225,6 +242,8 @@ function makeEventHandler(from: string) {
         } else if (data.name === "read") {
           const path = data.input?.filePath || data.input?.filePattern || formatToolInput(data.input);
           sendResponse(from, `📂 read: ${path.slice(0, 200)}`);
+        } else if (data.name === "question") {
+          // handled by question_asked event → sendList
         } else {
           sendResponse(from, `🔧 ${data.name}(${formatToolInput(data.input)})`);
         }
@@ -240,6 +259,8 @@ function makeEventHandler(from: string) {
             msg += `\n\`\`\`diff\n${out}\n\`\`\``;
           } else if (data.name === "read") {
             msg += `\n${formatReadOutput(out)}`;
+          } else if (data.name === "question") {
+            msg = `❓ 问题已回答`;
           } else {
             msg += `\n${out}`;
           }
@@ -248,11 +269,26 @@ function makeEventHandler(from: string) {
         break;
       }
       case "tool_failed":
+        if (data.name === "question") {
+          pendingQuestions.delete(from);
+        }
         sendResponse(from, `❌ ${data.name} 失败: ${data.error?.message ?? JSON.stringify(data.error).slice(0, 500)}`);
         break;
       case "model_switched":
         sendResponse(from, `⚠️  ${data.from?.modelId ?? "?"} 配额用完，切换至 ${data.to?.modelId ?? "?"}`);
         break;
+      case "question_asked": {
+        const { requestID, questions } = data;
+        const q = questions?.[0];
+        if (!q) break;
+        pendingQuestions.set(from, { requestID });
+        sendList(from, q.question, q.header, q.options.map((o: any) => ({
+          label: o.label,
+          value: o.label,
+          description: o.description,
+        })));
+        break;
+      }
     }
   };
 }

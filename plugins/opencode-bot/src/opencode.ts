@@ -236,6 +236,15 @@ export async function sendPromptStreaming(
           const p = ev.properties;
           if (!p?.sessionID || p.sessionID !== sessionId) continue;
 
+          if (ev.type === "question.v2.asked") {
+            onEvent("question_asked", {
+              requestID: ev.id,
+              sessionID: p.sessionID,
+              questions: p.questions,
+            });
+            continue;
+          }
+
           if (!ourMessageId && ev.type === "message.updated") {
             const info = p.info || p;
             if (info?.role === "assistant" && info?.id) {
