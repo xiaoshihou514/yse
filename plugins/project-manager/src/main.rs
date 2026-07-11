@@ -6,11 +6,13 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use config::Config;
+use futures::StreamExt;
+use rig_core::agent::MultiTurnStreamItem;
 use rig_core::client::CompletionClient;
-use rig_core::completion::Prompt;
 use rig_core::providers::ollama;
 use rig_core::providers::openai;
 use rig_core::providers::openai::client::OpenAICompletionsExt;
+use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt, ToolCallDeltaContent};
 use serde_json::Value;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -191,15 +193,12 @@ impl App {
         mc: &config::ModelConfig,
         project_path: &Path,
     ) -> Result<String, String> {
-        // Build via Ollama client for correct no-auth handling:
-        // empty api_key → OllamaApiKey(None) → into_header() returns None → no auth header.
         let base = ollama::Client::builder()
             .api_key(mc.api_key.as_str())
             .base_url(&mc.base_url)
             .build()
             .map_err(|e| format!("创建客户端失败 ({}): {}", mc.base_url, e))?;
 
-        // Convert to OpenAI-compatible protocol (POST /chat/completions).
         let client: openai::CompletionsClient = base.with_ext(OpenAICompletionsExt);
 
         let read_file_tool = ReadFileTool { project_dir: project_path.to_path_buf() };
@@ -217,10 +216,99 @@ impl App {
             .tool(git_log_tool)
             .build();
 
-        agent
-            .prompt("请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。")
-            .await
-            .map_err(|e| format!("AI 生成提案失败 ({}): {}", mc.model, e))
+        let mut stream = agent
+            .stream_prompt("请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。")
+            .await;
+
+        let mut final_text = String::new();
+        let mut tool_args_buf = String::new();
+        let mut tool_name_buf = String::new();
+
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => {
+                    match content {
+                        StreamedAssistantContent::Text(text) => {
+                            final_text.push_str(&text.text);
+                        }
+                        StreamedAssistantContent::ToolCall { tool_call, .. } => {
+                            let args = serde_json::to_string(&tool_call.function.arguments).unwrap_or_default();
+                            self.send_log("info", &format!(
+                                "🔧 调用工具: {}({})",
+                                tool_call.function.name,
+                                if args.len() > 200 {
+                                    format!("{}...", &args[..200])
+                                } else {
+                                    args
+                                },
+                            )).await;
+                        }
+                        StreamedAssistantContent::ToolCallDelta { content, .. } => {
+                            match content {
+                                ToolCallDeltaContent::Name(name) => {
+                                    tool_name_buf = name;
+                                    tool_args_buf.clear();
+                                }
+                                ToolCallDeltaContent::Delta(delta) => {
+                                    tool_args_buf.push_str(&delta);
+                                }
+                            }
+                        }
+                        StreamedAssistantContent::Reasoning(reasoning) => {
+                            let text = reasoning.display_text();
+                            if !text.is_empty() {
+                                self.send_log("info", &format!("🤔 思考: {}", text)).await;
+                            }
+                        }
+                        StreamedAssistantContent::ReasoningDelta { reasoning, .. } => {
+                            if !reasoning.is_empty() {
+                                self.send_log("debug", &format!("💭 思考中: {}", reasoning)).await;
+                            }
+                        }
+                        StreamedAssistantContent::Final(_) => {}
+                    }
+                }
+                Ok(MultiTurnStreamItem::StreamUserItem(StreamedUserContent::ToolResult { tool_result, .. })) => {
+                    let result_str = tool_result.content.iter()
+                        .map(|c| match c {
+                            rig_core::completion::message::ToolResultContent::Text(t) => t.text.clone(),
+                            _ => "...".into(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let truncated = if result_str.len() > 200 {
+                        format!("{}...", &result_str[..200])
+                    } else {
+                        result_str
+                    };
+                    self.send_log("info", &format!(
+                        "✅ 工具结果 ({}): {}",
+                        tool_name_buf,
+                        truncated,
+                    )).await;
+                }
+                Ok(MultiTurnStreamItem::CompletionCall(cc)) => {
+                    self.send_log("debug", &format!(
+                        "📊 模型调用 #{}: 输入 {} 输出 {} tokens",
+                        cc.call_index,
+                        cc.usage.input_tokens,
+                        cc.usage.output_tokens,
+                    )).await;
+                }
+                Ok(MultiTurnStreamItem::FinalResponse(res)) => {
+                    final_text = res.response().to_string();
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    self.send_log("error", &format!("流式错误: {}", e)).await;
+                }
+            }
+        }
+
+        if final_text.is_empty() {
+            return Err("AI 未生成任何提案文本".into());
+        }
+        Ok(final_text)
     }
 
     // ---- State machine transitions ----
@@ -521,7 +609,7 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
             app.state_path = app.state_dir.join("state.json");
             app.load_state().await;
 
-            if !app.project_state.project_dir.is_some() {
+            if app.project_state.project_dir.is_none() {
                 app.send_message(
                     "👋 你好！我是项目经理，请使用 /init <项目路径> 指定要管理的项目。",
                     None,

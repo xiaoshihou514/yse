@@ -1145,6 +1145,7 @@ name = "project-manager"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "futures",
  "rig-core",
  "serde",
  "serde_json",

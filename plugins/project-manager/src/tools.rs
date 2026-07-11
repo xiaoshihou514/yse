@@ -158,7 +158,7 @@ impl Tool for GitLogTool {
             .args([
                 "log",
                 "--oneline",
-                &format!("-{}", args.count.max(1).min(100)),
+                &format!("-{}", args.count.clamp(1, 100)),
             ])
             .current_dir(&self.project_dir)
             .output()
