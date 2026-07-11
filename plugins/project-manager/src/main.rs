@@ -478,6 +478,9 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
             if let Some(addr) = params["virtual_addr"].as_str() {
                 app.virtual_addr = addr.to_string();
             }
+            if let Some(addr) = params["user_addr"].as_str() {
+                app.user_addr = addr.to_string();
+            }
             app.state_path = app.state_dir.join("state.json");
             app.load_state().await;
 

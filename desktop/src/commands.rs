@@ -557,6 +557,8 @@ impl YseState {
     }
 
     /// Auto-start plugins with auto_start flag set.
+    /// Each plugin gets a persistent virtual address and knows the local user,
+    /// so e.g. welcome messages work correctly from the start.
     pub async fn auto_start_plugins(&self) {
         let plugins = match self.core.store.list_plugins().await {
             Ok(p) => p,
@@ -566,8 +568,34 @@ impl YseState {
         log::info!("auto-starting {}/{} plugin(s)", to_start.len(), plugins.len());
         for p in &to_start {
             log::info!("auto-starting plugin: {} ({})", p.name, p.id);
+
+            // Get or create a persistent hash for this plugin so its virtual
+            // address survives restarts (e.g. "项目经理#abc123@hostname").
+            let hash_key = format!("phash:{}", p.id);
+            let hash = match self.core.store.get_config_value(&hash_key).await {
+                Ok(Some(h)) => h,
+                _ => {
+                    let h = identity::generate_hash();
+                    let _ = self.core.store.set_config_value(&hash_key, &h).await;
+                    h
+                }
+            };
+
+            // Register session so the plugin is routable immediately.
+            let user_addr = self.core.session_registry.local_user_address();
+            let _ = self.core.session_registry.register_session(&p.name, &p.id, &hash).await;
+
+            // Start the process.
             if let Err(e) = self.core.process_manager.start(&p.id, &p.name, &p.exec_path, &p.args).await {
                 log::error!("failed to auto-start plugin {}: {}", p.id, e);
+                continue;
+            }
+
+            // Push full config so the plugin knows its own address and the user's.
+            let our_host = identity::local_hostname();
+            let virtual_addr = identity::format_address(&p.name, &hash, &our_host);
+            if let Err(e) = self.core.process_manager.update_plugin_config(&p.id, &virtual_addr, &user_addr).await {
+                log::error!("failed to push config to auto-started plugin {}: {}", p.id, e);
             }
         }
     }
@@ -635,12 +663,6 @@ pub async fn add_plugin(
         .save_plugin(&pc)
         .await
         .map_err(|e| e.to_string())?;
-
-    state
-        .core
-        .process_manager
-        .start(&id, &name, &exec_path, &[])
-        .await?;
 
     log::info!("plugin added: {}", id);
     Ok(())

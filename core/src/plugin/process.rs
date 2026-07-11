@@ -80,6 +80,7 @@ impl ManagedPlugin {
             let notif = CoreNotification::Config {
                 state_dir: state_dir.clone(),
                 virtual_addr: None,
+                user_addr: String::new(),
             };
             if let Ok(json) = serde_json::to_string(&notif) {
                 let mut line = json;

@@ -57,6 +57,9 @@ pub enum CoreNotification {
         /// The plugin's virtual address (name#hash@hostname), so it
         /// can use the correct from-address when sending replies.
         virtual_addr: Option<String>,
+        /// The local user's address, so plugins know to whom they
+        /// should send welcome/notification messages.
+        user_addr: String,
     },
     /// Plugin should shut down
     #[serde(rename = "shutdown")]

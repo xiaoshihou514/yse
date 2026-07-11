@@ -342,18 +342,22 @@ impl PluginProcessManager {
         }
     }
 
-    /// Send an updated Config notification with the plugin's virtual address.
-    /// Called after a session is registered so the plugin knows its own address.
+    /// Send an updated Config notification with the plugin's virtual address
+    /// and the local user's address.
+    /// Called after a session is registered so the plugin knows its own address
+    /// and who to talk to.
     pub async fn update_plugin_config(
         &self,
         plugin_id: &str,
         virtual_addr: &str,
+        user_addr: &str,
     ) -> Result<(), String> {
         let map = self.processes.lock().await;
         let entry = map.get(plugin_id).ok_or_else(|| format!("plugin {} not found", plugin_id))?;
         let notif = CoreNotification::Config {
             state_dir: entry.state_dir.clone(),
             virtual_addr: Some(virtual_addr.to_string()),
+            user_addr: user_addr.to_string(),
         };
         if let Some(ref plugin) = entry.plugin {
             plugin.send_notification(&notif).await

@@ -92,6 +92,32 @@ impl SessionRegistry {
         identity::format_address(&name, &hash, &hostname)
     }
 
+    /// Register a session for a plugin by name/id, constructing its virtual
+    /// address from the given persistent hash. Returns the virtual_addr.
+    pub async fn register_session(&self, name: &str, plugin_id: &str, hash: &str) -> String {
+        let our_host = self.local_hostname.lock().unwrap().clone();
+        let virtual_addr = identity::format_address(name, hash, &our_host);
+        let mut sessions = self.sessions.lock().await;
+        sessions.insert(
+            hash.to_string(),
+            Session {
+                hash: hash.to_string(),
+                plugin_id: plugin_id.to_string(),
+                name: name.to_string(),
+            },
+        );
+        info!(
+            "session registered: name={} hash={} plugin_id={}",
+            name, hash, plugin_id
+        );
+        virtual_addr
+    }
+
+    /// Get the local user's full address (name#hash@hostname).
+    pub fn local_user_address(&self) -> String {
+        self.format_sender_address("me")
+    }
+
     /// Route a message to the right plugin, starting one if needed.
     #[allow(clippy::too_many_arguments)]
     pub async fn route(
@@ -188,6 +214,7 @@ impl SessionRegistry {
         // Build the plugin's virtual address so it knows its own identity.
         let our_host = self.local_hostname.lock().unwrap().clone();
         let virtual_addr = identity::format_address(name, hash, &our_host);
+        let user_addr = self.local_user_address();
 
         // If the plugin is already running, just register a session for this hash.
         if process_manager.is_running(&plugin_id).await {
@@ -204,8 +231,7 @@ impl SessionRegistry {
                 "session registered for existing process: name={} hash={}",
                 name, hash
             );
-            // Push updated config so the plugin knows its virtual address.
-            let _ = process_manager.update_plugin_config(&plugin_id, &virtual_addr).await;
+            let _ = process_manager.update_plugin_config(&plugin_id, &virtual_addr, &user_addr).await;
             return Some(plugin_id);
         }
 
@@ -233,8 +259,7 @@ impl SessionRegistry {
             name, hash, plugin_id
         );
 
-        // Push updated config so the plugin knows its virtual address.
-        let _ = process_manager.update_plugin_config(&plugin_id, &virtual_addr).await;
+        let _ = process_manager.update_plugin_config(&plugin_id, &virtual_addr, &user_addr).await;
 
         Some(plugin_id)
     }
