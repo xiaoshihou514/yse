@@ -668,18 +668,18 @@ impl YseState {
 
             // Sync plugin_mappings to match the persistent phash.
             if let Ok(Some(cfg)) = self.core.store.get_config_value("config").await {
-                if let Some(mut val) = serde_json::from_str::<serde_json::Value>(&cfg).ok() {
+                if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&cfg) {
                     let mut changed = false;
                     if let Some(mappings) = val["plugin_mappings"].as_array_mut() {
                         for m in mappings.iter_mut() {
                             let addr_name =
                                 identity::parse_address(m["virtual_addr"].as_str().unwrap_or(""))
                                     .map(|(n, _, _)| n.to_string());
-                            if m["plugin_id"].as_str() == Some(&p.id)
-                                || addr_name.as_deref() == Some(&p.name)
+                            if (m["plugin_id"].as_str() == Some(&p.id)
+                                || addr_name.as_deref() == Some(&p.name))
+                                && m["virtual_addr"].as_str() != Some(&virtual_addr)
                             {
-                                if m["virtual_addr"].as_str() != Some(&virtual_addr) {
-                                    log::info!(
+                                log::info!(
                                         "updating plugin_mappings: {} -> {} (plugin_id={}, name={})",
                                         m["virtual_addr"].as_str().unwrap_or(""),
                                         virtual_addr,
@@ -689,7 +689,6 @@ impl YseState {
                                     m["virtual_addr"] =
                                         serde_json::Value::String(virtual_addr.clone());
                                     changed = true;
-                                }
                             }
                         }
                         // Remove stale entries with different hash for same plugin_id
