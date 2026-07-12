@@ -87,19 +87,19 @@ export const useYseStore = defineStore("yse", () => {
   const processes = ref<ProcessInfo[]>([]);
   const sessions = ref<SessionInfo[]>([]);
   const localHostname = ref("");
-  const readTimestamps = reactive<Record<string, number>>(
-    JSON.parse(localStorage.getItem("yse-read-timestamps") || "{}"),
-  );
+  const _rt = JSON.parse(localStorage.getItem("yse-read-timestamps") || "{}");
+  for (const k of Object.keys(_rt)) if (_rt[k] > 1e11) _rt[k] = Math.floor(_rt[k] / 1000);
+  const readTimestamps = reactive<Record<string, number>>(_rt);
   const readVersion = ref(0);
 
   function markRead(addr: string) {
-    readTimestamps[addr] = Date.now();
+    readTimestamps[addr] = Math.floor(Date.now() / 1000);
     readVersion.value++;
     localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));
   }
 
   function markAllRead() {
-    const now = Date.now();
+    const now = Math.floor(Date.now() / 1000);
     for (const m of messages.value) {
       if (m.from.includes("#")) readTimestamps[m.from] = now;
       if (m.to.includes("#")) readTimestamps[m.to] = now;
