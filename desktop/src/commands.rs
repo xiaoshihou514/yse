@@ -143,7 +143,13 @@ use yse_core::plugin::protocol::PluginRequest;
                                 let hash_key = format!("phash:{}", pid);
                                 if let Ok(Some(hash)) = core_store.get_config_value(&hash_key).await {
                                     let hostname = identity::local_hostname();
-                                    let expected_addr = identity::format_address(&pid, &hash, &hostname);
+                                    // Look up the plugin's display name so expected_addr uses the right name (not raw id)
+                                    let plugins = core_store.list_plugins().await.unwrap_or_default();
+                                    let plugin_name = plugins.iter()
+                                        .find(|p| p.id == *pid)
+                                        .map(|p| p.name.as_str())
+                                        .unwrap_or(pid);
+                                    let expected_addr = identity::format_address(plugin_name, &hash, &hostname);
                                     if from_addr != expected_addr {
                                         log::error!(
                                             "plugin {} sent from_addr {} but expected {}, dropping SMTP",
@@ -637,7 +643,11 @@ impl YseState {
                     let mut changed = false;
                     if let Some(mappings) = val["plugin_mappings"].as_array_mut() {
                         for m in mappings.iter_mut() {
-                            if m["plugin_id"].as_str() == Some(&p.id) || m["display_name"].as_str() == Some(&p.name) {
+                            let addr_name = identity::parse_address(m["virtual_addr"].as_str().unwrap_or(""))
+                                .map(|(n,_,_)| n.to_string());
+                            if m["plugin_id"].as_str() == Some(&p.id)
+                                || addr_name.as_deref() == Some(&p.name)
+                            {
                                 if m["virtual_addr"].as_str() != Some(&virtual_addr) {
                                     log::info!(
                                         "updating plugin_mappings: {} -> {} (plugin_id={}, name={})",
@@ -652,12 +662,15 @@ impl YseState {
                             }
                         }
                         // Remove stale entries with different hash for same plugin_id
+                        let p_id = &p.id;
+                        let p_name = &p.name;
+                        let vaddr = &virtual_addr;
                         mappings.retain(|m| {
-                            if m["plugin_id"].as_str() == Some(&p.id) && m["virtual_addr"].as_str() != Some(&virtual_addr) {
-                                false
-                            } else {
-                                true
-                            }
+                            let addr_name = identity::parse_address(m["virtual_addr"].as_str().unwrap_or(""))
+                                .map(|(n,_,_)| n.to_string());
+                            let same_plugin = m["plugin_id"].as_str() == Some(p_id)
+                                || addr_name.as_deref() == Some(p_name);
+                            !same_plugin || m["virtual_addr"].as_str() == Some(vaddr)
                         });
                     }
                     if changed {
