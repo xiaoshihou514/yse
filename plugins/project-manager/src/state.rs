@@ -27,6 +27,7 @@ pub struct HistoryEntry {
     pub proposal: String,
     pub result: String,
     pub completed: bool,
+    pub feedback: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -128,11 +128,6 @@ impl App {
                             "value": "approve",
                             "description": "批准这个方向，开始实施"
                         },
-                        {
-                            "label": "❌ 拒绝，重新考虑",
-                            "value": "reject",
-                            "description": "拒绝这个提案，项目经理将沉睡一周"
-                        }
                     ]
                 }
             }
@@ -355,6 +350,7 @@ impl App {
             proposal: proposal_text.to_string(),
             result: "approved".into(),
             completed: false,
+            feedback: None,
         });
         self.project_state.state = PState::Approved {
             proposal: p,
@@ -368,7 +364,7 @@ impl App {
         .await;
     }
 
-    async fn handle_reject(&mut self, proposal_text: &str) {
+    async fn handle_reject_with_feedback(&mut self, proposal_text: &str, feedback: &str) {
         let ts = get_timestamp();
         let p = state::Proposal {
             text: proposal_text.to_string(),
@@ -378,6 +374,7 @@ impl App {
             proposal: proposal_text.to_string(),
             result: "rejected".into(),
             completed: false,
+            feedback: Some(feedback.to_string()),
         });
         self.project_state.state = PState::Sleeping {
             proposal: p,
@@ -386,7 +383,10 @@ impl App {
         };
         self.save_state().await;
         self.send_message(
-            "😴 提案被拒，项目经理将沉睡 168 小时才能提出新方向。",
+            &format!(
+                "😴 提案被拒，项目经理将沉睡 168 小时才能提出新方向。\n反馈意见已记录：{}",
+                feedback
+            ),
             None,
         )
         .await;
@@ -419,6 +419,12 @@ impl App {
     }
 
     async fn handle_message_text(&mut self, text: &str) {
+        // Clone data up front to avoid borrow conflict
+        let pending_proposal = match &self.project_state.state {
+            PState::Proposed { proposal } => Some(proposal.text.clone()),
+            _ => None,
+        };
+
         match &self.project_state.state {
             PState::Init => {
                 self.send_message("请使用 /init <项目路径> 设置项目目录。", None)
@@ -429,11 +435,9 @@ impl App {
                     .await;
             }
             PState::Proposed { .. } => {
-                self.send_message(
-                    "请点选上面的列表做出决定：同意或拒绝当前提案。",
-                    None,
-                )
-                .await;
+                if let Some(t) = pending_proposal {
+                    self.handle_reject_with_feedback(&t, text).await;
+                }
             }
             PState::Approved { proposal, .. } => {
                 let lower = text.to_lowercase();
@@ -502,7 +506,6 @@ impl App {
         };
         match value {
             "approve" => self.handle_approve(&proposal_text).await,
-            "reject" => self.handle_reject(&proposal_text).await,
             _ => self.send_message("未知选项。", None).await,
         }
     }
