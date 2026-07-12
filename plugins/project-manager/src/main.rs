@@ -1,18 +1,21 @@
 mod config;
+mod db;
 mod state;
 mod tools;
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use config::Config;
+use db::Db;
 use futures::StreamExt;
 use rig_core::agent::MultiTurnStreamItem;
 use rig_core::client::CompletionClient;
+use rig_core::completion::Message;
 use rig_core::providers::ollama;
 use rig_core::providers::openai;
 use rig_core::providers::openai::client::OpenAICompletionsExt;
-use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingPrompt, ToolCallDeltaContent};
+use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat, ToolCallDeltaContent};
 use serde_json::Value;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -21,6 +24,8 @@ use tools::{GitLogTool, ListDirTool, ReadFileTool};
 
 const HOUR_SECS: u64 = 3600;
 const SLEEP_HOURS: u32 = 168;
+
+const HISTORY_TURNS: u64 = 10;
 
 const SYSTEM_PROMPT: &str = r#"你是一个软件项目的 AI 项目经理。你的目标是为项目争取开发经费（开发时间）。
 
@@ -51,6 +56,20 @@ const SYSTEM_PROMPT: &str = r#"你是一个软件项目的 AI 项目经理。你
 **预估工作量**：[需要多少开发时间，单位：天]
 "#;
 
+const CACHE_PROMPT: &str = r#"你是一个软件项目的 AI 项目经理。
+
+## 你的角色
+- 项目结构和历史你已经了解（见下方上下文）
+- 直接基于已有分析提出一个最值得投入的提案
+- 不需要重复探索项目和文件
+
+## 行为规则
+1. 直接输出提案，不要调用任何工具
+2. 提案必须包含：功能描述、技术方案、预期收益、预估工作量
+3. 提案要有说服力——用户只会批准最值得投入的方向
+4. 用中文输出最终提案
+"#;
+
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -62,13 +81,68 @@ fn get_timestamp() -> u64 {
     now_secs()
 }
 
+fn get_current_commit(project_dir: &str) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(project_dir)
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+fn get_git_diff(project_dir: &str, from_commit: &str) -> String {
+    let output = std::process::Command::new("git")
+        .args(["diff", "--stat", from_commit, "HEAD"])
+        .current_dir(project_dir)
+        .output()
+        .ok();
+    match output {
+        Some(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        _ => String::new(),
+    }
+}
+
+fn scan_structure(project_dir: &str) -> String {
+    let mut parts = Vec::new();
+
+    parts.push("## 项目目录结构".to_string());
+    let ls = std::process::Command::new("ls")
+        .arg("-la")
+        .current_dir(project_dir)
+        .output()
+        .ok();
+    if let Some(o) = ls {
+        if o.status.success() {
+            parts.push(String::from_utf8_lossy(&o.stdout).trim().to_string());
+        }
+    }
+
+    parts.push("\n## Git 提交历史".to_string());
+    let gl = std::process::Command::new("git")
+        .args(["log", "--oneline", "-30"])
+        .current_dir(project_dir)
+        .output()
+        .ok();
+    if let Some(o) = gl {
+        if o.status.success() {
+            parts.push(String::from_utf8_lossy(&o.stdout).trim().to_string());
+        }
+    }
+
+    parts.join("\n")
+}
+
 struct App {
     config: Config,
     state_dir: PathBuf,
     virtual_addr: String,
     user_addr: String,
     project_state: ProjectState,
-    state_path: PathBuf,
+    db: Option<Db>,
 }
 
 impl App {
@@ -79,7 +153,7 @@ impl App {
             virtual_addr: String::new(),
             user_addr: String::new(),
             project_state: ProjectState::default(),
-            state_path: PathBuf::from("state.json"),
+            db: None,
         }
     }
 
@@ -138,11 +212,48 @@ impl App {
     // ---- State persistence ----
 
     async fn save_state(&self) {
-        self.project_state.save(&self.state_dir).await;
+        let db = match self.db.as_ref() {
+            Some(d) => d,
+            None => return,
+        };
+        let project_dir = match self.project_state.project_dir.as_ref() {
+            Some(d) => d,
+            None => return,
+        };
+        let json = serde_json::to_string(&self.project_state).unwrap();
+        let _ = db.save_project_state(project_dir, &json);
     }
 
     async fn load_state(&mut self) {
-        self.project_state = ProjectState::load(&self.state_dir).await;
+        let db = match self.db.as_ref() {
+            Some(d) => d,
+            None => return,
+        };
+        let project_dir = match &self.project_state.project_dir {
+            Some(d) => d.clone(),
+            None => return,
+        };
+        match db.load_project_state(&project_dir) {
+            Ok(Some(json)) => {
+                if let Ok(state) = serde_json::from_str(&json) {
+                    self.project_state = state;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn store_proposal_turn(&self, role: &str, content: &str) {
+        let db = match self.db.as_ref() {
+            Some(d) => d,
+            None => return,
+        };
+        let project_dir = match self.project_state.project_dir.as_ref() {
+            Some(d) => d,
+            None => return,
+        };
+        let turn = self.project_state.turn;
+        let _ = db.add_conversation_turn(project_dir, role, content, turn);
     }
 
     // ---- Agent ----
@@ -158,20 +269,39 @@ impl App {
         let chain = self.config.fallback_chain();
         let mut last_err = String::new();
 
+        // Load chat history for dialogue injection
+        let history = self.load_chat_history();
+
+        // Check repo structure cache
+        let (structure, has_exploration, use_cache_context) = self.check_structure_cache(project_dir);
+
         for (i, mc) in chain.iter().enumerate() {
             self.send_log(
                 "info",
-                &format!(
-                    "尝试模型 #{}/{}: {} @ {}",
-                    i + 1,
-                    chain.len(),
-                    mc.model,
-                    mc.base_url
-                ),
+                &if use_cache_context {
+                    format!(
+                        "尝试模型 #{}/{}: {} @ {} (使用缓存)",
+                        i + 1,
+                        chain.len(),
+                        mc.model,
+                        mc.base_url
+                    )
+                } else {
+                    format!(
+                        "尝试模型 #{}/{}: {} @ {}",
+                        i + 1,
+                        chain.len(),
+                        mc.model,
+                        mc.base_url
+                    )
+                },
             )
             .await;
 
-            match self.run_agent(mc, &project_path).await {
+            let result = self
+                .run_agent(mc, &project_path, &history, structure.as_deref(), has_exploration)
+                .await;
+            match result {
                 Ok(text) => return Ok(text),
                 Err(e) => {
                     last_err = e;
@@ -183,10 +313,70 @@ impl App {
         Err(last_err)
     }
 
+    fn load_chat_history(&self) -> Vec<Message> {
+        let db = match self.db.as_ref() {
+            Some(d) => d,
+            None => return Vec::new(),
+        };
+        let project_dir = match self.project_state.project_dir.as_ref() {
+            Some(d) => d,
+            None => return Vec::new(),
+        };
+        let rows = match db.load_history(project_dir, HISTORY_TURNS) {
+            Ok(r) => r,
+            Err(_) => return Vec::new(),
+        };
+        rows.into_iter()
+            .map(|(role, content)| match role.as_str() {
+                "user" => Message::user(content),
+                "assistant" => Message::assistant(content),
+                _ => Message::system(content),
+            })
+            .collect()
+    }
+
+    /// Returns (structure_blob, has_exploration_tools, use_cached_context)
+    fn check_structure_cache(&self, project_dir: &str) -> (Option<String>, bool, bool) {
+        let db = match self.db.as_ref() {
+            Some(d) => d,
+            None => return (None, true, false),
+        };
+
+        let current_commit = get_current_commit(project_dir);
+        let cached_commit = db.load_cached_commit(project_dir).ok().flatten();
+
+        match (current_commit, cached_commit) {
+            (Some(curr), Some(cached)) if curr == cached => {
+                let blob = db.load_cached_structure(project_dir).ok().flatten();
+                (blob, false, true)
+            }
+            (Some(curr), Some(cached)) => {
+                let blob = scan_structure(project_dir);
+                let diff = get_git_diff(project_dir, &cached);
+                let enhanced = if diff.is_empty() {
+                    blob.clone()
+                } else {
+                    format!("{}\n\n## 自上次分析后的变更\n{}", blob, diff)
+                };
+                let _ = db.save_structure_cache(project_dir, &curr, &blob);
+                (Some(enhanced), true, false)
+            }
+            (Some(curr), None) => {
+                let blob = scan_structure(project_dir);
+                let _ = db.save_structure_cache(project_dir, &curr, &blob);
+                (Some(blob), true, false)
+            }
+            (None, _) => (None, true, false),
+        }
+    }
+
     async fn run_agent(
         &self,
         mc: &config::ModelConfig,
         project_path: &Path,
+        history: &[Message],
+        structure_context: Option<&str>,
+        has_exploration: bool,
     ) -> Result<String, String> {
         let base = ollama::Client::builder()
             .api_key(mc.api_key.as_str())
@@ -196,28 +386,52 @@ impl App {
 
         let client: openai::CompletionsClient = base.with_ext(OpenAICompletionsExt);
 
+        let preamble = if structure_context.is_some() {
+            CACHE_PROMPT
+        } else {
+            SYSTEM_PROMPT
+        };
+
         let read_file_tool = ReadFileTool { project_dir: project_path.to_path_buf() };
-        let list_dir_tool = ListDirTool { project_dir: project_path.to_path_buf() };
-        let git_log_tool = GitLogTool { project_dir: project_path.to_path_buf() };
 
-        let agent = client
-            .agent(&mc.model)
-            .preamble(SYSTEM_PROMPT)
-            .max_tokens(16384)
-            .temperature(0.8)
-            .default_max_turns(50)
-            .tool(read_file_tool)
-            .tool(list_dir_tool)
-            .tool(git_log_tool)
-            .build();
+        let agent = if has_exploration {
+            let list_dir_tool = ListDirTool { project_dir: project_path.to_path_buf() };
+            let git_log_tool = GitLogTool { project_dir: project_path.to_path_buf() };
+            let mut b = client
+                .agent(&mc.model)
+                .preamble(preamble)
+                .max_tokens(16384)
+                .temperature(0.8)
+                .default_max_turns(50);
+            if let Some(ctx) = structure_context {
+                b = b.context(ctx);
+            }
+            b.tool(read_file_tool).tool(list_dir_tool).tool(git_log_tool).build()
+        } else {
+            let mut b = client
+                .agent(&mc.model)
+                .preamble(preamble)
+                .max_tokens(16384)
+                .temperature(0.8)
+                .default_max_turns(50);
+            if let Some(ctx) = structure_context {
+                b = b.context(ctx);
+            }
+            b.tool(read_file_tool).build()
+        };
 
-        let mut stream = agent
-            .stream_prompt("请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。")
-            .await;
+        let user_prompt = if has_exploration {
+            "请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。"
+        } else {
+            "请基于对项目的了解，直接提出一个最有价值的发展方向。提案要有说服力。"
+        };
+
+        let mut stream = agent.stream_chat(user_prompt, history.to_vec()).await;
 
         let mut final_text = String::new();
         let mut tool_args_buf = String::new();
         let mut tool_name_buf = String::new();
+        let start = Instant::now();
 
         while let Some(item) = stream.next().await {
             match item {
@@ -229,13 +443,9 @@ impl App {
                         StreamedAssistantContent::ToolCall { tool_call, .. } => {
                             let args = serde_json::to_string(&tool_call.function.arguments).unwrap_or_default();
                             self.send_log("info", &format!(
-                                "🔧 调用工具: {}({})",
+                                "🔧 {} {:.80}",
                                 tool_call.function.name,
-                                if args.len() > 200 {
-                                    format!("{}...", &args[..200])
-                                } else {
-                                    args
-                                },
+                                args,
                             )).await;
                         }
                         StreamedAssistantContent::ToolCallDelta { content, .. } => {
@@ -249,17 +459,7 @@ impl App {
                                 }
                             }
                         }
-                        StreamedAssistantContent::Reasoning(reasoning) => {
-                            let text = reasoning.display_text();
-                            if !text.is_empty() {
-                                self.send_log("info", &format!("🤔 思考: {}", text)).await;
-                            }
-                        }
-                        StreamedAssistantContent::ReasoningDelta { reasoning, .. } => {
-                            if !reasoning.is_empty() {
-                                self.send_log("debug", &format!("💭 思考中: {}", reasoning)).await;
-                            }
-                        }
+                        StreamedAssistantContent::Reasoning(_) | StreamedAssistantContent::ReasoningDelta { .. } => {}
                         StreamedAssistantContent::Final(_) => {}
                     }
                 }
@@ -277,7 +477,7 @@ impl App {
                         result_str
                     };
                     self.send_log("info", &format!(
-                        "✅ 工具结果 ({}): {}",
+                        "✅ {} {}",
                         tool_name_buf,
                         truncated,
                     )).await;
@@ -303,6 +503,16 @@ impl App {
         if final_text.is_empty() {
             return Err("AI 未生成任何提案文本".into());
         }
+        let elapsed = start.elapsed();
+        self.send_log(
+            "info",
+            &format!(
+                "思考完成 {}字 耗时{:.1?}",
+                final_text.chars().count(),
+                elapsed,
+            ),
+        )
+        .await;
         Ok(final_text)
     }
 
@@ -314,6 +524,16 @@ impl App {
         }
 
         self.project_state.state = PState::Proposing;
+        self.project_state.turn = {
+            let db = self.db.as_ref();
+            match db {
+                Some(d) => {
+                    let dir = self.project_state.project_dir.as_ref().unwrap();
+                    d.get_max_turn(dir).unwrap_or(0) + 1
+                }
+                None => self.project_state.turn + 1,
+            }
+        };
         self.save_state().await;
         self.send_log("info", "开始分析项目并生成提案...").await;
         self.send_message("🤔 正在分析项目结构，请稍候...", None).await;
@@ -327,6 +547,7 @@ impl App {
                 };
                 self.project_state.state = PState::Proposed { proposal: p };
                 self.save_state().await;
+                self.store_proposal_turn("assistant", &proposal);
                 self.send_proposal_list(&proposal).await;
             }
             Err(e) => {
@@ -357,6 +578,7 @@ impl App {
             since: ts,
         };
         self.save_state().await;
+        self.store_proposal_turn("user", "✅ 同意");
         self.send_message(
             "🎉 提案已通过！请开始实施。完成后发「完成了」或「done」通知我。",
             None,
@@ -382,6 +604,7 @@ impl App {
             hours_slept: 0,
         };
         self.save_state().await;
+        self.store_proposal_turn("user", &format!("❌ 拒绝: {}", feedback));
         self.send_message(
             &format!(
                 "😴 提案被拒，项目经理将沉睡 168 小时才能提出新方向。\n反馈意见已记录：{}",
@@ -409,6 +632,7 @@ impl App {
             Err(_) => path_str.to_string(),
         };
         self.project_state.project_dir = Some(canonical.clone());
+        self.project_state.turn = 0;
         self.save_state().await;
         self.send_message(
             &format!("✅ 项目目录已设置为: {}\n开始分析项目...", canonical),
@@ -419,7 +643,6 @@ impl App {
     }
 
     async fn handle_message_text(&mut self, text: &str) {
-        // Clone data up front to avoid borrow conflict
         let pending_proposal = match &self.project_state.state {
             PState::Proposed { proposal } => Some(proposal.text.clone()),
             _ => None,
@@ -450,6 +673,7 @@ impl App {
                     if let Some(h) = self.project_state.history.last_mut() {
                         h.completed = true;
                     }
+                    self.store_proposal_turn("user", "✅ 已完成");
                     self.project_state.state = PState::Completed {
                         last_proposal: last,
                     };
@@ -554,9 +778,8 @@ async fn main() {
     let mut line = String::new();
 
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(HOUR_SECS));
-    interval.tick().await; // skip first immediate tick
+    interval.tick().await;
 
-    // Rest of main loop is in a separate fn to avoid borrow issues
     run(&mut app, &mut stdin, &mut line, &mut interval).await;
 }
 
@@ -609,7 +832,17 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
             if let Some(addr) = params["user_addr"].as_str() {
                 app.user_addr = addr.to_string();
             }
-            app.state_path = app.state_dir.join("state.json");
+
+            let db_path = app.state_dir.join("state.db");
+            app.db = match Db::open(&db_path) {
+                Ok(db) => {
+                    Some(db)
+                }
+                Err(e) => {
+                    app.send_log("error", &format!("无法打开数据库: {}", e)).await;
+                    None
+                }
+            };
             app.load_state().await;
 
             if app.project_state.project_dir.is_none() {
@@ -619,7 +852,6 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
                 )
                 .await;
             } else {
-                // Resume state machine
                 match &app.project_state.state {
                     PState::Init | PState::Completed { .. } => {
                         app.start_proposing().await;
@@ -648,12 +880,10 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
             }
         }
         "shutdown" => {
-            // Clean exit
             std::process::exit(0);
         }
         "message" => {
             let params = &val["params"];
-            // Identify the user on first message
             if let Some(from) = params["from"].as_str() {
                 if !*user_identified {
                     app.user_addr = from.to_string();
@@ -661,7 +891,6 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
                 }
             }
 
-            // Check for list component response
             let resp_value = params["meta"]["plugin"]["response"]["value"]
                 .as_str()
                 .map(|s| s.to_string());
@@ -671,13 +900,11 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
                 return;
             }
 
-            // Check for text message
             let text = params["text"].as_str().unwrap_or("");
             if text.is_empty() {
                 return;
             }
 
-            // Handle /init command
             if text.starts_with('/') {
                 let parts: Vec<&str> = text.splitn(2, char::is_whitespace).collect();
                 match parts[0] {
@@ -695,7 +922,6 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
                 return;
             }
 
-            // Regular text — route to state machine
             app.handle_message_text(text).await;
         }
         _ => {}

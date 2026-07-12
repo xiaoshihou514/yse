@@ -14,3 +14,4 @@ futures = "0.3"
 toml = "0.8"
 dirs = "6"
 thiserror = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }

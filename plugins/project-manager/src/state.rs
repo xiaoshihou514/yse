@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
-use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proposal {
@@ -35,6 +33,7 @@ pub struct ProjectState {
     pub project_dir: Option<String>,
     pub state: PState,
     pub history: Vec<HistoryEntry>,
+    pub turn: u64,
 }
 
 impl Default for ProjectState {
@@ -43,23 +42,7 @@ impl Default for ProjectState {
             project_dir: None,
             state: PState::Init,
             history: Vec::new(),
-        }
-    }
-}
-
-impl ProjectState {
-    pub async fn load(state_dir: &Path) -> Self {
-        let path = state_dir.join("state.json");
-        match fs::read_to_string(&path).await {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-            Err(_) => Self::default(),
-        }
-    }
-
-    pub async fn save(&self, state_dir: &Path) {
-        let path = state_dir.join("state.json");
-        if let Ok(content) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(&path, &content).await;
+            turn: 0,
         }
     }
 }
