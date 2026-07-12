@@ -31,7 +31,7 @@ fe-dev:
     cd frontend && npm run dev
 
 # Tauri 开发模式 (启动 vite + tauri)
-dev:
+dev: plugin-all
     cd desktop && cargo tauri dev
 
 # 构建 AppImage

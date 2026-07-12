@@ -861,11 +861,7 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
                         app.start_proposing().await;
                     }
                     PState::Sleeping { .. } => {
-                        app.send_message(
-                            "🌙 项目经理已恢复，继续沉睡中...",
-                            None,
-                        )
-                        .await;
+                        app.send_log("info", "项目经理已恢复，继续沉睡中").await;
                     }
             PState::Approved { .. } => {
                         app.send_message(
