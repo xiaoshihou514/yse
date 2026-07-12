@@ -835,14 +835,18 @@ async fn handle_line(app: &mut App, line: &str, user_identified: &mut bool) {
 
             let db_path = app.state_dir.join("state.db");
             app.db = match Db::open(&db_path) {
-                Ok(db) => {
-                    Some(db)
-                }
+                Ok(db) => Some(db),
                 Err(e) => {
                     app.send_log("error", &format!("无法打开数据库: {}", e)).await;
                     None
                 }
             };
+
+            if let Some(ref db) = app.db {
+                if let Ok(Some(dir)) = db.load_first_project_dir() {
+                    app.project_state.project_dir = Some(dir);
+                }
+            }
             app.load_state().await;
 
             if app.project_state.project_dir.is_none() {

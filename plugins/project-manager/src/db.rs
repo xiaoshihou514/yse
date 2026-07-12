@@ -149,6 +149,17 @@ impl Db {
         Ok(())
     }
 
+    pub fn load_first_project_dir(&self) -> SqlResult<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT project_dir FROM project_state LIMIT 1")?;
+        let mut rows = stmt.query([])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(row.get(0)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn get_max_turn(&self, project_dir: &str) -> SqlResult<u64> {
         let mut stmt = self
             .conn
