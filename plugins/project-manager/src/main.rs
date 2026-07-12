@@ -15,9 +15,9 @@ use rig_core::completion::Message;
 use rig_core::providers::ollama;
 use rig_core::providers::openai;
 use rig_core::providers::openai::client::OpenAICompletionsExt;
-use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat, ToolCallDeltaContent};
 use serde_json::Value;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::{oneshot, watch};
 
 use state::{HistoryEntry, PState, ProjectState};
 use tools::{GitLogTool, ListDirTool, ReadFileTool};
@@ -143,6 +143,8 @@ struct App {
     user_addr: String,
     project_state: ProjectState,
     db: Option<Db>,
+    cancel_tx: Option<watch::Sender<bool>>,
+    gen_rx: Option<oneshot::Receiver<Result<String, String>>>,
 }
 
 impl App {
@@ -154,6 +156,8 @@ impl App {
             user_addr: String::new(),
             project_state: ProjectState::default(),
             db: None,
+            cancel_tx: None,
+            gen_rx: None,
         }
     }
 
@@ -258,61 +262,6 @@ impl App {
 
     // ---- Agent ----
 
-    async fn generate_proposal(&self) -> Result<String, String> {
-        let project_dir = self
-            .project_state
-            .project_dir
-            .as_ref()
-            .ok_or("未设置项目目录")?;
-        let project_path = PathBuf::from(project_dir);
-
-        let chain = self.config.fallback_chain();
-        let mut last_err = String::new();
-
-        // Load chat history for dialogue injection
-        let history = self.load_chat_history();
-
-        // Check repo structure cache
-        let (structure, has_exploration, use_cache_context) = self.check_structure_cache(project_dir);
-
-        for (i, mc) in chain.iter().enumerate() {
-            self.send_log(
-                "info",
-                &if use_cache_context {
-                    format!(
-                        "尝试模型 #{}/{}: {} @ {} (使用缓存)",
-                        i + 1,
-                        chain.len(),
-                        mc.model,
-                        mc.base_url
-                    )
-                } else {
-                    format!(
-                        "尝试模型 #{}/{}: {} @ {}",
-                        i + 1,
-                        chain.len(),
-                        mc.model,
-                        mc.base_url
-                    )
-                },
-            )
-            .await;
-
-            let result = self
-                .run_agent(mc, &project_path, &history, structure.as_deref(), has_exploration)
-                .await;
-            match result {
-                Ok(text) => return Ok(text),
-                Err(e) => {
-                    last_err = e;
-                    self.send_log("warn", &last_err).await;
-                }
-            }
-        }
-
-        Err(last_err)
-    }
-
     fn load_chat_history(&self) -> Vec<Message> {
         let db = match self.db.as_ref() {
             Some(d) => d,
@@ -370,152 +319,6 @@ impl App {
         }
     }
 
-    async fn run_agent(
-        &self,
-        mc: &config::ModelConfig,
-        project_path: &Path,
-        history: &[Message],
-        structure_context: Option<&str>,
-        has_exploration: bool,
-    ) -> Result<String, String> {
-        let base = ollama::Client::builder()
-            .api_key(mc.api_key.as_str())
-            .base_url(&mc.base_url)
-            .build()
-            .map_err(|e| format!("创建客户端失败 ({}): {}", mc.base_url, e))?;
-
-        let client: openai::CompletionsClient = base.with_ext(OpenAICompletionsExt);
-
-        let preamble = if structure_context.is_some() {
-            CACHE_PROMPT
-        } else {
-            SYSTEM_PROMPT
-        };
-
-        let read_file_tool = ReadFileTool { project_dir: project_path.to_path_buf() };
-
-        let agent = if has_exploration {
-            let list_dir_tool = ListDirTool { project_dir: project_path.to_path_buf() };
-            let git_log_tool = GitLogTool { project_dir: project_path.to_path_buf() };
-            let mut b = client
-                .agent(&mc.model)
-                .preamble(preamble)
-                .max_tokens(16384)
-                .temperature(0.8)
-                .default_max_turns(50);
-            if let Some(ctx) = structure_context {
-                b = b.context(ctx);
-            }
-            b.tool(read_file_tool).tool(list_dir_tool).tool(git_log_tool).build()
-        } else {
-            let mut b = client
-                .agent(&mc.model)
-                .preamble(preamble)
-                .max_tokens(16384)
-                .temperature(0.8)
-                .default_max_turns(50);
-            if let Some(ctx) = structure_context {
-                b = b.context(ctx);
-            }
-            b.tool(read_file_tool).build()
-        };
-
-        let user_prompt = if has_exploration {
-            "请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。"
-        } else {
-            "请基于对项目的了解，直接提出一个最有价值的发展方向。提案要有说服力。"
-        };
-
-        let mut stream = agent.stream_chat(user_prompt, history.to_vec()).await;
-
-        let mut final_text = String::new();
-        let mut tool_args_buf = String::new();
-        let mut tool_name_buf = String::new();
-        let start = Instant::now();
-
-        while let Some(item) = stream.next().await {
-            match item {
-                Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => {
-                    match content {
-                        StreamedAssistantContent::Text(text) => {
-                            final_text.push_str(&text.text);
-                        }
-                        StreamedAssistantContent::ToolCall { tool_call, .. } => {
-                            let args = serde_json::to_string(&tool_call.function.arguments).unwrap_or_default();
-                            self.send_log("info", &format!(
-                                "🔧 {} {:.80}",
-                                tool_call.function.name,
-                                args,
-                            )).await;
-                        }
-                        StreamedAssistantContent::ToolCallDelta { content, .. } => {
-                            match content {
-                                ToolCallDeltaContent::Name(name) => {
-                                    tool_name_buf = name;
-                                    tool_args_buf.clear();
-                                }
-                                ToolCallDeltaContent::Delta(delta) => {
-                                    tool_args_buf.push_str(&delta);
-                                }
-                            }
-                        }
-                        StreamedAssistantContent::Reasoning(_) | StreamedAssistantContent::ReasoningDelta { .. } => {}
-                        StreamedAssistantContent::Final(_) => {}
-                    }
-                }
-                Ok(MultiTurnStreamItem::StreamUserItem(StreamedUserContent::ToolResult { tool_result, .. })) => {
-                    let result_str = tool_result.content.iter()
-                        .map(|c| match c {
-                            rig_core::completion::message::ToolResultContent::Text(t) => t.text.clone(),
-                            _ => "...".into(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    let truncated = if result_str.len() > 200 {
-                        format!("{}...", &result_str[..200])
-                    } else {
-                        result_str
-                    };
-                    self.send_log("info", &format!(
-                        "✅ {} {}",
-                        tool_name_buf,
-                        truncated,
-                    )).await;
-                }
-                Ok(MultiTurnStreamItem::CompletionCall(cc)) => {
-                    self.send_log("debug", &format!(
-                        "📊 模型调用 #{}: 输入 {} 输出 {} tokens",
-                        cc.call_index,
-                        cc.usage.input_tokens,
-                        cc.usage.output_tokens,
-                    )).await;
-                }
-                Ok(MultiTurnStreamItem::FinalResponse(res)) => {
-                    final_text = res.response().to_string();
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    self.send_log("error", &format!("流式错误: {}", e)).await;
-                }
-            }
-        }
-
-        if final_text.is_empty() {
-            return Err("AI 未生成任何提案文本".into());
-        }
-        let elapsed = start.elapsed();
-        self.send_log(
-            "info",
-            &format!(
-                "思考完成 {}字 耗时{:.1?}",
-                final_text.chars().count(),
-                elapsed,
-            ),
-        )
-        .await;
-        Ok(final_text)
-    }
-
     // ---- State machine transitions ----
 
     async fn start_proposing(&mut self) {
@@ -538,27 +341,56 @@ impl App {
         self.send_log("info", "开始分析项目并生成提案...").await;
         self.send_message("🤔 正在分析项目结构，请稍候...", None).await;
 
-        match self.generate_proposal().await {
-            Ok(proposal) => {
-                let ts = get_timestamp();
-                let p = state::Proposal {
-                    text: proposal.clone(),
-                    timestamp: ts,
-                };
-                self.project_state.state = PState::Proposed { proposal: p };
-                self.save_state().await;
-                self.store_proposal_turn("assistant", &proposal);
-                self.send_proposal_list(&proposal).await;
-            }
-            Err(e) => {
-                self.send_log("error", &e).await;
-                self.send_message(&format!("❌ 提案生成失败: {}", e), None).await;
-                self.project_state.state = PState::Completed {
-                    last_proposal: String::new(),
-                };
-                self.save_state().await;
-            }
-        }
+        // Cancel any existing generation
+        self.cancel_generation();
+
+        let project_dir = match self.project_state.project_dir.clone() {
+            Some(d) => d,
+            None => return,
+        };
+        let history = self.load_chat_history();
+        let (structure, has_exploration, _) = self.check_structure_cache(&project_dir);
+        let config = self.config.clone();
+
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        let (result_tx, result_rx) = oneshot::channel();
+
+        self.cancel_tx = Some(cancel_tx);
+        self.gen_rx = Some(result_rx);
+
+        tokio::spawn(async move {
+            let result = generate_proposal_inner(
+                config,
+                project_dir,
+                history,
+                structure,
+                has_exploration,
+                cancel_rx,
+            )
+            .await;
+            let _ = result_tx.send(result);
+        });
+    }
+
+    async fn handle_proposal_result(&mut self, text: String) {
+        let ts = get_timestamp();
+        let p = state::Proposal {
+            text: text.clone(),
+            timestamp: ts,
+        };
+        self.project_state.state = PState::Proposed { proposal: p };
+        self.save_state().await;
+        self.store_proposal_turn("assistant", &text);
+        self.send_proposal_list(&text).await;
+    }
+
+    async fn handle_proposal_error(&mut self, err: String) {
+        async_send_log("error", &err).await;
+        self.send_message(&format!("❌ 提案生成失败: {}", err), None).await;
+        self.project_state.state = PState::Completed {
+            last_proposal: String::new(),
+        };
+        self.save_state().await;
     }
 
     async fn handle_approve(&mut self, proposal_text: &str) {
@@ -734,6 +566,12 @@ impl App {
         }
     }
 
+    fn cancel_generation(&mut self) {
+        if let Some(tx) = self.cancel_tx.take() {
+            let _ = tx.send(true);
+        }
+    }
+
     async fn handle_tick(&mut self) {
         let (should_wake, proposal_text, was_sleeping) = match &mut self.project_state.state {
             PState::Sleeping { hours_slept, proposal, .. } => {
@@ -771,6 +609,230 @@ impl App {
     }
 }
 
+// ---- Async logging utilities for spawned tasks ---- //
+
+async fn async_send_log(level: &str, msg: &str) {
+    let log = serde_json::json!({
+        "method": "log",
+        "params": { "level": level, "msg": msg }
+    });
+    let out = serde_json::to_string(&log).unwrap();
+    let mut stdout = tokio::io::stdout();
+    let _ = stdout.write_all(out.as_bytes()).await;
+    let _ = stdout.write_all(b"\n").await;
+    let _ = stdout.flush().await;
+}
+
+// ---- Agent runner (free function with cancellation) ---- //
+
+async fn run_agent_inner(
+    mc: &config::ModelConfig,
+    project_path: &Path,
+    history: &[Message],
+    structure_context: Option<&str>,
+    has_exploration: bool,
+    cancel_rx: &mut watch::Receiver<bool>,
+) -> Result<String, String> {
+    use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent, StreamingChat, ToolCallDeltaContent};
+
+    let base = ollama::Client::builder()
+        .api_key(mc.api_key.as_str())
+        .base_url(&mc.base_url)
+        .build()
+        .map_err(|e| format!("创建客户端失败 ({}): {}", mc.base_url, e))?;
+
+    let client: openai::CompletionsClient = base.with_ext(OpenAICompletionsExt);
+
+    let preamble = if structure_context.is_some() {
+        CACHE_PROMPT
+    } else {
+        SYSTEM_PROMPT
+    };
+
+    let read_file_tool = ReadFileTool { project_dir: project_path.to_path_buf() };
+
+    let agent = if has_exploration {
+        let list_dir_tool = ListDirTool { project_dir: project_path.to_path_buf() };
+        let git_log_tool = GitLogTool { project_dir: project_path.to_path_buf() };
+        let mut b = client
+            .agent(&mc.model)
+            .preamble(preamble)
+            .max_tokens(16384)
+            .temperature(0.8)
+            .default_max_turns(50);
+        if let Some(ctx) = structure_context {
+            b = b.context(ctx);
+        }
+        b.tool(read_file_tool).tool(list_dir_tool).tool(git_log_tool).build()
+    } else {
+        let mut b = client
+            .agent(&mc.model)
+            .preamble(preamble)
+            .max_tokens(16384)
+            .temperature(0.8)
+            .default_max_turns(50);
+        if let Some(ctx) = structure_context {
+            b = b.context(ctx);
+        }
+        b.tool(read_file_tool).build()
+    };
+
+    let user_prompt = if has_exploration {
+        "请分析项目代码，并提出一个开发方向的提案。先探索项目再给出提案。"
+    } else {
+        "请基于对项目的了解，直接提出一个最有价值的发展方向。提案要有说服力。"
+    };
+
+    let mut stream = agent.stream_chat(user_prompt, history.to_vec()).await;
+
+    let mut final_text = String::new();
+    let mut tool_args_buf = String::new();
+    let mut tool_name_buf = String::new();
+    let start = Instant::now();
+
+    loop {
+        if *cancel_rx.borrow_and_update() {
+            return Err("生成被用户打断".into());
+        }
+
+        let item = tokio::select! {
+            item = stream.next() => item,
+            _ = cancel_rx.changed() => {
+                return Err("生成被用户打断".into());
+            }
+        };
+
+        let Some(item) = item else { break };
+
+        match item {
+            Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => {
+                match content {
+                    StreamedAssistantContent::Text(text) => {
+                        final_text.push_str(&text.text);
+                    }
+                    StreamedAssistantContent::ToolCall { tool_call, .. } => {
+                        let args = serde_json::to_string(&tool_call.function.arguments).unwrap_or_default();
+                        async_send_log("info", &format!(
+                            "🔧 {} {:.80}",
+                            tool_call.function.name,
+                            args,
+                        )).await;
+                    }
+                    StreamedAssistantContent::ToolCallDelta { content, .. } => {
+                        match content {
+                            ToolCallDeltaContent::Name(name) => {
+                                tool_name_buf = name;
+                                tool_args_buf.clear();
+                            }
+                            ToolCallDeltaContent::Delta(delta) => {
+                                tool_args_buf.push_str(&delta);
+                            }
+                        }
+                    }
+                    StreamedAssistantContent::Reasoning(_) | StreamedAssistantContent::ReasoningDelta { .. } => {}
+                    StreamedAssistantContent::Final(_) => {}
+                }
+            }
+            Ok(MultiTurnStreamItem::StreamUserItem(StreamedUserContent::ToolResult { tool_result, .. })) => {
+                let result_str = tool_result.content.iter()
+                    .map(|c| match c {
+                        rig_core::completion::message::ToolResultContent::Text(t) => t.text.clone(),
+                        _ => "...".into(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let truncated = if result_str.len() > 200 {
+                    format!("{}...", &result_str[..200])
+                } else {
+                    result_str
+                };
+                async_send_log("info", &format!(
+                    "✅ {} {}",
+                    tool_name_buf,
+                    truncated,
+                )).await;
+            }
+            Ok(MultiTurnStreamItem::CompletionCall(cc)) => {
+                async_send_log("debug", &format!(
+                    "📊 模型调用 #{}: 输入 {} 输出 {} tokens",
+                    cc.call_index,
+                    cc.usage.input_tokens,
+                    cc.usage.output_tokens,
+                )).await;
+            }
+            Ok(MultiTurnStreamItem::FinalResponse(res)) => {
+                final_text = res.response().to_string();
+            }
+            Ok(_) => {}
+            Err(e) => {
+                async_send_log("error", &format!("流式错误: {}", e)).await;
+            }
+        }
+    }
+
+    if final_text.is_empty() {
+        return Err("AI 未生成任何提案文本".into());
+    }
+    let elapsed = start.elapsed();
+    async_send_log(
+        "info",
+        &format!("思考完成 {}字 耗时{:.1?}", final_text.chars().count(), elapsed),
+    ).await;
+    Ok(final_text)
+}
+
+async fn generate_proposal_inner(
+    config: Config,
+    project_dir: String,
+    history: Vec<Message>,
+    structure: Option<String>,
+    has_exploration: bool,
+    cancel_rx: watch::Receiver<bool>,
+) -> Result<String, String> {
+    let project_path = PathBuf::from(&project_dir);
+    let chain = config.fallback_chain();
+    let mut last_err = String::new();
+
+    for (i, mc) in chain.iter().enumerate() {
+        if *cancel_rx.borrow() {
+            return Err("生成被取消".into());
+        }
+
+        async_send_log(
+            "info",
+            &format!(
+                "尝试模型 #{}/{}: {} @ {}",
+                i + 1,
+                chain.len(),
+                mc.model,
+                mc.base_url
+            ),
+        )
+        .await;
+
+        let mut rx = cancel_rx.clone();
+        let result = run_agent_inner(
+            mc,
+            &project_path,
+            &history,
+            structure.as_deref(),
+            has_exploration,
+            &mut rx,
+        )
+        .await;
+
+        match result {
+            Ok(text) => return Ok(text),
+            Err(e) => {
+                last_err = e;
+                async_send_log("warn", &last_err).await;
+            }
+        }
+    }
+
+    Err(last_err)
+}
+
 #[tokio::main]
 async fn main() {
     let mut app = App::new();
@@ -792,20 +854,47 @@ async fn run(
     let mut user_identified = false;
 
     loop {
-        tokio::select! {
-            result = stdin.read_line(line) => {
-                match result {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {
-                        let trimmed = line.trim().to_string();
-                        line.clear();
-                        if trimmed.is_empty() { continue; }
-                        handle_line(app, &trimmed, &mut user_identified).await;
+        if let Some(rx) = app.gen_rx.as_mut() {
+            tokio::select! {
+                result = rx => {
+                    app.gen_rx = None;
+                    match result {
+                        Ok(Ok(text)) => app.handle_proposal_result(text).await,
+                        Ok(Err(e)) => app.handle_proposal_error(e).await,
+                        Err(_) => {},
                     }
                 }
+                result = stdin.read_line(line) => {
+                    match result {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {
+                            let trimmed = line.trim().to_string();
+                            line.clear();
+                            if trimmed.is_empty() { continue; }
+                            handle_line(app, &trimmed, &mut user_identified).await;
+                        }
+                    }
+                }
+                _ = interval.tick() => {
+                    app.handle_tick().await;
+                }
             }
-            _ = interval.tick() => {
-                app.handle_tick().await;
+        } else {
+            tokio::select! {
+                result = stdin.read_line(line) => {
+                    match result {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {
+                            let trimmed = line.trim().to_string();
+                            line.clear();
+                            if trimmed.is_empty() { continue; }
+                            handle_line(app, &trimmed, &mut user_identified).await;
+                        }
+                    }
+                }
+                _ = interval.tick() => {
+                    app.handle_tick().await;
+                }
             }
         }
     }
