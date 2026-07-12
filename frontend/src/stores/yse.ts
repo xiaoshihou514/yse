@@ -88,18 +88,22 @@ export const useYseStore = defineStore("yse", () => {
   const sessions = ref<SessionInfo[]>([]);
   const localHostname = ref("");
   const _rt = JSON.parse(localStorage.getItem("yse-read-timestamps") || "{}");
-  for (const k of Object.keys(_rt)) if (_rt[k] > 1e11) _rt[k] = Math.floor(_rt[k] / 1000);
+  // 修复: 之前错误地除以了 1000（以为 Rust timestamp 是秒），实际是毫秒（as_millis()）
+  // 把秒级的值 (< 1e12) 转回毫秒以匹配 m.timestamp
+  for (const k of Object.keys(_rt)) {
+    if (_rt[k] > 1e9 && _rt[k] < 1e12) _rt[k] = Math.floor(_rt[k] * 1000);
+  }
   const readTimestamps = reactive<Record<string, number>>(_rt);
   const readVersion = ref(0);
 
   function markRead(addr: string) {
-    readTimestamps[addr] = Math.floor(Date.now() / 1000);
+    readTimestamps[addr] = Date.now();
     readVersion.value++;
     localStorage.setItem("yse-read-timestamps", JSON.stringify(readTimestamps));
   }
 
   function markAllRead() {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Date.now();
     for (const m of messages.value) {
       if (m.from.includes("#")) readTimestamps[m.from] = now;
       if (m.to.includes("#")) readTimestamps[m.to] = now;

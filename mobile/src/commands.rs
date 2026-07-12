@@ -123,10 +123,6 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    if let Some(h) = state.app_handle.lock().unwrap().as_ref() {
-        let _ = h.emit("new-message", &msg);
-    }
-
     if let Err(e) = state.core.send_encrypted(&msg, vec![]).await {
         log::error!("{}", e);
     }

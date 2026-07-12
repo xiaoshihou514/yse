@@ -834,7 +834,6 @@ watch(selectedContact, (newVal, oldVal) => {
 
 onMounted(async () => {
   await store.loadMessages();
-  store.listenForMessages();
   store.listenForLogs();
 });
 </script>

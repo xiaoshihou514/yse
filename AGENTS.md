@@ -98,6 +98,9 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 - `beforeBuildCommand` skips if `dist/` newer than all `src/` files (timestamp check). Does NOT skip in CI.
 - Android hostname: kernel always returns `"localhost"`. `resolveHostname()` in `stores/yse.ts:29` falls back to device model from userAgent or persistent `localStorage` ID.
 - `npm run build` runs `vue-tsc --noEmit` first (type-check gates the build).
+- `m.timestamp` from Rust is `as_millis()` (ms, `core/src/message.rs:48`). `Date.now()` on frontend is also ms.
+  `readTimestamps` stores `Date.now()` (ms) — comparison against `m.timestamp` is ms vs ms.
+  Do NOT divide by 1000, do NOT compare against `as_secs()`.
 
 ### Plugin system
 
