@@ -148,4 +148,15 @@ function formatTime(ts: number) {
   flex-shrink: 0;
   margin-left: 6px;
 }
+.new-dot {
+  --yse-dot-color: #2a52be;
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--yse-dot-color);
+  box-shadow: 0 0 6px 2px var(--yse-dot-color);
+}
 </style>
