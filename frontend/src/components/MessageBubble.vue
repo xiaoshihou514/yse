@@ -56,12 +56,7 @@
 
     <div v-if="viewerFile" class="viewer-overlay" @click.self="closeViewer">
       <button class="viewer-close" @click="closeViewer">✕</button>
-      <img
-        v-if="viewerSrc"
-        :src="viewerSrc"
-        class="viewer-img"
-        @click.stop
-      />
+      <img v-if="viewerSrc" :src="viewerSrc" class="viewer-img" @click.stop />
       <div v-else class="viewer-loading">加载中...</div>
     </div>
   </div>
@@ -113,11 +108,7 @@ function isImage(mime: string): boolean {
   return mime.startsWith("image/");
 }
 
-async function loadThumb(
-  messageId: string,
-  encName: string,
-  fileName: string,
-) {
+async function loadThumb(messageId: string, encName: string, fileName: string) {
   if (thumbUrls[encName]) return;
   try {
     const data = await readAttachment(messageId, encName);
@@ -176,7 +167,11 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function downloadFile(messageId: string, encName: string, fileName: string) {
+async function downloadFile(
+  messageId: string,
+  encName: string,
+  fileName: string,
+) {
   try {
     const data = await readAttachment(messageId, encName);
     const blob = new Blob([new Uint8Array(data)]);
@@ -188,7 +183,9 @@ async function downloadFile(messageId: string, encName: string, fileName: string
     URL.revokeObjectURL(url);
   } catch {
     const { MessagePlugin } = await import("tdesign-vue-next");
-    MessagePlugin.error("附件下载失败：该文件可能已被删除或尚未下载完成").catch(() => {});
+    MessagePlugin.error("附件下载失败：该文件可能已被删除或尚未下载完成").catch(
+      () => {},
+    );
   }
 }
 </script>

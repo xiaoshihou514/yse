@@ -230,17 +230,30 @@
       @click.self="actionSheet.visible = false"
     >
       <div class="action-sheet">
-        <div class="action-sheet-title">{{ resolveDisplayName(actionSheet.address) }}</div>
-        <div class="action-sheet-item" @click="copyContactAddress(actionSheet.address)">
+        <div class="action-sheet-title">
+          {{ resolveDisplayName(actionSheet.address) }}
+        </div>
+        <div
+          class="action-sheet-item"
+          @click="copyContactAddress(actionSheet.address)"
+        >
           复制地址
         </div>
-        <div class="action-sheet-item" @click="toggleContactHide(actionSheet.address)">
+        <div
+          class="action-sheet-item"
+          @click="toggleContactHide(actionSheet.address)"
+        >
           {{ actionSheet.hidden ? "取消隐藏" : "隐藏对话" }}
         </div>
-        <div class="action-sheet-item action-sheet-danger" @click="deleteContactConversation(actionSheet.address)">
+        <div
+          class="action-sheet-item action-sheet-danger"
+          @click="deleteContactConversation(actionSheet.address)"
+        >
           删除对话
         </div>
-        <div class="action-sheet-cancel" @click="actionSheet.visible = false">取消</div>
+        <div class="action-sheet-cancel" @click="actionSheet.visible = false">
+          取消
+        </div>
       </div>
     </div>
   </div>
@@ -730,13 +743,16 @@ function onSwipeEnd(e: TouchEvent) {
 async function handleSend() {
   if (!selectedContact.value) return;
   const text = inputText.value.trim();
-  const files = pendingFiles.value.length > 0 ? [...pendingFiles.value] : undefined;
+  const files =
+    pendingFiles.value.length > 0 ? [...pendingFiles.value] : undefined;
   try {
     await store.sendMessage(selectedContact.value, text, files);
     inputText.value = "";
     pendingFiles.value = [];
     await scrollToBottom();
-  } catch (e) { MessagePlugin.error(`发送失败: ${e}`).catch(() => {}); }
+  } catch (e) {
+    MessagePlugin.error(`发送失败: ${e}`).catch(() => {});
+  }
 }
 
 async function handleAttach() {
@@ -1086,41 +1102,60 @@ onMounted(async () => {
 }
 /* Mobile action sheet */
 .action-overlay {
-  position: fixed; inset: 0; z-index: 2500;
-  background: rgba(0,0,0,0.4);
-  display: flex; align-items: flex-end; justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
 .action-sheet {
-  width: 100%; max-width: 480px;
+  width: 100%;
+  max-width: 480px;
   background: var(--td-bg-color-container);
   border-radius: 14px 14px 0 0;
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
   animation: sheetUp 0.25s ease;
 }
 .action-sheet-title {
-  text-align: center; font-size: 13px;
+  text-align: center;
+  font-size: 13px;
   color: var(--td-text-color-placeholder);
   padding: 12px 16px 8px;
   border-bottom: 1px solid var(--td-component-stroke);
   margin-bottom: 4px;
 }
 .action-sheet-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 20px; font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  font-size: 16px;
   color: var(--td-text-color-primary);
   cursor: pointer;
   transition: background 0.15s;
 }
-.action-sheet-item:active { background: var(--td-bg-color-secondarycontainer); }
-.action-sheet-danger { color: var(--td-error-color); }
+.action-sheet-item:active {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.action-sheet-danger {
+  color: var(--td-error-color);
+}
 .action-sheet-cancel {
-  text-align: center; padding: 14px; font-size: 16px;
+  text-align: center;
+  padding: 14px;
+  font-size: 16px;
   color: var(--td-text-color-secondary);
   border-top: 6px solid var(--td-bg-color-page);
   cursor: pointer;
 }
 @keyframes sheetUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 </style>

@@ -429,9 +429,8 @@ export const useYseStore = defineStore("yse", () => {
 
   async function sendMessageNotification(msg: Message) {
     try {
-      const { sendNotification, isPermissionGranted } = await import(
-        "@tauri-apps/plugin-notification"
-      );
+      const { sendNotification, isPermissionGranted } =
+        await import("@tauri-apps/plugin-notification");
       if (await isPermissionGranted()) {
         sendNotification({
           title: nameFromAddr(msg.from),
@@ -446,9 +445,8 @@ export const useYseStore = defineStore("yse", () => {
   async function requestNotificationPermission() {
     if (platform() !== "android") return;
     try {
-      const { isPermissionGranted, requestPermission } = await import(
-        "@tauri-apps/plugin-notification"
-      );
+      const { isPermissionGranted, requestPermission } =
+        await import("@tauri-apps/plugin-notification");
       if (!(await isPermissionGranted())) {
         await requestPermission();
       }

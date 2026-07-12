@@ -135,7 +135,9 @@ impl PluginProcessManager {
             &state_dir,
             handler,
             on_exit,
-        ).await {
+        )
+        .await
+        {
             Ok(plugin) => {
                 map.insert(
                     id.into(),
@@ -222,7 +224,9 @@ impl PluginProcessManager {
             &state_dir,
             handler,
             on_exit,
-        ).await {
+        )
+        .await
+        {
             Ok(plugin) => {
                 map.insert(
                     id.into(),
@@ -353,7 +357,9 @@ impl PluginProcessManager {
         user_addr: &str,
     ) -> Result<(), String> {
         let map = self.processes.lock().await;
-        let entry = map.get(plugin_id).ok_or_else(|| format!("plugin {} not found", plugin_id))?;
+        let entry = map
+            .get(plugin_id)
+            .ok_or_else(|| format!("plugin {} not found", plugin_id))?;
         let notif = CoreNotification::Config {
             state_dir: entry.state_dir.clone(),
             virtual_addr: Some(virtual_addr.to_string()),

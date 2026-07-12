@@ -111,7 +111,7 @@ impl YseState {
         use tauri::Emitter;
         use yse_core::crypto::encrypt;
         use yse_core::identity;
-use yse_core::plugin::protocol::PluginRequest;
+        use yse_core::plugin::protocol::PluginRequest;
 
         let store = self.core.store.clone();
         let config = self.core.config.clone();
@@ -141,23 +141,30 @@ use yse_core::plugin::protocol::PluginRequest;
                             if !from_addr.is_empty() {
                                 // Look up expected virtual address from phash
                                 let hash_key = format!("phash:{}", pid);
-                                if let Ok(Some(hash)) = core_store.get_config_value(&hash_key).await {
+                                if let Ok(Some(hash)) = core_store.get_config_value(&hash_key).await
+                                {
                                     let hostname = identity::local_hostname();
                                     // Look up the plugin's display name so expected_addr uses the right name (not raw id)
-                                    let plugins = core_store.list_plugins().await.unwrap_or_default();
-                                    let plugin_name = plugins.iter()
+                                    let plugins =
+                                        core_store.list_plugins().await.unwrap_or_default();
+                                    let plugin_name = plugins
+                                        .iter()
                                         .find(|p| p.id == *pid)
                                         .map(|p| p.name.as_str())
                                         .unwrap_or(pid);
-                                    let expected_addr = identity::format_address(plugin_name, &hash, &hostname);
+                                    let expected_addr =
+                                        identity::format_address(plugin_name, &hash, &hostname);
                                     if from_addr != expected_addr {
                                         log::error!(
                                             "plugin {} sent from_addr {} but expected {}, dropping SMTP",
                                             pid, from_addr, expected_addr
                                         );
                                         // Still save locally for debugging, but skip SMTP
-                                        let mut msg =
-                                            Message::new(from_addr.clone(), to_addr.clone(), text.clone());
+                                        let mut msg = Message::new(
+                                            from_addr.clone(),
+                                            to_addr.clone(),
+                                            text.clone(),
+                                        );
                                         if let Some(m) = meta {
                                             msg = msg.with_meta(m);
                                         }
@@ -249,11 +256,6 @@ use yse_core::plugin::protocol::PluginRequest;
                             to_addr,
                             text.as_deref().unwrap_or("")
                         );
-
-                        // Notify frontend
-                        if let Some(h) = app_handle.lock().unwrap().as_ref() {
-                            let _ = h.emit("new-message", &msg);
-                        }
                     });
                 }
                 PluginRequest::Log { level, msg } => match level.as_str() {
@@ -493,7 +495,8 @@ impl YseState {
                                 std::fs::create_dir_all(&msg_dir).ok();
                                 for pf in &parsed.files {
                                     if let Ok(decrypted) = decrypt(&key, &pf.data) {
-                                        let _ = std::fs::write(msg_dir.join(&pf.filename), decrypted);
+                                        let _ =
+                                            std::fs::write(msg_dir.join(&pf.filename), decrypted);
                                     }
                                 }
                             }
@@ -553,7 +556,8 @@ impl YseState {
                                     msg.from_addr.clone(),
                                     Some(reply_text),
                                 );
-                                if let Err(e) = core_clone.send_encrypted(&reply_msg, vec![]).await {
+                                if let Err(e) = core_clone.send_encrypted(&reply_msg, vec![]).await
+                                {
                                     log::warn!("send_plugin_error_reply failed: {}", e);
                                 }
                             }
@@ -603,8 +607,15 @@ impl YseState {
             Ok(p) => p,
             Err(_) => return,
         };
-        let to_start: Vec<_> = plugins.iter().filter(|p| p.enabled && p.auto_start).collect();
-        log::info!("auto-starting {}/{} plugin(s)", to_start.len(), plugins.len());
+        let to_start: Vec<_> = plugins
+            .iter()
+            .filter(|p| p.enabled && p.auto_start)
+            .collect();
+        log::info!(
+            "auto-starting {}/{} plugin(s)",
+            to_start.len(),
+            plugins.len()
+        );
         for p in &to_start {
             log::info!("auto-starting plugin: {} ({})", p.name, p.id);
 
@@ -622,10 +633,19 @@ impl YseState {
 
             // Register session so the plugin is routable immediately.
             let user_addr = self.core.session_registry.local_user_address();
-            let _ = self.core.session_registry.register_session(&p.name, &p.id, &hash).await;
+            let _ = self
+                .core
+                .session_registry
+                .register_session(&p.name, &p.id, &hash)
+                .await;
 
             // Start the process.
-            if let Err(e) = self.core.process_manager.start(&p.id, &p.name, &p.exec_path, &p.args).await {
+            if let Err(e) = self
+                .core
+                .process_manager
+                .start(&p.id, &p.name, &p.exec_path, &p.args)
+                .await
+            {
                 log::error!("failed to auto-start plugin {}: {}", p.id, e);
                 continue;
             }
@@ -633,18 +653,28 @@ impl YseState {
             // Push full config so the plugin knows its own address and the user's.
             let our_host = identity::local_hostname();
             let virtual_addr = identity::format_address(&p.name, &hash, &our_host);
-            if let Err(e) = self.core.process_manager.update_plugin_config(&p.id, &virtual_addr, &user_addr).await {
-                log::error!("failed to push config to auto-started plugin {}: {}", p.id, e);
+            if let Err(e) = self
+                .core
+                .process_manager
+                .update_plugin_config(&p.id, &virtual_addr, &user_addr)
+                .await
+            {
+                log::error!(
+                    "failed to push config to auto-started plugin {}: {}",
+                    p.id,
+                    e
+                );
             }
 
             // Sync plugin_mappings to match the persistent phash.
-            if let Ok(Some(mut cfg)) = self.core.store.get_config_value("config").await {
+            if let Ok(Some(cfg)) = self.core.store.get_config_value("config").await {
                 if let Some(mut val) = serde_json::from_str::<serde_json::Value>(&cfg).ok() {
                     let mut changed = false;
                     if let Some(mappings) = val["plugin_mappings"].as_array_mut() {
                         for m in mappings.iter_mut() {
-                            let addr_name = identity::parse_address(m["virtual_addr"].as_str().unwrap_or(""))
-                                .map(|(n,_,_)| n.to_string());
+                            let addr_name =
+                                identity::parse_address(m["virtual_addr"].as_str().unwrap_or(""))
+                                    .map(|(n, _, _)| n.to_string());
                             if m["plugin_id"].as_str() == Some(&p.id)
                                 || addr_name.as_deref() == Some(&p.name)
                             {
@@ -656,7 +686,8 @@ impl YseState {
                                         p.id,
                                         p.name
                                     );
-                                    m["virtual_addr"] = serde_json::Value::String(virtual_addr.clone());
+                                    m["virtual_addr"] =
+                                        serde_json::Value::String(virtual_addr.clone());
                                     changed = true;
                                 }
                             }
@@ -666,8 +697,9 @@ impl YseState {
                         let p_name = &p.name;
                         let vaddr = &virtual_addr;
                         mappings.retain(|m| {
-                            let addr_name = identity::parse_address(m["virtual_addr"].as_str().unwrap_or(""))
-                                .map(|(n,_,_)| n.to_string());
+                            let addr_name =
+                                identity::parse_address(m["virtual_addr"].as_str().unwrap_or(""))
+                                    .map(|(n, _, _)| n.to_string());
                             let same_plugin = m["plugin_id"].as_str() == Some(p_id)
                                 || addr_name.as_deref() == Some(p_name);
                             !same_plugin || m["virtual_addr"].as_str() == Some(vaddr)

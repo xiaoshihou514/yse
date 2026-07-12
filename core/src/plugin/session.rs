@@ -231,7 +231,9 @@ impl SessionRegistry {
                 "session registered for existing process: name={} hash={}",
                 name, hash
             );
-            let _ = process_manager.update_plugin_config(&plugin_id, &virtual_addr, &user_addr).await;
+            let _ = process_manager
+                .update_plugin_config(&plugin_id, &virtual_addr, &user_addr)
+                .await;
             return Some(plugin_id);
         }
 
@@ -259,7 +261,9 @@ impl SessionRegistry {
             name, hash, plugin_id
         );
 
-        let _ = process_manager.update_plugin_config(&plugin_id, &virtual_addr, &user_addr).await;
+        let _ = process_manager
+            .update_plugin_config(&plugin_id, &virtual_addr, &user_addr)
+            .await;
 
         Some(plugin_id)
     }
