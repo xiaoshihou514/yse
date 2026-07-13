@@ -7,11 +7,13 @@ import {
 import {
   getUserState,
   sendPromptStreaming,
+  sendPrompt,
   resolveModelChain,
   type BotState,
   type SessionState,
   type ModelConfig,
   type ModelSpec,
+  type PromptResult,
 } from "./opencode.js";
 import * as fs from "fs";
 import * as path from "path";
@@ -186,13 +188,31 @@ async function main() {
     } else if (userState.sessionId) {
       const chain = resolveModelChain(userState, state.modelConfig);
       pendingQuestions.delete(from);
-      const reply = await sendPromptStreaming(
+      const result = await sendPromptStreaming(
         state.client, userState.sessionId, text, state.projectDir,
         chain, userState.agentId,
         makeEventHandler(from),
       );
       pendingQuestions.delete(from);
-      sendResponse(from, reply);
+
+      if (!result.text.trim() || result.text === "(empty response)") {
+        const summary = await sendPrompt(
+          state.client, userState.sessionId,
+          "你上一轮任务做了什么？用一两句话简单总结一下。",
+          state.projectDir, chain, userState.agentId,
+        );
+        if (summary && summary !== "(empty response)") {
+          sendResponse(from, summary);
+        }
+      } else {
+        sendResponse(from, result.text);
+      }
+
+      if (result.tokens) {
+        const i = formatTokens(result.tokens.input);
+        const o = formatTokens(result.tokens.output);
+        sendResponse(from, `词元：输入${i}，输出${o}`);
+      }
       sendResponse(from, "✅ 处理完成");
     } else {
       sendResponse(from, "请先选择会话：/sessions 或 /new [标题]");
@@ -218,7 +238,12 @@ function formatToolInput(input: any): string {
 }
 
 function isWriteTool(name: string): boolean {
-  return name === "write_to_file" || name === "edit_file" || name === "write_file";
+  return name === "write" || name === "edit";
+}
+
+function formatTokens(n: number): string {
+  if (n >= 10000) return `${(n / 10000).toFixed(2)}万`;
+  return String(n);
 }
 
 function extLang(filePath: string): string {
@@ -233,7 +258,8 @@ function formatReadOutput(out: string): string {
   const typeM = out.match(/<type>([^<]*)<\/type>/);
   const type = typeM?.[1] || "";
   const entriesM = out.match(/<entries>\n?([\s\S]*?)\n?<\/entries>/);
-  const entriesRaw = entriesM?.[1] || "";
+  const contentM = out.match(/<content>\n?([\s\S]*?)\n?<\/content>/);
+  const entriesRaw = entriesM?.[1] || contentM?.[1] || "";
   const entries = entriesRaw
     .split("\n")
     .map((l) => l.trim())
@@ -242,13 +268,48 @@ function formatReadOutput(out: string): string {
   if (type === "directory" && entries.length > 0) {
     return `📂 ${path}\n${entries.map((e) => `  ${e}`).join("\n")}`;
   }
-  if (type === "file" && entriesRaw) {
+  if ((type === "file" || (!type && contentM)) && entriesRaw) {
     const lang = extLang(path);
     const content = entriesRaw.slice(0, 1000);
     const truncated = entriesRaw.length > 1000 ? "\n... (truncated)" : "";
     return `📄 ${path}\n\`\`\`${lang}\n${content}\n\`\`\`${truncated}`;
   }
   return out;
+}
+
+const STATUS_ICONS: Record<string, string> = {
+  completed: "x",
+  in_progress: "",
+  pending: "",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  completed: "",
+  in_progress: " *(进行中)*",
+  pending: "",
+};
+
+function formatTodoOutput(input: any): string {
+  const todos: any[] = input?.todos ?? [];
+  if (!Array.isArray(todos) || todos.length === 0) return "";
+
+  const lines: string[] = [];
+  for (const t of todos) {
+    const text = t.content || t.task || t.title || String(t);
+    const status: string = t.status || "pending";
+    const icon = STATUS_ICONS[status] ?? " ";
+    const label = STATUS_LABELS[status] ?? "";
+    lines.push(`- [${icon}] ${text}${label}`);
+  }
+
+  const completed = todos.filter((t: any) =>
+    t.status === "completed" || t.status === "done"
+  ).length;
+  const total = todos.length;
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  lines.push(`\n────────── ${completed}/${total} (${pct}%) ──────────`);
+
+  return lines.join("\n");
 }
 
 function makeEventHandler(from: string) {
@@ -261,11 +322,24 @@ function makeEventHandler(from: string) {
           sendResponse(from, `🔧 bash\n\`\`\`bash\n${cmd.slice(0, 2000)}\n\`\`\``);
         } else if (isWriteTool(data.name)) {
           const path = data.input?.filePath || "";
-          const content = data.input?.content || "";
-          sendResponse(from, `🔧 ${data.name}${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 2000)}\n\`\`\``);
+          if (data.name === "edit") {
+            const oldS = (data.input?.oldString || "").slice(0, 1000);
+            const newS = (data.input?.newString || "").slice(0, 1000);
+            sendResponse(from, `🔧 edit${path ? ` (${path})` : ""}\n\`\`\`diff\n${oldS}\n\`\`\``);
+          } else {
+            const content = data.input?.content || "";
+            sendResponse(from, `🔧 write${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 2000)}\n\`\`\``);
+          }
         } else if (data.name === "read") {
           const path = data.input?.filePath || data.input?.filePattern || formatToolInput(data.input);
           sendResponse(from, `📂 read: ${path.slice(0, 200)}`);
+        } else if (data.name === "todowrite") {
+          const count = Array.isArray(data.input?.todos) ? data.input.todos.length : 0;
+          if (count > 0) {
+            sendResponse(from, `📋 任务列表\n${formatTodoOutput(data.input)}`);
+          } else {
+            sendResponse(from, `📋 更新任务列表`);
+          }
         } else if (data.name === "question") {
           // handled by question_asked event → sendList
         } else {
@@ -284,6 +358,9 @@ function makeEventHandler(from: string) {
             msg += `\n\`\`\`diff\n${out}\n\`\`\``;
           } else if (data.name === "read") {
             msg += `\n${formatReadOutput(out)}`;
+          } else if (data.name === "todowrite") {
+            // brief confirmation; full list already shown at tool_called
+            msg = `✅ 任务列表已更新`;
           } else if (data.name === "question") {
             msg = `❓ 问题已回答`;
           } else {
@@ -428,31 +505,30 @@ async function handleCommand(
     }
 
     case "plan": {
-      if (userState.planMode) {
-        userState.planMode = false;
-        userState.agentId = undefined;
-        sendResponse(from, "✅ 已切换为默认模式");
-      } else {
-        const list = await listAgents(state);
-        if (list.length === 0) {
-          sendResponse(from, "暂无可用 plan");
-          break;
-        }
-        userState.planMode = true;
-        userState.agentId = JSON.parse(list[0].value).agent;
-        sendResponse(from, "✅ 已切换为 plan 只读规划模式");
+      if (!arg) {
+        sendResponse(from, "用法: /plan <你想规划的内容>");
+        break;
       }
-      saveStateImpl(state);
-      if (arg && userState.sessionId) {
-        const chain = resolveModelChain(userState, state.modelConfig);
-        const reply = await sendPromptStreaming(
-          state.client, userState.sessionId, arg, state.projectDir,
-          chain, userState.agentId,
-          makeEventHandler(from),
-        );
-        sendResponse(from, reply);
-        sendResponse(from, "✅ 处理完成");
+      if (!userState.sessionId) {
+        sendResponse(from, "请先选择会话：/sessions 或 /new [标题]");
+        break;
       }
+      const list = await listAgents(state);
+      if (list.length === 0) {
+        sendResponse(from, "暂无可用 plan");
+        break;
+      }
+      const agentId = JSON.parse(list[0].value).agent;
+      const chain = resolveModelChain(userState, state.modelConfig);
+      const result = await sendPromptStreaming(
+        state.client, userState.sessionId, arg, state.projectDir,
+        chain, agentId,
+        makeEventHandler(from),
+      );
+      if (result.text && result.text !== "(empty response)") {
+        sendResponse(from, result.text);
+      }
+      sendResponse(from, "✅ 处理完成");
       break;
     }
 

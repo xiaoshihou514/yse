@@ -167,6 +167,11 @@ export function getUserState(
 
 // ---- Prompt sending ----
 
+export interface PromptResult {
+  text: string;
+  tokens?: { input: number; output: number; reasoning?: number; cache?: { read: number; write: number } };
+}
+
 export async function sendPromptStreaming(
   client: OpenCodeClient,
   sessionId: string,
@@ -175,7 +180,7 @@ export async function sendPromptStreaming(
   chain: ModelSpec[],
   agentId: string | undefined,
   onEvent: (type: string, data: any) => void,
-): Promise<string> {
+): Promise<PromptResult> {
   let ourMessageId: string | null = null;
   const abortController = new AbortController();
   let eventStream: any = null;
@@ -234,12 +239,14 @@ export async function sendPromptStreaming(
   }
 
   try {
-    return await tryModelsWithFallback(
+    let promptInfo: any = null;
+    const resultText = await tryModelsWithFallback(
       chain,
       async (spec) => {
         ourMessageId = null;
         const params = buildPromptParams(sessionId, text, directory, spec, agentId);
         const result = await client.session.prompt(params);
+        promptInfo = (result.data as any)?.info;
         return extractTextParts(result.data as { parts?: PromptPart[] });
       },
       (from, to) => {
@@ -249,8 +256,18 @@ export async function sendPromptStreaming(
         });
       },
     );
+    const tokens = promptInfo?.tokens;
+    return {
+      text: resultText,
+      tokens: tokens ? {
+        input: tokens.input ?? tokens.prompt,
+        output: tokens.output ?? tokens.completion,
+        reasoning: tokens.reasoning,
+        cache: tokens.cache,
+      } : undefined,
+    };
   } catch (e: unknown) {
-    return `Error: ${e instanceof Error ? e.message : String(e)}`;
+    return { text: `Error: ${e instanceof Error ? e.message : String(e)}` };
   } finally {
     abortController.abort();
     if (eventConsumer) {
