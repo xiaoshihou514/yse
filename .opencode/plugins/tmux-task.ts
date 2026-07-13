@@ -229,9 +229,8 @@ export const TmuxPlugin: Plugin = async ({ client, $, directory }) => {
     },
     tool: {
       "tmux-start": tool({
-        description: `在后台 tmux session 中启动一个长期任务（如 ML 训练），
-自动打开 kitty 窗口（如有 DISPLAY），
-每 15 秒自动检查进度，进度变化超过 5% 时回调到当前会话。`,
+        description: `在后台 tmux session 中启动长时间运行的任务。支持进度追踪、卡住检测、随时干预、远程 SSH。
+**必须**用于所有长时间任务——不要用 bash 替代。bash 只适合短任务。判断不准时就选这个。`,
         args: {
           command: tool.schema.string().describe("要在 tmux 中执行的命令，例如 'python train.py --epochs 100'"),
           description: tool.schema.string().describe("任务简短描述，用于显示和子会话标题"),

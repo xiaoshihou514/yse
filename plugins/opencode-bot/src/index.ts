@@ -444,8 +444,7 @@ async function handleCommand(
     case "curr": {
       const lines = [`会话ID: ${userState.sessionId || "(无)"}`];
       lines.push(`模式: ${userState.planMode ? "plan 只读" : "默认"}`);
-      lines.push(`agentId: ${userState.agentId || "(无)"}`);
-      lines.push(`策略: ${userState.modelMode ?? "global"}`);
+      lines.push(`模型策略: ${userState.modelMode ?? "global"}`);
       if (userState.modelId) lines.push(`模型: ${userState.modelId} (${userState.providerId || "?"})`);
       if (userState.modelVariant) lines.push(`variant: ${userState.modelVariant}`);
       if (userState.mode) lines.push(`mode: ${userState.mode}`);
