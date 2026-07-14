@@ -111,10 +111,13 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 
 ### bash 工具
 
-内置 `bash` 已被 `.opencode/tools/bash.ts` 替代：
+内置 `bash` 已被自定义 bash tool 替代（源码 `plugins/opencode-bot/opencode-tools/bash.ts`）：
 - 短命令（`cd` / `ls` / `grep` / `cat` 等）直接执行并返回结果
-- 长命令自动在后台 tmux 中运行，完成后返回完整输出
-- socket: `/tmp/yse-tmux/yse.sock`
+- 长命令通过 tmux marker-based 算法执行：`clear;echo START → cmd;echo END → 精确截取输出`
+- session 隔离：每个 OpenCode 会话独立 tmux socket `/tmp/yse-tmux/yse-<sessionID>.sock`
+- 支持 SSH 远程执行（`server` 参数）
+- 进度检测：2 分钟无变化时返回部分输出
+- `just plugin-opencode` 会自动编译插件并复制 tool 到 `.opencode/tools/`
 
 ## Mobile (Android)
 

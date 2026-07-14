@@ -5,6 +5,9 @@ node_modules
 dist
 .vite
 
+# OpenCode runtime directory (copy of plugins/opencode-bot/opencode-tools/)
+.opencode/
+
 frontend/node_modules
 frontend/dist
 frontend/node_modules/.vite
