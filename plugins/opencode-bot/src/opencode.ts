@@ -155,14 +155,20 @@ export async function tryModelsWithFallback(
 
 // ---- State management ----
 
+export function userKey(addr: string): string {
+  const i = addr.indexOf("#");
+  return i >= 0 ? addr.slice(0, i) : addr;
+}
+
 export function getUserState(
   state: BotState,
   userAddr: string,
 ): SessionState {
-  if (!state.sessions[userAddr]) {
-    state.sessions[userAddr] = { mode: "sdk", sessionId: null, modelMode: "global" };
+  const key = userKey(userAddr);
+  if (!state.sessions[key]) {
+    state.sessions[key] = { mode: "sdk", sessionId: null, modelMode: "global" };
   }
-  return state.sessions[userAddr];
+  return state.sessions[key];
 }
 
 // ---- Prompt sending ----
@@ -180,11 +186,19 @@ export async function sendPromptStreaming(
   chain: ModelSpec[],
   agentId: string | undefined,
   onEvent: (type: string, data: any) => void,
+  signal?: AbortSignal,
 ): Promise<PromptResult> {
   let ourMessageId: string | null = null;
   const abortController = new AbortController();
   let eventStream: any = null;
   let eventConsumer: Promise<void> | null = null;
+
+  if (signal) {
+    signal.addEventListener("abort", () => {
+      client.session.abort({ sessionID: sessionId }).catch(() => {});
+      abortController.abort();
+    }, { once: true });
+  }
 
   try {
     const sub = await client.global.event({ signal: abortController.signal });

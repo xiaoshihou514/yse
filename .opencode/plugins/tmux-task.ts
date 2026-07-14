@@ -248,7 +248,7 @@ export const TmuxPlugin: Plugin = async ({ client, $, directory }) => {
 
           const display = process.env.DISPLAY
           if (display) {
-            $`kitty --detach tmux attach -t ${id}`.quiet().nothrow().catch(() => {})
+            $`kitty --detach -c None tmux attach -t ${id}`.quiet().nothrow().catch(() => {})
           }
 
           const task: Task = {

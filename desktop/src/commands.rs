@@ -288,6 +288,11 @@ pub async fn send_message(
 
     let from_addr = state.core.session_registry.format_sender_address(&to);
 
+    // Persist the sender hash so it's stable across restarts
+    if let Some((_, hash, _)) = yse_core::identity::parse_address(&from_addr) {
+        let _ = state.core.store.save_contact_hash(&to, hash).await;
+    }
+
     let mut msg = match meta {
         Some(m) => Message::new(from_addr, to.clone(), Some(text)).with_meta(m),
         None => Message::new(from_addr, to.clone(), Some(text)),

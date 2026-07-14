@@ -1,4 +1,5 @@
 import MarkdownIt from "markdown-it";
+import MarkdownItContainer from "markdown-it-container";
 import hljs from "highlight.js";
 
 function escapeHtml(s: string): string {
@@ -24,6 +25,25 @@ const md = new MarkdownIt({
   highlight: highlightCode,
 });
 
+md.use(MarkdownItContainer, "details", {
+  render(tokens: any[], idx: number): string {
+    if (tokens[idx].nesting === 1) {
+      const s = tokens[idx].info.trim().slice(8).trim();
+      return `<details class="details-block"><summary class="details-summary">${s}</summary><div class="details-content">\n`;
+    }
+    return `</div></details>\n`;
+  },
+});
+
+md.use(MarkdownItContainer, "think", {
+  render(tokens: any[], idx: number): string {
+    if (tokens[idx].nesting === 1) {
+      return `<details class="details-block"><summary class="details-summary">🤔 思考过程</summary><div class="details-content">\n`;
+    }
+    return `</div></details>\n`;
+  },
+});
+
 md.validateLink = function (url: string): boolean {
   return /^(https?:\/\/|mailto:)/i.test(url);
 };
@@ -39,23 +59,9 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
   return self.renderToken(tokens, idx, options);
 };
 
-const THINK_RE = /<think>([\s\S]*?)<\/think>/g;
-
 export function renderMarkdown(text: string): string {
-  const blocks: string[] = [];
-  const cleaned = text.replace(THINK_RE, (_, content) => {
-    blocks.push(content.trim());
-    return `\x00THINK_${blocks.length - 1}\x00`;
-  });
-
-  let html = md.render(cleaned);
-
-  html = html.replace(/\x00THINK_(\d+)\x00/g, (_, idx) => {
-    const rendered = md.render(blocks[+idx]);
-    return `<details class="think-block"><summary class="think-summary">🤔 思考过程</summary><div class="think-content">${rendered}</div></details>`;
-  });
-
-  return html;
+  text = text.replace(/<think>([\s\S]*?)<\/think>/g, (_, c) => `:::think\n${c.trim()}\n:::`);
+  return md.render(text);
 }
 
 export function handleLinkClick(e: MouseEvent): void {

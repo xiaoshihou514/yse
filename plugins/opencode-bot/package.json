@@ -8,7 +8,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.17.14"
+    "@opencode-ai/sdk": "^1.17.14",
+    "smol-toml": "^1.7.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

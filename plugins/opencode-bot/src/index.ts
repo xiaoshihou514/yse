@@ -6,6 +6,7 @@ import {
 } from "./api.js";
 import {
   getUserState,
+  userKey,
   sendPromptStreaming,
   sendPrompt,
   resolveModelChain,
@@ -17,6 +18,7 @@ import {
 } from "./opencode.js";
 import * as fs from "fs";
 import * as path from "path";
+import { loadModelConfig, modelConfigPath } from "./model-config.js";
 
 const HELP = `可用命令：
 发消息 → 发送给 AI（需先用 /select 或 /new 选择会话）
@@ -28,8 +30,9 @@ const HELP = `可用命令：
 /undo         — 撤回上一条消息
 /models       — 列出可用模型（点选新建会话）
 /variants     — 列出当前模型可用 variant（点选用该 variant 新建会话）
-/plan         — 列出可用 plan（点选用该 plan 新建会话）
-/model        — 查看或配置模型选择策略
+/plan <内容>  — 以 plan 模式执行
+/model        — 查看当前模型配置
+/model list   — 列出可用模型（点选新建会话）
 /skills       — 列出可用 skill
 /help         — 显示此帮助`;
 
@@ -65,12 +68,44 @@ function saveStateImpl(state: BotState) {
         sessions: state.sessions,
         projectDir: state.projectDir,
         lastUserState,
-        modelConfig: state.modelConfig,
       }),
     );
   } catch (e: unknown) {
     process.stderr.write(`[opencode-bot] saveState failed: ${e instanceof Error ? e.message : String(e)}\n`);
   }
+}
+
+// ---- Interruptible prompt ----
+
+async function runPromptWithAbort(
+  stdinIt: AsyncIterator<any, void>,
+  state: BotState,
+  from: string,
+  sessionId: string,
+  text: string,
+  chain: ModelSpec[],
+  agentId: string | undefined,
+): Promise<{ outcome: "done"; result: PromptResult } | { outcome: "interrupted"; msgResult: IteratorResult<any, void> }> {
+  const abort = new AbortController();
+  const prompt = sendPromptStreaming(
+    state.client, sessionId, text, state.projectDir,
+    chain, agentId,
+    makeEventHandler(from),
+    abort.signal,
+  );
+
+  const race = await Promise.race([
+    stdinIt.next().then(v => ({ type: "stdin" as const, value: v })),
+    prompt.then(v => ({ type: "prompt" as const, value: v })),
+  ]);
+
+  if (race.type === "stdin") {
+    abort.abort();
+    sendResponse(from, "🔴 已中断");
+    return { outcome: "interrupted", msgResult: race.value };
+  }
+
+  return { outcome: "done", result: race.value };
 }
 
 async function main() {
@@ -86,26 +121,44 @@ async function main() {
     );
   }
 
-  for await (const msg of parseStdin()) {
+  const stdinIt = parseStdin()[Symbol.asyncIterator]();
+  let msgResult: IteratorResult<any, void> = { done: false, value: undefined };
+
+  while (true) {
+    if (msgResult.done) break;
+    const msg = msgResult.value;
+    msgResult = { done: false, value: undefined };
+
+    if (!msg) {
+      msgResult = await stdinIt.next();
+      continue;
+    }
     if (msg.method === "config") {
       const params = msg.params;
       if (params.virtual_addr) {
         setPluginAddr(params.virtual_addr);
       }
       const dir = params.state_dir;
-      if (dir) {
-        stateFile = path.join(dir, "sessions.json");
+      if (params.virtual_addr && dir) {
+        stateFile = path.join(path.dirname(dir), params.virtual_addr, "sessions.json");
         try {
           const raw = fs.readFileSync(stateFile, "utf-8");
           const saved: {
-            sessions?: BotState["sessions"];
+            sessions?: Record<string, SessionState>;
             projectDir?: string;
-            modelConfig?: ModelConfig;
             lastUserState?: { sessionId: string; planMode: boolean; agentId?: string; modelId?: string; providerId?: string; modelVariant?: string; modelMode?: string };
           } = JSON.parse(raw);
-          if (state && saved.sessions) state.sessions = saved.sessions;
+          if (state && saved.sessions) {
+            state.sessions = {};
+            for (const [k, v] of Object.entries(saved.sessions)) {
+              const nk = userKey(k);
+              if (!state.sessions[nk] || !state.sessions[nk].sessionId) {
+                state.sessions[nk] = { ...v };
+              }
+            }
+          }
           if (state && saved.projectDir) state.projectDir = saved.projectDir;
-          if (state && saved.modelConfig) state.modelConfig = saved.modelConfig;
+          if (state) state.modelConfig = loadModelConfig();
           if (state && saved.lastUserState?.sessionId) {
             pendingUserRestore = saved.lastUserState;
           }
@@ -184,18 +237,32 @@ async function main() {
     // Command routing
     if (text.startsWith("/")) {
       const [cmd, ...args] = text.slice(1).split(/\s+/);
-      await handleCommand(state, from, userState, cmd, args.join(" "));
+      const interruptMsg = await handleCommand(state, from, userState, cmd, args.join(" "), stdinIt);
+      if (interruptMsg) {
+        if (interruptMsg.done) break;
+        msgResult = interruptMsg;
+        continue;
+      }
     } else if (userState.sessionId) {
       const chain = resolveModelChain(userState, state.modelConfig);
       pendingQuestions.delete(from);
-      const result = await sendPromptStreaming(
-        state.client, userState.sessionId, text, state.projectDir,
-        chain, userState.agentId,
-        makeEventHandler(from),
+
+      const r = await runPromptWithAbort(
+        stdinIt, state, from, userState.sessionId,
+        text, chain, userState.agentId,
       );
+
+      if (r.outcome === "interrupted") {
+        pendingQuestions.delete(from);
+        if (r.msgResult.done) break;
+        msgResult = r.msgResult;
+        continue;
+      }
+
+      const result = r.result;
       pendingQuestions.delete(from);
 
-      if (!result.text.trim() || result.text === "(empty response)") {
+      if (result.text.trim().length < 20) {
         const summary = await sendPrompt(
           state.client, userState.sessionId,
           "你上一轮任务做了什么？用一两句话简单总结一下。",
@@ -319,13 +386,18 @@ function makeEventHandler(from: string) {
         if (data.name === "bash") {
           const cmd = data.input?.command || "";
           if (!cmd.trim()) break;
-          sendResponse(from, `🔧 bash\n\`\`\`bash\n${cmd.slice(0, 2000)}\n\`\`\``);
+          if (cmd.length > 200) {
+            sendResponse(from, `🔧 bash\n:::details 命令 (${cmd.length} 字符)\n\`\`\`bash\n${cmd}\n\`\`\`\n:::`);
+          } else {
+            sendResponse(from, `🔧 bash\n\`\`\`bash\n${cmd}\n\`\`\``);
+          }
         } else if (isWriteTool(data.name)) {
           const path = data.input?.filePath || "";
           if (data.name === "edit") {
             const oldS = (data.input?.oldString || "").slice(0, 1000);
             const newS = (data.input?.newString || "").slice(0, 1000);
-            sendResponse(from, `🔧 edit${path ? ` (${path})` : ""}\n\`\`\`diff\n${oldS}\n\`\`\``);
+            const diff = oldS.split("\n").map((l: string) => `- ${l}`).join("\n") + "\n---\n" + newS.split("\n").map((l: string) => `+ ${l}`).join("\n");
+            sendResponse(from, `🔧 edit${path ? ` (${path})` : ""}\n\`\`\`diff\n${diff}\n\`\`\``);
           } else {
             const content = data.input?.content || "";
             sendResponse(from, `🔧 write${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 2000)}\n\`\`\``);
@@ -348,23 +420,31 @@ function makeEventHandler(from: string) {
         break;
       }
       case "tool_success": {
-        const out = (data.output || "").slice(0, 2000);
-        if (data.name === "bash" && !out) break;
+        const raw = (data.output || "");
+        if (data.name === "bash" && !raw) break;
         let msg = `✅ ${data.name} 完成`;
-        if (out) {
+        if (raw) {
           if (data.name === "bash") {
-            msg += `\n\`\`\`\n${out}\n\`\`\``;
+            if (raw.length > 300) {
+              msg += `\n:::details 输出 (${raw.length} 字符)\n\n\`\`\`\n${raw}\n\`\`\`\n\n:::`;
+            } else {
+              msg += `\n\`\`\`\n${raw}\n\`\`\``;
+            }
           } else if (isWriteTool(data.name)) {
-            msg += `\n\`\`\`diff\n${out}\n\`\`\``;
+            msg += `\n\`\`\`diff\n${raw.slice(0, 2000)}\n\`\`\``;
           } else if (data.name === "read") {
-            msg += `\n${formatReadOutput(out)}`;
+            const content = formatReadOutput(raw);
+            if (raw.length > 300) {
+              msg += `\n:::details 文件内容 (${raw.length} 字符)\n\n${content}\n\n:::`;
+            } else {
+              msg += `\n${content}`;
+            }
           } else if (data.name === "todowrite") {
-            // brief confirmation; full list already shown at tool_called
             msg = `✅ 任务列表已更新`;
           } else if (data.name === "question") {
             msg = `❓ 问题已回答`;
           } else {
-            msg += `\n${out}`;
+            msg += `\n${raw.slice(0, 2000)}`;
           }
         }
         sendResponse(from, msg);
@@ -414,7 +494,8 @@ async function handleCommand(
   userState: SessionState,
   cmd: string,
   arg: string,
-) {
+  stdinIt: AsyncIterator<any, void>,
+): Promise<IteratorResult<any, void> | null> {
   switch (cmd) {
     case "help":
       sendResponse(from, HELP);
@@ -431,6 +512,10 @@ async function handleCommand(
       }
       userState.sessionId = arg;
       userState.mode = "sdk";
+      const sessionRes = await state.client.session.get({ sessionID: arg });
+      if (sessionRes.data?.directory) {
+        state.projectDir = sessionRes.data.directory;
+      }
       const info = await getSessionInfo(state.client, arg);
       sendResponse(from, `✅ 已切换\n${info}`);
       saveStateImpl(state);
@@ -519,13 +604,15 @@ async function handleCommand(
       }
       const agentId = JSON.parse(list[0].value).agent;
       const chain = resolveModelChain(userState, state.modelConfig);
-      const result = await sendPromptStreaming(
-        state.client, userState.sessionId, arg, state.projectDir,
-        chain, agentId,
-        makeEventHandler(from),
+      const r = await runPromptWithAbort(
+        stdinIt, state, from, userState.sessionId,
+        arg, chain, agentId,
       );
-      if (result.text && result.text !== "(empty response)") {
-        sendResponse(from, result.text);
+      if (r.outcome === "interrupted") {
+        return r.msgResult;
+      }
+      if (r.result.text && r.result.text !== "(empty response)") {
+        sendResponse(from, r.result.text);
       }
       sendResponse(from, "✅ 处理完成");
       break;
@@ -533,7 +620,6 @@ async function handleCommand(
 
     case "model":
       await cmdModel(state, from, userState, arg);
-      saveStateImpl(state);
       break;
 
     case "skills": {
@@ -549,6 +635,7 @@ async function handleCommand(
     default:
       sendResponse(from, `未知命令: /${cmd}\n输入 /help 查看可用命令`);
   }
+  return null;
 }
 
 async function cmdModel(state: BotState, from: string, userState: SessionState, arg: string) {
@@ -560,7 +647,8 @@ async function cmdModel(state: BotState, from: string, userState: SessionState, 
     case "": {
       // Show current config
       const lines: string[] = ["📋 模型配置\n"];
-      lines.push("【全局】");
+      state.modelConfig = loadModelConfig();
+      lines.push("【全局（TOML）】");
       if (state.modelConfig.defaultModel) {
         lines.push(`  默认: ${formatModelSpec(state.modelConfig.defaultModel)}`);
       } else {
@@ -579,6 +667,7 @@ async function cmdModel(state: BotState, from: string, userState: SessionState, 
         const chain = resolveModelChain(userState, state.modelConfig);
         lines.push(`  实际使用: ${formatModelSpec(chain[0])}`);
       }
+      lines.push(`\n编辑 ${modelConfigPath()} 修改全局配置`);
       sendResponse(from, lines.join("\n"));
       break;
     }
@@ -589,135 +678,13 @@ async function cmdModel(state: BotState, from: string, userState: SessionState, 
         sendResponse(from, "暂无可用模型");
         break;
       }
-      sendList(from, "点选模型后，当前会话将使用该模型：", "可选模型", list);
-      // The list response will be handled by handleListResponse with action model-select
-      break;
-    }
-
-    case "default":
-      await cmdModelDefault(state, from, subArg);
-      break;
-
-    case "fallback":
-      await cmdModelFallback(state, from, subArg);
-      break;
-
-    case "override": {
-      if (!subArg || subArg === "clear") {
-        userState.modelMode = "global";
-        delete userState.modelId;
-        delete userState.providerId;
-        delete userState.modelVariant;
-        sendResponse(from, "✅ 当前会话已切回全局策略");
-      } else {
-        sendResponse(from, "用法: /model override clear — 清空当前会话的模型覆盖");
-      }
+      sendList(from, "点选模型后新建会话：", "可选模型", list);
       break;
     }
 
     default:
-      sendResponse(from, "用法:\n/model — 查看配置\n/model list — 列出可用模型\n/model default — 查看/设置全局默认模型\n/model fallback — 查看/设置备用链\n/model override clear — 清空当前会话覆盖");
+      sendResponse(from, "用法:\n/model — 查看配置\n/model list — 列出可用模型");
   }
-}
-
-async function cmdModelDefault(state: BotState, from: string, arg: string) {
-  const [action, ...rest] = arg.split(/\s+/);
-  switch (action) {
-    case "":
-      if (state.modelConfig.defaultModel) {
-        sendResponse(from, `全局默认模型:\n  ${formatModelSpec(state.modelConfig.defaultModel)}`);
-      } else {
-        sendResponse(from, "全局默认模型: (无，由服务端决定)");
-      }
-      break;
-
-    case "set": {
-      const list = await listModelsWithAction(state, "default-set");
-      if (list.length === 0) {
-        sendResponse(from, "暂无可用模型");
-        break;
-      }
-      sendList(from, "点选模型设为全局默认：", "设为默认模型", list);
-      break;
-    }
-
-    case "clear":
-      state.modelConfig.defaultModel = undefined;
-      sendResponse(from, "✅ 已清除全局默认模型");
-      break;
-
-    default:
-      sendResponse(from, "用法: /model default set — 点选设置 | /model default clear — 清除");
-  }
-}
-
-async function cmdModelFallback(state: BotState, from: string, arg: string) {
-  const [action, ...rest] = arg.split(/\s+/);
-  switch (action) {
-    case "":
-      if (state.modelConfig.fallbackChain.length === 0) {
-        sendResponse(from, "备用链: (空)\n可用 /model fallback add 添加");
-      } else {
-        const lines = ["备用链:", formatModelChain(state.modelConfig.fallbackChain)];
-        sendResponse(from, lines.join("\n"));
-      }
-      break;
-
-    case "add": {
-      const list = await listModelsWithAction(state, "fallback-add");
-      if (list.length === 0) {
-        sendResponse(from, "暂无可用模型");
-        break;
-      }
-      sendList(from, "点选模型追加到备用链末尾：", "追加备用模型", list);
-      break;
-    }
-
-    case "set": {
-      const list = await listModelsWithAction(state, "fallback-set");
-      if (list.length === 0) {
-        sendResponse(from, "暂无可用模型");
-        break;
-      }
-      sendList(from, "点选模型替换整个备用链：", "替换备用链", list);
-      break;
-    }
-
-    case "remove": {
-      const idxStr = rest.join(" ").trim();
-      const idx = parseInt(idxStr, 10);
-      if (isNaN(idx) || idx < 1 || idx > state.modelConfig.fallbackChain.length) {
-        sendResponse(from, `用法: /model fallback remove <序号>\n当前备用链共 ${state.modelConfig.fallbackChain.length} 项`);
-        break;
-      }
-      const removed = state.modelConfig.fallbackChain.splice(idx - 1, 1)[0];
-      sendResponse(from, `✅ 已移除第 ${idx} 项: ${formatModelSpec(removed)}`);
-      break;
-    }
-
-    case "clear":
-      state.modelConfig.fallbackChain = [];
-      sendResponse(from, "✅ 已清空备用链");
-      break;
-
-    default:
-      sendResponse(from, "用法:\n/model fallback — 查看\n/model fallback add — 追加\n/model fallback set — 替换\n/model fallback remove <序号> — 移除\n/model fallback clear — 清空");
-  }
-}
-
-async function listModelsWithAction(
-  state: BotState,
-  action: string,
-): Promise<{ label: string; value: string; description: string }[]> {
-  const list = await listModels(state);
-  return list.map((item: any) => {
-    const base = JSON.parse(item.value);
-    return {
-      label: item.label,
-      value: JSON.stringify({ ...base, action }),
-      description: item.description,
-    };
-  });
 }
 
 async function cmdSessions(state: BotState, from: string) {
@@ -805,35 +772,10 @@ async function handleDirSelection(state: BotState, from: string, value: string) 
   sendList(from, "请选择会话：", "可选会话", filtered.map(formatSessionItem));
 }
 
-async function handleModelConfigAction(state: BotState, from: string, config: JsonListValue): Promise<boolean> {
-  const { action, model, provider } = config;
-  if (action === "default-set" && model && provider) {
-    state.modelConfig.defaultModel = { modelId: model, providerId: provider };
-    sendResponse(from, `✅ 全局默认模型已设为 ${model} (${provider})`);
-    saveStateImpl(state);
-    return true;
-  }
-  if (action === "fallback-add" && model && provider) {
-    state.modelConfig.fallbackChain.push({ modelId: model, providerId: provider });
-    sendResponse(from, `✅ 已追加 ${model} (${provider}) 到备用链末尾`);
-    saveStateImpl(state);
-    return true;
-  }
-  if (action === "fallback-set" && model && provider) {
-    state.modelConfig.fallbackChain = [{ modelId: model, providerId: provider }];
-    sendResponse(from, `✅ 备用链已替换为: ${model} (${provider})`);
-    saveStateImpl(state);
-    return true;
-  }
-  return false;
-}
-
 async function handleJsonConfig(state: BotState, from: string, value: string) {
   const userState = getUserState(state, from);
   let config: JsonListValue;
   try { config = JSON.parse(value); } catch { return; }
-
-  if (await handleModelConfigAction(state, from, config)) return;
 
   if (userState.sessionId) {
     if (config.model) {
@@ -893,6 +835,10 @@ async function handleListResponse(state: BotState, from: string, value: string) 
   userState.sessionId = value;
   userState.mode = "sdk";
   saveStateImpl(state);
+  const sessionRes = await state.client.session.get({ sessionID: value });
+  if (sessionRes.data?.directory) {
+    state.projectDir = sessionRes.data.directory;
+  }
   const info = await getSessionInfo(state.client, value);
   sendResponse(from, `✅ 已切换\n${info}`);
 }
