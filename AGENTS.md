@@ -109,16 +109,12 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 - Crashed plugins auto-restart up to 3 times.
 - Plugins outside workspace: `plugins/echo-bot` (Rust), `plugins/opencode-bot` (TypeScript), `plugins/file-tree` (Rust), `plugins/project-manager` (Rust + rig-core + Ollama).
 
-### OpenCode 插件
+### bash 工具
 
-`.opencode/plugins/tmux-task.ts` — tmux 持久任务管理器。opencode 自定义工具：
-- `tmux-start(command, description, server?)` — 开 tmux session + kitty 窗口，建子会话，注册 30min 定时回调
-- `tmux-status(taskID)` — 查进度（capture-pane + tqdm 解析）
-- `tmux-list` — 列出所有任务
-- `tmux-intervene(taskID, keys, command?)` — send-keys 干预（C-c 中断等）
-- `tmux-stop(taskID, kill?)` — 停止监控
-- `tmux-smoke` — 自检（tmux/kitty/DISPLAY/SSH/持久化检查）
-- 重启恢复：从 `.opencode/tmux-tasks.json` 读注册表，检查 tmux session 存活后恢复监控
+内置 `bash` 已被 `.opencode/tools/bash.ts` 替代：
+- 短命令（`cd` / `ls` / `grep` / `cat` 等）直接执行并返回结果
+- 长命令自动在后台 tmux 中运行，完成后返回完整输出
+- socket: `/tmp/yse-tmux/yse.sock`
 
 ## Mobile (Android)
 
