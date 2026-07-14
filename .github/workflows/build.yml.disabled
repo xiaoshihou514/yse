@@ -45,7 +45,7 @@ jobs:
         run: npm ci
 
       - name: Build desktop AppImage
-        run: just build-appimage
+        run: just appimage
 
       - uses: actions/upload-artifact@v7
         with:
@@ -120,7 +120,7 @@ jobs:
       - run: cargo test -p yse-core
       - working-directory: frontend
         run: npm ci
-      - run: just fe-build
+      - run: just frontend
 
   # ── Release: upload artifacts to GitHub Release ─────────────────────
   release:

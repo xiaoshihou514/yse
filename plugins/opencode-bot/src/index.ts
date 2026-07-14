@@ -1,5 +1,6 @@
 import { parseStdin, sendResponse, sendList, sendLog, setPluginAddr, pluginAddr } from "./yse.js";
 import { initBot, killServer } from "./server.js";
+import { diffLines } from "diff";
 import {
   listModels, listSkills, listAgents, listVariants,
   fetchAllSessions, getSessionInfo,
@@ -16,6 +17,7 @@ import {
   type ModelSpec,
   type PromptResult,
 } from "./opencode.js";
+import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { loadModelConfig, modelConfigPath } from "./model-config.js";
@@ -75,38 +77,38 @@ function saveStateImpl(state: BotState) {
   }
 }
 
-// ---- Interruptible prompt ----
+// ---- 消息队列（后台持续读 stdin，前台 dequeue） ----
 
-async function runPromptWithAbort(
-  stdinIt: AsyncIterator<any, void>,
-  state: BotState,
-  from: string,
-  sessionId: string,
-  text: string,
-  chain: ModelSpec[],
-  agentId: string | undefined,
-): Promise<{ outcome: "done"; result: PromptResult } | { outcome: "interrupted"; msgResult: IteratorResult<any, void> }> {
-  const abort = new AbortController();
-  const prompt = sendPromptStreaming(
-    state.client, sessionId, text, state.projectDir,
-    chain, agentId,
-    makeEventHandler(from),
-    abort.signal,
-  );
+let promptAbort: AbortController | null = null;
+const msgQueue: any[] = [];
 
-  const race = await Promise.race([
-    stdinIt.next().then(v => ({ type: "stdin" as const, value: v })),
-    prompt.then(v => ({ type: "prompt" as const, value: v })),
-  ]);
-
-  if (race.type === "stdin") {
-    abort.abort();
-    sendResponse(from, "🔴 已中断");
-    return { outcome: "interrupted", msgResult: race.value };
-  }
-
-  return { outcome: "done", result: race.value };
+function dequeueMsg(): Promise<any> {
+  if (msgQueue.length > 0) return Promise.resolve(msgQueue.shift()!);
+  return new Promise(r => {
+    const iv = setInterval(() => {
+      if (msgQueue.length > 0) {
+        clearInterval(iv);
+        r(msgQueue.shift()!);
+      }
+    }, 20);
+  });
 }
+
+// Background reader — keeps pushing to queue so main thread never waits on stdin
+(() => {
+  const stdinIt = parseStdin()[Symbol.asyncIterator]();
+  (async () => {
+    try {
+      for await (const msg of stdinIt) {
+        msgQueue.push(msg);
+        if (promptAbort) { (promptAbort as AbortController).abort(); promptAbort = null; }
+      }
+    } catch (e: unknown) {
+      process.stderr.write(`[opencode-bot] reader error: ${e}\n`);
+    }
+    msgQueue.push(null); // EOF sentinel
+  })();
+})();
 
 async function main() {
   sendLog("info", "opencode-bot starting...");
@@ -121,18 +123,9 @@ async function main() {
     );
   }
 
-  const stdinIt = parseStdin()[Symbol.asyncIterator]();
-  let msgResult: IteratorResult<any, void> = { done: false, value: undefined };
-
   while (true) {
-    if (msgResult.done) break;
-    const msg = msgResult.value;
-    msgResult = { done: false, value: undefined };
-
-    if (!msg) {
-      msgResult = await stdinIt.next();
-      continue;
-    }
+    const msg = await dequeueMsg();
+    if (msg === null) break;
     if (msg.method === "config") {
       const params = msg.params;
       if (params.virtual_addr) {
@@ -237,29 +230,26 @@ async function main() {
     // Command routing
     if (text.startsWith("/")) {
       const [cmd, ...args] = text.slice(1).split(/\s+/);
-      const interruptMsg = await handleCommand(state, from, userState, cmd, args.join(" "), stdinIt);
-      if (interruptMsg) {
-        if (interruptMsg.done) break;
-        msgResult = interruptMsg;
-        continue;
-      }
+      await handleCommand(state, from, userState, cmd, args.join(" "));
     } else if (userState.sessionId) {
       const chain = resolveModelChain(userState, state.modelConfig);
       pendingQuestions.delete(from);
 
-      const r = await runPromptWithAbort(
-        stdinIt, state, from, userState.sessionId,
-        text, chain, userState.agentId,
+      promptAbort = new AbortController();
+      const result = await sendPromptStreaming(
+        state.client, userState.sessionId, text, state.projectDir,
+        chain, userState.agentId,
+        makeEventHandler(from),
+        promptAbort.signal,
       );
 
-      if (r.outcome === "interrupted") {
+      if (promptAbort.signal.aborted) {
+        promptAbort = null;
         pendingQuestions.delete(from);
-        if (r.msgResult.done) break;
-        msgResult = r.msgResult;
+        sendResponse(from, "🔴 已中断");
         continue;
       }
-
-      const result = r.result;
+      promptAbort = null;
       pendingQuestions.delete(from);
 
       if (result.text.trim().length < 20) {
@@ -394,9 +384,14 @@ function makeEventHandler(from: string) {
         } else if (isWriteTool(data.name)) {
           const path = data.input?.filePath || "";
           if (data.name === "edit") {
-            const oldS = (data.input?.oldString || "").slice(0, 1000);
-            const newS = (data.input?.newString || "").slice(0, 1000);
-            const diff = oldS.split("\n").map((l: string) => `- ${l}`).join("\n") + "\n---\n" + newS.split("\n").map((l: string) => `+ ${l}`).join("\n");
+            const oldS = data.input?.oldString || "";
+            const newS = data.input?.newString || "";
+            const changes = diffLines(oldS, newS);
+            const diff = changes.map((c) => {
+              const prefix = c.added ? "+" : c.removed ? "-" : " ";
+              const lines = c.value.replace(/\n$/, "").split("\n");
+              return lines.map((l) => `${prefix} ${l}`).join("\n");
+            }).join("\n");
             sendResponse(from, `🔧 edit${path ? ` (${path})` : ""}\n\`\`\`diff\n${diff}\n\`\`\``);
           } else {
             const content = data.input?.content || "";
@@ -494,8 +489,7 @@ async function handleCommand(
   userState: SessionState,
   cmd: string,
   arg: string,
-  stdinIt: AsyncIterator<any, void>,
-): Promise<IteratorResult<any, void> | null> {
+) {
   switch (cmd) {
     case "help":
       sendResponse(from, HELP);
@@ -534,6 +528,13 @@ async function handleCommand(
       if (userState.modelVariant) lines.push(`variant: ${userState.modelVariant}`);
       if (userState.mode) lines.push(`mode: ${userState.mode}`);
       if (state.projectDir) lines.push(`项目目录: ${state.projectDir}`);
+      try {
+        const out = execSync(`tmux -S /tmp/yse-tmux/yse.sock list-windows -F "#{window_id}: #W" 2>/dev/null || true`, { encoding: "utf-8", timeout: 2000 }).toString().trim();
+        if (out) {
+          const wins = out.split("\n").filter(l => l && !l.startsWith("0:"));
+          if (wins.length > 0) lines.push(`tmux: ${wins.join(", ")}`);
+        }
+      } catch {}
       sendResponse(from, lines.join("\n"));
       break;
     }
@@ -604,15 +605,21 @@ async function handleCommand(
       }
       const agentId = JSON.parse(list[0].value).agent;
       const chain = resolveModelChain(userState, state.modelConfig);
-      const r = await runPromptWithAbort(
-        stdinIt, state, from, userState.sessionId,
-        arg, chain, agentId,
+      promptAbort = new AbortController();
+      const result = await sendPromptStreaming(
+        state.client, userState.sessionId, arg, state.projectDir,
+        chain, agentId,
+        makeEventHandler(from),
+        promptAbort.signal,
       );
-      if (r.outcome === "interrupted") {
-        return r.msgResult;
+      if (promptAbort.signal.aborted) {
+        promptAbort = null;
+        sendResponse(from, "🔴 已中断");
+        break;
       }
-      if (r.result.text && r.result.text !== "(empty response)") {
-        sendResponse(from, r.result.text);
+      promptAbort = null;
+      if (result.text && result.text !== "(empty response)") {
+        sendResponse(from, result.text);
       }
       sendResponse(from, "✅ 处理完成");
       break;
@@ -635,7 +642,6 @@ async function handleCommand(
     default:
       sendResponse(from, `未知命令: /${cmd}\n输入 /help 查看可用命令`);
   }
-  return null;
 }
 
 async function cmdModel(state: BotState, from: string, userState: SessionState, arg: string) {

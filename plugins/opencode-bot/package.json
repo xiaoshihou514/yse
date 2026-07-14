@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.17.14",
+    "diff": "^9.0.0",
     "smol-toml": "^1.7.0"
   },
   "devDependencies": {

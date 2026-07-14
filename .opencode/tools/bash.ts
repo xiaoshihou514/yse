@@ -7,6 +7,13 @@ const INSTANT = new Set([
   "echo", "printf", "which", "type", "env", "export",
   "true", "false", "exit", "source", ".",
 ]);
+const SOCKET = "/tmp/yse-tmux/yse.sock";
+const SESSION = "yse";
+
+function ensureSession() {
+  execSync(`mkdir -p /tmp/yse-tmux`, { stdio: "ignore" });
+  execSync(`tmux -f /dev/null -S ${SOCKET} new-session -d -s ${SESSION} 2>/dev/null || true`, { stdio: "ignore" });
+}
 
 export default tool({
   description: "Execute shell commands.",
@@ -21,17 +28,19 @@ export default tool({
       return execSync(cmd, { encoding: "utf-8", maxBuffer: 1024 * 1024 }).toString();
     }
 
-    const session = `yse-${Math.random().toString(36).slice(2, 6)}`;
-    const socket = "/tmp/yse-tmux/yse.sock";
-    execSync(`mkdir -p /tmp/yse-tmux`, { stdio: "ignore" });
-    execSync(`tmux -f /dev/null -S ${socket} new-session -d -s ${session}`, { stdio: "ignore" });
-    execSync(`tmux -S ${socket} send-keys -t ${session}:0.0 -- ${JSON.stringify(cmd)} Enter`, { stdio: "ignore" });
+    ensureSession();
+    const name = cmd.slice(0, 50).replace(/[^a-zA-Z0-9 _\/\.-]/g, "").trim() || "bash";
+    const windowId = execSync(
+      `tmux -S ${SOCKET} new-window -P -F "#{window_id}" -t ${SESSION} -n "${name}"`,
+      { encoding: "utf-8" },
+    ).toString().trim();
+    execSync(`tmux -S ${SOCKET} send-keys -t ${windowId} -- ${JSON.stringify(cmd)} Enter`, { stdio: "ignore" });
     await new Promise((r) => setTimeout(r, 1000));
 
     while (true) {
       await new Promise((r) => setTimeout(r, 2000));
       const panePid = execSync(
-        `tmux -S ${socket} display-message -p -t ${session}:0.0 '#{pane_pid}'`,
+        `tmux -S ${SOCKET} display-message -p -t ${windowId} '#{pane_pid}'`,
         { encoding: "utf-8" },
       ).toString().trim();
       const children = execSync(
@@ -39,11 +48,10 @@ export default tool({
         { encoding: "utf-8" },
       ).toString().trim();
       const output = execSync(
-        `tmux -S ${socket} capture-pane -p -J -t ${session}:0.0 -S -1000`,
+        `tmux -S ${SOCKET} capture-pane -p -J -t ${windowId} -S -1000`,
         { encoding: "utf-8", maxBuffer: 1024 * 1024 },
       ).toString();
       if (!children) {
-        execSync(`tmux -S ${socket} kill-session -t ${session}`, { stdio: "ignore" });
         return output.trim();
       }
     }
