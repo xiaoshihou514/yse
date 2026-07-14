@@ -7,12 +7,12 @@ const INSTANT = new Set([
   "echo", "printf", "which", "type", "env", "export",
   "true", "false", "exit", "source", ".",
 ]);
-const SOCKET = "/tmp/yse-tmux/yse.sock";
+const SOCKET = process.env.YSE_TMUX_SOCK || "/tmp/yse-tmux/yse.sock";
 const SESSION = "yse";
 
 function ensureSession() {
   execSync(`mkdir -p /tmp/yse-tmux`, { stdio: "ignore" });
-  execSync(`tmux -f /dev/null -S ${SOCKET} new-session -d -s ${SESSION} 2>/dev/null || true`, { stdio: "ignore" });
+  execSync(`tmux -f /dev/null -S ${SOCKET} new-session -d -s ${SESSION} 'exec /bin/bash' 2>/dev/null || true`, { stdio: "ignore" });
 }
 
 export default tool({
@@ -31,7 +31,7 @@ export default tool({
     ensureSession();
     const name = cmd.slice(0, 50).replace(/[^a-zA-Z0-9 _\/\.-]/g, "").trim() || "bash";
     const windowId = execSync(
-      `tmux -S ${SOCKET} new-window -P -F "#{window_id}" -t ${SESSION} -n "${name}"`,
+      `tmux -S ${SOCKET} new-window -P -F "#{window_id}" -t ${SESSION} -n "${name}" 'exec /bin/bash'`,
       { encoding: "utf-8" },
     ).toString().trim();
     execSync(`tmux -S ${SOCKET} send-keys -t ${windowId} -- ${JSON.stringify(cmd)} Enter`, { stdio: "ignore" });
