@@ -157,6 +157,9 @@ export async function getSessionInfo(
       lines.push(`🕐 创建: ${new Date(data.time.createdAt).toLocaleString("zh-CN")}`);
     else if (data.created)
       lines.push(`🕐 创建: ${new Date(data.created).toLocaleString("zh-CN")}`);
+    const sid = (sessionId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+    const sock = `/tmp/yse-tmux/yse-${sid}.sock`;
+    lines.push(`kitty: kitty tmux -S ${sock} attach`);
     return lines.join("\n");
   } catch (e: unknown) {
     return `获取会话信息失败: ${e instanceof Error ? e.message : String(e)}`;

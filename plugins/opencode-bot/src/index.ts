@@ -537,6 +537,7 @@ async function handleCommand(
           const wins = out.split("\n").filter(l => l && !l.startsWith("0:"));
           if (wins.length > 0) lines.push(`tmux: ${wins.join(", ")}`);
         }
+        lines.push(`kitty: kitty tmux -S ${sock} attach`);
       } catch {}
       sendResponse(from, lines.join("\n"));
       break;
