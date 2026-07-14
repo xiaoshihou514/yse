@@ -43,6 +43,24 @@ let stateFile = "";
 let pendingUserRestore: any = null;
 const pendingQuestions = new Map<string, { requestID: string }>();
 
+async function pendingAnswer(state: BotState, from: string, text: string) {
+  const pending = pendingQuestions.get(from);
+  if (!pending) {
+    sendResponse(from, "当前没有待回答的 AI 问题。");
+    return;
+  }
+  try {
+    await state.client.question.reply({
+      requestID: pending.requestID,
+      answers: [[text]],
+    });
+    pendingQuestions.delete(from);
+    sendResponse(from, `✅ 已提交回答: ${text}`);
+  } catch (e: unknown) {
+    sendResponse(from, `❌ 提交回答失败: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 function saveStateImpl(state: BotState) {
   if (!stateFile) return;
   try {
@@ -175,17 +193,8 @@ async function main() {
     const respValue = msg.params.meta?.plugin?.response?.value;
     if (respValue) {
       // Check if this answers a pending AI question
-      const pending = pendingQuestions.get(from);
-      if (pending && state) {
-        try {
-          await state.client.question.reply({
-            requestID: pending.requestID,
-            answers: [[respValue]],
-          });
-          pendingQuestions.delete(from);
-        } catch (e: unknown) {
-          sendResponse(from, `❌ 提交回答失败: ${e instanceof Error ? e.message : String(e)}`);
-        }
+      if (pendingQuestions.has(from)) {
+        await pendingAnswer(state!, from, respValue);
         continue;
       }
       if (!state) {
@@ -458,13 +467,21 @@ function makeEventHandler(from: string) {
       case "question_asked": {
         const { requestID, questions } = data;
         const q = questions?.[0];
-        if (!q) break;
+        if (!q) {
+          sendResponse(from, `❓ AI 请求权限（ID: ${requestID}），但内容为空，请检查 OpenCode 界面。`);
+          break;
+        }
         pendingQuestions.set(from, { requestID });
-        sendList(from, q.question, q.header, q.options.map((o: any) => ({
-          label: o.label,
-          value: o.label,
-          description: o.description,
-        })));
+        try {
+          sendList(from, q.question, q.header, (q.options || []).map((o: any) => ({
+            label: o.label,
+            value: o.label,
+            description: o.description,
+          })));
+          sendResponse(from, `❓ ${q.question}\n请在上面选择或输入 /answer <你的回答>`);
+        } catch (e: unknown) {
+          sendResponse(from, `❓ ${q.question}\n（无法渲染选择列表，请到 OpenCode 界面操作，或输入 /answer <你的回答> 回复）`);
+        }
         break;
       }
     }
@@ -643,6 +660,18 @@ async function handleCommand(
       sendResponse(from, list.map((s) => `• ${s.label}\n  ${s.description}`).join("\n\n"));
       break;
     }
+
+    case "answer":
+      if (!arg) {
+        sendResponse(from, "用法: /answer <你的回答>");
+        break;
+      }
+      if (!state) {
+        sendResponse(from, "OpenCode 未连接");
+        break;
+      }
+      pendingAnswer(state, from, arg);
+      break;
 
     default:
       sendResponse(from, `未知命令: /${cmd}\n输入 /help 查看可用命令`);

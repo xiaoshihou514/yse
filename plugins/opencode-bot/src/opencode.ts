@@ -212,12 +212,18 @@ export async function sendPromptStreaming(
           const p = ev.properties;
           if (!p?.sessionID || p.sessionID !== sessionId) continue;
 
+          process.stderr.write(`[opencode-bot] SSE event: type=${ev.type} id=${ev.id}\n`);
+
           if (ev.type === "question.v2.asked") {
-            onEvent("question_asked", {
-              requestID: ev.id,
-              sessionID: p.sessionID,
-              questions: p.questions,
-            });
+            try {
+              onEvent("question_asked", {
+                requestID: ev.id,
+                sessionID: p.sessionID,
+                questions: p.questions,
+              });
+            } catch (e: unknown) {
+              process.stderr.write(`[opencode-bot] question_asked onEvent error: ${e}\n`);
+            }
             continue;
           }
 
