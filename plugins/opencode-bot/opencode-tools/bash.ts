@@ -29,13 +29,17 @@ function sanitize(s: string): string {
 
 // ── Tmux SSH proxy ─────────────────────────────────────────────
 
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
 function tmuxProc(
   args: string[],
   server?: string,
   opts?: { stdio?: "ignore"; encoding?: string; maxBuffer?: number; timeout?: number },
 ) {
   const [cmd, cmdArgs] = server
-    ? ["ssh", ["-o", "RequestTTY=no", server, "tmux", ...args] as string[]]
+    ? ["ssh", ["-o", "RequestTTY=no", server, ["tmux", ...args].map(shQuote).join(" ")] as string[]]
     : ["tmux", args as string[]];
   const r = spawnSync(cmd, cmdArgs, {
     encoding: opts?.encoding ?? "utf-8",
@@ -65,6 +69,11 @@ function capture(sock: string, server?: string): string {
 
 function ensureSession(sock: string, server?: string, dir?: string) {
   spawnSync("mkdir", ["-p", SOCKET_DIR], { stdio: "ignore" });
+  if (server) {
+    spawnSync("ssh", ["-o", "RequestTTY=no", server, `mkdir -p ${shQuote(SOCKET_DIR)}`],
+      { stdio: "ignore", timeout: 5000 },
+    );
+  }
   tmuxProc(
     ["-f", "/dev/null", "-S", sock, "new-session", "-d", "-s", "yse", `exec ${SHELL}`],
     server,
@@ -77,10 +86,6 @@ function ensureSession(sock: string, server?: string, dir?: string) {
       { stdio: "ignore" },
     );
   }
-}
-
-function shQuote(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
 // ── Marker wait ────────────────────────────────────────────────

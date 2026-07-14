@@ -7,7 +7,7 @@
 import { spawnSync } from "child_process";
 import * as crypto from "crypto";
 
-const SERVER = "localhost";
+const SERVER = process.env.TEST_SSH_SERVER || "localhost";
 const SOCKET_DIR = "/tmp/yse-tmux-ssh-test";
 
 function marker(): string {
@@ -21,7 +21,7 @@ function sanitize(s: string): string {
 // Replicate the EXACT tmux logic from bash.ts, but with SSH
 function tmuxProc(args: string[], server?: string) {
   const [cmd, cmdArgs] = server
-    ? ["ssh", ["-o", "StrictHostKeyChecking=no", server, "tmux", ...args] as string[]]
+    ? ["ssh", ["-o", "StrictHostKeyChecking=no", server, ["tmux", ...args].map(shQuote).join(" ")] as string[]]
     : ["tmux", args as string[]];
   return spawnSync(cmd, cmdArgs, {
     encoding: "utf-8",
@@ -74,7 +74,10 @@ function run() {
     tmuxProc(["-S", sock, "kill-session", "-t", "yse"], SERVER);
     spawnSync("rm", ["-f", sock]);
 
-    // Setup
+    // Remote setup
+    spawnSync("ssh", ["-o", "StrictHostKeyChecking=no", SERVER, `mkdir -p ${shQuote(SOCKET_DIR)}`],
+      { stdio: "ignore", timeout: 5000 },
+    );
     tmuxProc(
       ["-f", "/dev/null", "-S", sock, "new-session", "-d", "-s", "yse", "exec /bin/bash"],
       SERVER,
@@ -111,9 +114,11 @@ function run() {
 
     const raw = capture(sock, SERVER);
 
-    // Reference: local bash
-    const local = spawnSync("/bin/bash", ["-c", t.cmd], { encoding: "utf-8" });
-    const expected = ((local.stdout ?? "") + (local.stderr ?? "")).trim();
+    // Reference: remote (SSH) or local bash
+    const ref = SERVER === "localhost"
+      ? spawnSync("/bin/bash", ["-c", t.cmd], { encoding: "utf-8" })
+      : spawnSync("ssh", ["-o", "StrictHostKeyChecking=no", SERVER, t.cmd], { encoding: "utf-8" });
+    const expected = ((ref.stdout ?? "") + (ref.stderr ?? "")).trim();
 
     // Parse output
     const lines = raw.split("\n");

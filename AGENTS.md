@@ -116,8 +116,14 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 - 长命令通过 tmux marker-based 算法执行：`clear;echo START → cmd;echo END → 精确截取输出`
 - session 隔离：每个 OpenCode 会话独立 tmux socket `/tmp/yse-tmux/yse-<sessionID>.sock`
 - 支持 SSH 远程执行（`server` 参数）
-- 进度检测：2 分钟无变化时返回部分输出
-- `just plugin-opencode` 会自动编译插件并复制 tool 到 `.opencode/tools/`
+- progress 检测：2 分钟无变化时返回部分输出
+- `just plugin-opencode` 会自动编译插件并复制 bash.ts 到 `.opencode/tools/`
+
+### SSH Gotcha
+
+SSH 路径通过 `spawnSync("ssh", [..., "tmux", ...args])` 执行。由于 SSH 将参数拼接为远程 shell 命令，`;` 等元字符会破坏参数边界。
+修复方式：SSH 时对每个 tmux 参数做 `shQuote`（单引号包裹），然后作为一个字符串发送。
+容器内需要先 `mkdir -p <SOCKET_DIR>` 否则 tmux new-session 失败（socket 父目录不存在）。
 
 ## Mobile (Android)
 
