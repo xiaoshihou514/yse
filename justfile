@@ -38,13 +38,9 @@ android:
 plugin-echo:
     cd plugins/echo-bot && cargo build --release
 
-# 编译 opencode-bot 插件 + 复制 tool 到 .opencode/tools/
-plugin-opencode: plugin-opencode-build
-    mkdir -p .opencode/tools/
-    cp plugins/opencode-bot/opencode-tools/bash.ts .opencode/tools/
-
-# 编译 opencode-bot 插件（仅构建）
-plugin-opencode-build:
+plugin-opencode:
+    mkdir -p plugins/opencode-bot/workspace/.opencode/tools/
+    cp plugins/opencode-bot/opencode-tools/bash.ts plugins/opencode-bot/workspace/.opencode/tools/
     cd plugins/opencode-bot && npm install && npm run build
 
 # 编译 file-tree 插件

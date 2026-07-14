@@ -13,12 +13,13 @@ cargo clippy -- -D warnings      # lint (generates icons + copies to frontend)
 cargo fmt --all
 just fe-typecheck                 # vue-tsc --noEmit
 just fe-build                     # npm run build (runs vue-tsc first)
-just check-all                    # fe-typecheck + cargo check + clippy
-just check                        # cargo check (full workspace + icon gen)
+just check                        # cargo check full workspace + icon gen + fe-typecheck
 just dev                          # cd desktop && cargo tauri dev
 just fe-dev                       # Vite dev server at :1420
-just android-build                # bash scripts/android-build.sh (full APK)
-just build-appimage               # desktop AppImage
+just android                      # bash scripts/android-build.sh (full APK)
+just appimage                     # desktop AppImage
+just plugin-all                   # build all plugins (echo-bot, file-tree, pm, opencode-bot)
+just format                       # prettier + rustfmt
 ```
 
 ## Repo
@@ -26,19 +27,19 @@ just build-appimage               # desktop AppImage
 ```
 Cargo workspace (resolver = "2")
 ├── core/       # yse-core: pure logic, no platform deps
-├── desktop/    # yse-desktop: Tauri 2 app (28 commands + YseState)
-├── mobile/     # yse-mobile: bare Tauri (14 commands, no plugins)
+├── desktop/    # yse-desktop: Tauri 2 app (27 commands + YseState)
+├── mobile/     # yse-mobile: bare Tauri (15 commands, no plugin commands)
 ├── frontend/   # Vue 3 + Pinia + TDesign + vue-router
 └── plugins/    # standalone executables, outside workspace
 ```
 
-Key source: `desktop/src/commands.rs` (YseState + 28 commands), `desktop/src/lib.rs` (builder + temp runtime),
+Key source: `desktop/src/commands.rs` (YseState + 27 commands), `desktop/src/lib.rs` (builder + temp runtime),
 `mobile/src/lib.rs` (uses `app.path().app_data_dir()` — NOT `dirs_next`), `core/src/app.rs` (CoreState),
 `core/src/imap_ingest.rs` (shared ingest logic + `classify` for address matching),
 `frontend/src/stores/yse.ts` (Pinia store, skips plugin/session APIs on Android via `platform() === "android"`),
 `frontend/src/views/` (Chat, Plugins, Contacts, Config),
 `frontend/src/utils/address.ts` (parseAddress, hostnameFromAddr, nameFromAddr),
-`scripts/android-build.sh` (APK pipeline).
+`scripts/android-build.sh` (APK pipeline), `plugins/opencode-bot/opencode-tools/bash.ts` (custom bash tool).
 
 ## Gotchas
 
@@ -46,7 +47,7 @@ Key source: `desktop/src/commands.rs` (YseState + 28 commands), `desktop/src/lib
 
 `config.own_address` is just `me` (hardcoded, overridden from "me" in load_config).
 `format_sender_address(recipient)` produces `name#8char-hex@hostname`. **Never `==` against message addresses.**
-- Rust: `addr.starts_with(&format!("{}#", own))` or `addr == own` (bare fallback) — see `imap_ingest.rs:classify`.
+- Rust: `addr.starts_with(&format!("{}#", own))` or `addr == own` (bare fallback) — see `imap_ingest.rs::classify`.
 - Frontend: `nameFromAddr(addr)` from `@/utils/address` → compare against `ownAddress.value`.
 
 Every comparison in `ChatView.vue`, `commands.rs` (new-message emit, route skip), and `imap_ingest.rs` (for_self check) must use name-based matching.
@@ -55,7 +56,6 @@ Every comparison in `ChatView.vue`, `commands.rs` (new-message emit, route skip)
 
 - `processed` column defaults to `0`. `save_message()` does NOT set it.
 - IMAP poll checks `is_processed` before routing. To prevent re-route from SMTP copy, call `mark_processed(msg.id)` after any local `route()` call.
-- **Mobile bug**: `mark_processed` is called **before** `save_message` in mobile IMAP callback (`mobile/src/commands.rs:230-233`). UPDATE hits 0 rows, then INSERT creates row with `processed=0`. Harmless on mobile (no plugins/route), but bad pattern to copy.
 
 ### IMAP echo loop prevention
 
@@ -63,18 +63,18 @@ Plugin→user messages MUST skip `route()` in IMAP callback. Handled by `ingest_
 
 ### `send_message` flow (order matters)
 
-`send_message` Tauri command (`desktop/src/commands.rs:224`):
+`send_message` Tauri command:
 1. `save_message` — persist to DB
 2. `route` — deliver to local plugin if addressed here
-3. `mark_processed` — prevent IMAP from re-routing the SMTP copy
-4. SMTP send — external delivery
+3. SMTP send — external delivery
+4. `mark_processed` — prevent IMAP from re-routing the SMTP copy (only after successful send)
 
-Same order applies in plugin Send handler: save_message → mark_processed → then SMTP send.
+Same order applies in plugin Send handler.
 
 ### Plugin `virtual_addr`
 
 `CoreNotification::Config` is sent to plugins on startup with `virtual_addr: None`.
-The plugin gets its actual virtual address (`name#hash@hostname`) only after a session is registered in `SessionRegistry::resolve_plugin()` (`session.rs:159`), which pushes an updated Config with the virtual_addr.
+The plugin gets its actual virtual address (`name#hash@hostname`) only after a session is registered in `SessionRegistry::resolve_plugin()`, which pushes an updated Config with the virtual_addr.
 
 A plugin that sends a welcome message before receiving any user message will have empty `from`/`to` addresses. The plugin Send handler in `commands.rs` detects empty `to_addr` and saves the message locally **without** sending via SMTP. `ingest_core` in `imap_ingest.rs` also skips routing for messages with empty `to_addr`.
 
@@ -96,9 +96,9 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 - Theme: `localStorage` key `"yse-theme"` → `"light"`/`"dark"`/`"auto"`, applied via `theme-mode` attr on `<html>`.
 - Platform: `@tauri-apps/plugin-os` → `platform() === "android"`.
 - `beforeBuildCommand` skips if `dist/` newer than all `src/` files (timestamp check). Does NOT skip in CI.
-- Android hostname: kernel always returns `"localhost"`. `resolveHostname()` in `stores/yse.ts:29` falls back to device model from userAgent or persistent `localStorage` ID.
+- Android hostname: kernel always returns `"localhost"`. `resolveHostname()` in `stores/yse.ts` falls back to device model from userAgent or persistent `localStorage` ID.
 - `npm run build` runs `vue-tsc --noEmit` first (type-check gates the build).
-- `m.timestamp` from Rust is `as_millis()` (ms, `core/src/message.rs:48`). `Date.now()` on frontend is also ms.
+- `m.timestamp` from Rust is `as_millis()` (ms). `Date.now()` on frontend is also ms.
   `readTimestamps` stores `Date.now()` (ms) — comparison against `m.timestamp` is ms vs ms.
   Do NOT divide by 1000, do NOT compare against `as_secs()`.
 
@@ -112,27 +112,25 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 ### bash 工具
 
 内置 `bash` 已被自定义 bash tool 替代（源码 `plugins/opencode-bot/opencode-tools/bash.ts`）：
-- 短命令（`cd` / `ls` / `grep` / `cat` 等）直接执行并返回结果
-- 长命令通过 tmux marker-based 算法执行：`clear;echo START → cmd;echo END → 精确截取输出`
+- 短命令直接执行并返回结果；长命令通过 tmux marker-based 算法执行
 - session 隔离：每个 OpenCode 会话独立 tmux socket `/tmp/yse-tmux/yse-<sessionID>.sock`
-- 支持 SSH 远程执行（`server` 参数）
-- progress 检测：2 分钟无变化时返回部分输出
-- `just plugin-opencode` 会自动编译插件并复制 bash.ts 到 `.opencode/tools/`
+- 支持 SSH 远程执行（`server` 参数）；2 分钟无变化时返回部分输出
+- `just plugin-opencode` 编译插件并复制 bash.ts 到 `.opencode/tools/`
 
-### SSH Gotcha
+### SSH quoting
 
-SSH 路径通过 `spawnSync("ssh", [..., "tmux", ...args])` 执行。由于 SSH 将参数拼接为远程 shell 命令，`;` 等元字符会破坏参数边界。
+SSH 路径通过 `spawnSync("ssh", [..., "tmux", ...args])` 执行。SSH 将参数拼接为远程 shell 命令，`;` 等元字符会破坏参数边界。
 修复方式：SSH 时对每个 tmux 参数做 `shQuote`（单引号包裹），然后作为一个字符串发送。
-容器内需要先 `mkdir -p <SOCKET_DIR>` 否则 tmux new-session 失败（socket 父目录不存在）。
+容器内需要先 `mkdir -p <SOCKET_DIR>` 否则 tmux new-session 失败。
 
 ## Mobile (Android)
 
-- `just android-build` → `scripts/android-build.sh`: icon gen → patch launcher bg (`#262626`) → Gradle mirror patch → `tauri android build --apk` → `zipalign` + `apksigner sign`.
+- `just android` → `scripts/android-build.sh`: icon gen → patch launcher bg (`#262626`) → Gradle mirror patch → `tauri android build --apk` → `zipalign` + `apksigner sign`.
 - Keystore: `mobile/yse-keystore.jks` (RSA 2048, alias=upload, password in `keystore.password`). Generated on first run.
 - `~/.gradle/init.gradle` overrides all repos with Aliyun mirrors (GFW SSL issue).
 - Capabilities: `mobile/capabilities/default.json` (core+os), `mobile/capabilities/mobile.json` (barcode-scanner).
 - Mobile lib uses `app.path().app_data_dir()` (not `dirs_next`) to get storage path on Android.
-- Mobile has **no plugin commands** (`mobile/src/commands.rs` has 14 commands vs desktop's 28).
+- Mobile has **no plugin commands** (no route/dispatch; uses `ingest_message` from core).
 - Barcode scanner: mobile shows "扫码导入", desktop shows "导入配置" (file upload).
 
 ## Desktop
@@ -141,8 +139,7 @@ Requires: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `libr
 
 ## CI / Git
 
-- `.github/workflows/build.yml`: 4 jobs (desktop, android, check, release).
-- Android job needs JDK 17 + Android SDK. Pipeline may lack credits.
+- `.github/workflows/build.yml.disabled`: 4 jobs (desktop, android, check, release). Currently disabled.
 - Commits: Chinese, conventional-commits (`fix:`/`feat:`/`refactor:`/`chore:`/`style:`).
 - AI commits include `Co-authored-by: opencode <deepseek@opencode.com>`.
 - Author: `xiaoshihou <xiaoshihou@tutamail.com>`. Do not use `--author` flag.

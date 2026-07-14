@@ -3,7 +3,7 @@ import { initBot, killServer } from "./server.js";
 import { diffLines } from "diff";
 import {
   listModels, listSkills, listAgents, listVariants,
-  fetchAllSessions, getSessionInfo,
+  fetchAllSessions, getSessionInfo, ensureTmuxSession,
 } from "./api.js";
 import {
   getUserState,
@@ -529,6 +529,7 @@ async function handleCommand(
       if (userState.modelVariant) lines.push(`variant: ${userState.modelVariant}`);
       if (userState.mode) lines.push(`mode: ${userState.mode}`);
       if (state.projectDir) lines.push(`项目目录: ${state.projectDir}`);
+      if (userState.sessionId) ensureTmuxSession(userState.sessionId);
       try {
         const sid = (userState.sessionId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
         const sock = `/tmp/yse-tmux/yse-${sid}.sock`;

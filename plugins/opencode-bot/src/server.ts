@@ -1,8 +1,13 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { spawn, type ChildProcess } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
 import type { BotState } from "./opencode.js";
 
 let _serverProcess: ChildProcess | null = null;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WORKSPACE = path.resolve(__dirname, "../workspace");
 
 process.on("exit", () => {
   if (_serverProcess) {
@@ -12,6 +17,7 @@ process.on("exit", () => {
 
 function startServer(): { child: ChildProcess; port: Promise<number> } {
   const child = spawn("opencode", ["serve", "--port", "0", "--print-logs"], {
+    cwd: WORKSPACE,
     stdio: ["ignore", "pipe", "inherit"],
   });
   let stdout = "";

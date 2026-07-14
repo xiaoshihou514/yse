@@ -8,6 +8,9 @@ dist
 # OpenCode runtime directory (copy of plugins/opencode-bot/opencode-tools/)
 .opencode/
 
+# Workspace opencode tools (wrapper)
+plugins/opencode-bot/workspace/.opencode/
+
 frontend/node_modules
 frontend/dist
 frontend/node_modules/.vite

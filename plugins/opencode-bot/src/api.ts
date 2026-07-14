@@ -1,5 +1,15 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
+import { execSync } from "child_process";
 import type { BotState, OpenCodeClient, ApiModel, ApiSkill, ApiAgent, SessionShape } from "./opencode.js";
+
+export function ensureTmuxSession(sessionId: string) {
+  const sid = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  const sock = `/tmp/yse-tmux/yse-${sid}.sock`;
+  execSync("mkdir -p /tmp/yse-tmux", { stdio: "ignore" });
+  try {
+    execSync(`tmux -f /dev/null -S ${sock} new-session -d -s yse exec /bin/bash 2>/dev/null`, { stdio: "ignore" });
+  } catch {}
+}
 
 export async function listModels(
   state: BotState,
@@ -157,6 +167,7 @@ export async function getSessionInfo(
       lines.push(`🕐 创建: ${new Date(data.time.createdAt).toLocaleString("zh-CN")}`);
     else if (data.created)
       lines.push(`🕐 创建: ${new Date(data.created).toLocaleString("zh-CN")}`);
+    ensureTmuxSession(sessionId);
     const sid = (sessionId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
     const sock = `/tmp/yse-tmux/yse-${sid}.sock`;
     lines.push(`kitty: kitty tmux -S ${sock} attach`);
