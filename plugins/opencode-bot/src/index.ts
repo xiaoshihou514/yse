@@ -22,8 +22,6 @@ import * as fs from "fs";
 import * as path from "path";
 import { loadModelConfig, modelConfigPath } from "./model-config.js";
 
-const YSE_TMUX_ID = Math.random().toString(36).slice(2, 10);
-process.env.YSE_TMUX_SOCK = `/tmp/yse-tmux/yse-${YSE_TMUX_ID}.sock`;
 
 const HELP = `可用命令：
 发消息 → 发送给 AI（需先用 /select 或 /new 选择会话）
@@ -532,7 +530,9 @@ async function handleCommand(
       if (userState.mode) lines.push(`mode: ${userState.mode}`);
       if (state.projectDir) lines.push(`项目目录: ${state.projectDir}`);
       try {
-        const out = execSync(`tmux -S ${process.env.YSE_TMUX_SOCK || "/tmp/yse-tmux/yse.sock"} list-windows -F "#{window_id}: #W" 2>/dev/null || true`, { encoding: "utf-8", timeout: 2000 }).toString().trim();
+        const sid = (userState.sessionId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+        const sock = `/tmp/yse-tmux/yse-${sid}.sock`;
+        const out = execSync(`tmux -S ${sock} list-windows -F "#{window_id}: #W" 2>/dev/null || true`, { encoding: "utf-8", timeout: 2000 }).toString().trim();
         if (out) {
           const wins = out.split("\n").filter(l => l && !l.startsWith("0:"));
           if (wins.length > 0) lines.push(`tmux: ${wins.join(", ")}`);
