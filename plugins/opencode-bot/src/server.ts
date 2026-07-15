@@ -24,9 +24,6 @@ const CONFIG = {
     build: {
       tools: { bash: false },
     },
-    plan: {
-      tools: { bash: false },
-    },
   },
 };
 
