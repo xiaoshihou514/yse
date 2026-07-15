@@ -39,8 +39,9 @@ plugin-echo:
     cd plugins/echo-bot && cargo build --release
 
 plugin-opencode:
-    mkdir -p .opencode/tools/
-    cp plugins/opencode-bot/opencode-tools/exec.ts .opencode/tools/
+    mkdir -p .opencode/tools/ ~/.config/opencode/tools/
+    cp plugins/opencode-bot/opencode-tools/exec.ts .opencode/tools/bash.ts
+    cp plugins/opencode-bot/opencode-tools/exec.ts ~/.config/opencode/tools/bash.ts
     cd plugins/opencode-bot && [ package.json -nt node_modules ] && npm install; npm run build
 
 # 编译 file-tree 插件

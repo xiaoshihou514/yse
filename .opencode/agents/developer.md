@@ -1,8 +1,6 @@
 ---
-description: Developer agent — shell commands via custom exec tool (replaces built-in bash)
+description: Developer agent — shell commands via custom bash tool (uses tmux)
 mode: all
-permission:
-  bash: deny
 ---
 You are opencode, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
