@@ -67,9 +67,8 @@ export async function initBot(): Promise<BotState | null> {
     const actualPort = await port;
     log(`server started on port ${actualPort}`);
 
-    const cwd = process.cwd();
     const baseUrl = `http://127.0.0.1:${actualPort}`;
-    let projectDir = cwd;
+    let projectDir = YSE_ROOT;
 
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
