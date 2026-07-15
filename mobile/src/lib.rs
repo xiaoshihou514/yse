@@ -71,6 +71,7 @@ pub fn run() {
             commands::get_contact_hashes,
             commands::get_known_hostnames,
             commands::read_attachment,
+            commands::test_email,
         ])
         .run(tauri::generate_context!())
         .expect("error while running yse mobile");

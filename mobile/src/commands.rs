@@ -353,3 +353,25 @@ pub async fn read_attachment(
     let path = state.files_dir.join(&message_id).join(&enc_name);
     std::fs::read(&path).map_err(|e| format!("读取附件失败: {}", e))
 }
+
+#[tauri::command]
+pub async fn test_email(
+    server: String,
+    port: u16,
+    username: String,
+    password: String,
+) -> Result<String, String> {
+    let p = ImapPoller::new(
+        ImapConfig {
+            server,
+            port,
+            username,
+            password,
+        },
+        None,
+    );
+    let _session = p
+        .connect_sync()
+        .map_err(|e| format!("IMAP 连接失败: {}", e))?;
+    Ok("邮箱连接正常".into())
+}
