@@ -5,8 +5,11 @@ node_modules
 dist
 .vite
 
-# OpenCode runtime directory (copy of plugins/opencode-bot/opencode-tools/)
-.opencode/
+# OpenCode 运行时产物（由 just plugin-opencode 复制）
+.opencode/tools/
+.opencode/node_modules/
+.opencode/tmux-tasks.json
+plugins/.opencode/
 
 frontend/node_modules
 frontend/dist
