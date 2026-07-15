@@ -1,15 +1,28 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 import type { BotState, OpenCodeClient, ApiModel, ApiSkill, ApiAgent, SessionShape } from "./opencode.js";
 import { log } from "./logger.js";
 
-export function ensureTmuxSession(sessionId: string) {
+const SOCKET_DIR = "/tmp/yse-tmux";
+
+export function ensureTmuxSession(sessionId: string, dir?: string) {
   const sid = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-  const sock = `/tmp/yse-tmux/yse-${sid}.sock`;
-  execSync("mkdir -p /tmp/yse-tmux", { stdio: "ignore" });
+  const sock = `${SOCKET_DIR}/yse-${sid}.sock`;
   try {
-    execSync(`tmux -f /dev/null -S ${sock} new-session -d -s yse exec /bin/bash 2>/dev/null`, { stdio: "ignore" });
-  } catch {}
+    const r0 = spawnSync("mkdir", ["-p", SOCKET_DIR], { stdio: "pipe" });
+    if (r0.error) throw r0.error;
+    const check = spawnSync("tmux", ["-S", sock, "has-session", "-t", "yse"], { stdio: "pipe" });
+    if (check.status === 0) return;
+    const args = ["-f", "/dev/null", "-S", sock, "new-session", "-d", "-s", "yse"];
+    if (dir) args.push("-c", dir);
+    args.push("/bin/bash");
+    const r2 = spawnSync("tmux", args, { stdio: "pipe" });
+    if (r2.error) throw r2.error;
+    if (r2.status !== 0) throw new Error(`${r2.stderr?.toString() || r2.stdout?.toString()}`);
+    log(`tmux session ready: ${sock}${dir ? ` -c ${dir}` : ""}`);
+  } catch (e: unknown) {
+    log(`tmux session failed: sock=${sock} ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 export async function listModels(
@@ -168,7 +181,7 @@ export async function getSessionInfo(
       lines.push(`🕐 创建: ${new Date(data.time.createdAt).toLocaleString("zh-CN")}`);
     else if (data.created)
       lines.push(`🕐 创建: ${new Date(data.created).toLocaleString("zh-CN")}`);
-    ensureTmuxSession(sessionId);
+    ensureTmuxSession(sessionId, data.directory || data.worktree);
     const sid = (sessionId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
     const sock = `/tmp/yse-tmux/yse-${sid}.sock`;
     lines.push(`kitty: kitty tmux -S ${sock} attach`);

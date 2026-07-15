@@ -121,7 +121,7 @@ function dequeueMsg(): Promise<any> {
     try {
       for await (const msg of stdinIt) {
         msgQueue.push(msg);
-        if (promptAbort) { (promptAbort as AbortController).abort(); promptAbort = null; }
+        if (promptAbort) (promptAbort as AbortController).abort();
       }
     } catch (e: unknown) {
       log(`reader error: ${e}`);
@@ -175,6 +175,7 @@ async function main() {
           if (state) state.modelConfig = loadModelConfig();
           if (state && saved.lastUserState?.sessionId) {
             pendingUserRestore = saved.lastUserState;
+            ensureTmuxSession(saved.lastUserState.sessionId, saved.projectDir);
           }
           sendLog("info", `loaded state from ${stateFile}`);
         } catch (e: unknown) {
@@ -247,15 +248,16 @@ async function main() {
       const chain = resolveModelChain(userState, state.modelConfig);
       pendingQuestions.delete(from);
 
-      promptAbort = new AbortController();
+      const ctrl = new AbortController();
+      promptAbort = ctrl;
       const result = await sendPromptStreaming(
         state.client, userState.sessionId, text, state.projectDir,
         chain, userState.agentId,
         makeEventHandler(from),
-        promptAbort.signal,
+        ctrl.signal,
       );
 
-      if (promptAbort.signal.aborted) {
+      if (ctrl.signal.aborted) {
         promptAbort = null;
         pendingQuestions.delete(from);
         sendResponse(from, "🔴 已中断");
@@ -334,8 +336,11 @@ function formatReadOutput(out: string): string {
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("(") && !l.startsWith("<"));
 
-  if (type === "directory" && entries.length > 0) {
-    return `📂 ${path}\n${entries.map((e) => `  ${e}`).join("\n")}`;
+  if (type === "directory") {
+    if (entries.length > 0) {
+      return `📂 ${path}\n${entries.map((e) => `  ${e}`).join("\n")}`;
+    }
+    return `📂 ${path}\n  (空目录)`;
   }
   if ((type === "file" || (!type && contentM)) && entriesRaw) {
     const lang = extLang(path);
@@ -548,7 +553,7 @@ async function handleCommand(
       if (userState.modelVariant) lines.push(`variant: ${userState.modelVariant}`);
       if (userState.mode) lines.push(`mode: ${userState.mode}`);
       if (state.projectDir) lines.push(`项目目录: ${state.projectDir}`);
-      if (userState.sessionId) ensureTmuxSession(userState.sessionId);
+      if (userState.sessionId) ensureTmuxSession(userState.sessionId, state.projectDir);
       try {
         const sid = (userState.sessionId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
         const sock = `/tmp/yse-tmux/yse-${sid}.sock`;
@@ -629,14 +634,15 @@ async function handleCommand(
       }
       const agentId = JSON.parse(list[0].value).agent;
       const chain = resolveModelChain(userState, state.modelConfig);
-      promptAbort = new AbortController();
+      const ctrl = new AbortController();
+      promptAbort = ctrl;
       const result = await sendPromptStreaming(
         state.client, userState.sessionId, arg, state.projectDir,
         chain, agentId,
         makeEventHandler(from),
-        promptAbort.signal,
+        ctrl.signal,
       );
-      if (promptAbort.signal.aborted) {
+      if (ctrl.signal.aborted) {
         promptAbort = null;
         sendResponse(from, "🔴 已中断");
         break;

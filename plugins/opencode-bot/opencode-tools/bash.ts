@@ -67,18 +67,10 @@ function ensureSession(sock: string, server?: string, dir?: string) {
       { stdio: "ignore", timeout: 5000 },
     );
   }
-  tmuxProc(
-    ["-f", "/dev/null", "-S", sock, "new-session", "-d", "-s", "yse", `exec ${SHELL}`],
-    server,
-    { stdio: "ignore" },
-  );
-  if (dir) {
-    tmuxProc(
-      ["-S", sock, "send-keys", "-t", "yse:0.0", "--", `cd ${shQuote(dir)}`, "Enter"],
-      server,
-      { stdio: "ignore" },
-    );
-  }
+  const args = ["-f", "/dev/null", "-S", sock, "new-session", "-d", "-s", "yse"];
+  if (dir) args.push("-c", dir);
+  args.push(SHELL);
+  tmuxProc(args, server, { stdio: "ignore" });
 }
 
 // ── Marker wait ────────────────────────────────────────────────
@@ -140,7 +132,7 @@ function captureOutput(
   const END = marker();
 
   // 1. Clear + plant START anchor
-  send(sock, `clear; echo ${START}`, server);
+  send(sock, `echo ${START}`, server);
   waitFor(sock, START, server, signal);
 
   // 2. Send command + END marker
