@@ -10,13 +10,6 @@ const POLL_MS = 150;
 const MAX_STALE_MS = 120_000; // 2 min no change → return partial
 const LINE_HAS_PROMPT = /[\w@][\w@:\-.\/~]*[$#%] ?$/;
 
-const INSTANT = new Set([
-  "cd", "pwd", "ls", "eza", "tree", "grep", "rg",
-  "cat", "head", "tail", "wc", "sort", "uniq",
-  "echo", "printf", "which", "type", "env", "export",
-  "true", "false", "exit", "source", ".",
-]);
-
 // ── Helpers ────────────────────────────────────────────────────
 
 function marker(): string {
@@ -228,20 +221,6 @@ export default tool({
   async execute(args, context) {
     const cmd = args.command.trim();
     if (!cmd) return "";
-
-    // Short commands run directly (no tmux overhead)
-    const first = cmd.split(/\s+/)[0];
-    if (INSTANT.has(first) && !args.server) {
-      try {
-        return spawnSync(SHELL, ["-c", cmd], {
-          encoding: "utf-8",
-          maxBuffer: 1024 * 1024,
-          timeout: 10000,
-        }).stdout?.toString() ?? "";
-      } catch {
-        // fall through to tmux
-      }
-    }
 
     const sid = sanitize(context.sessionID || "default");
     const sock = `${SOCKET_DIR}/yse-${sid}.sock`;
