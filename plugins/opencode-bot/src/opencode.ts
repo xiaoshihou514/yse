@@ -98,7 +98,8 @@ function buildPromptParams(
       providerID: spec.providerId,
       ...(spec.variant ? { variant: spec.variant } : {}),
     };
-  } else if (agentId) {
+  }
+  if (agentId) {
     params.agent = agentId;
   }
   return params;
