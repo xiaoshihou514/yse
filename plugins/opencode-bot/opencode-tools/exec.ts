@@ -156,7 +156,7 @@ function hasProgress(out: string): boolean {
 
 export default tool({
   description: `Execute shell commands via tmux. Supports long-running tasks without timeout.
-  This tool replaces bash — the built-in bash is disabled for this agent.
+  The built-in bash is disabled for this agent — use this exec tool to run shell commands.
   - "command": the shell command to run
   - "server" (optional): SSH host for remote execution
   The user can attach with: tmux -S /tmp/yse-tmux/yse-<sessionID>.sock attach

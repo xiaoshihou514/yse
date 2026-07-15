@@ -1,8 +1,8 @@
 /**
- * Test bash.ts SSH support against localhost.
+ * Test exec.ts SSH support against localhost.
  * Verifies remote execution produces the same output as local.
  *
- * Usage: tsx .opencode/tools/bash-ssh-test.ts
+ * Usage: tsx .opencode/tools/exec-ssh-test.ts
  */
 import { spawnSync } from "child_process";
 import * as crypto from "crypto";

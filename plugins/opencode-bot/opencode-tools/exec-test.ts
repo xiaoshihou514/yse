@@ -1,15 +1,12 @@
 /**
- * bash.ts capture algorithm validation.
+ * exec.ts capture algorithm validation.
  *
  * Algorithm (proven correct):
  *   - -J ON: joins terminal-wrapped lines so cmd echo is always 1 array element
- *   - START marker plant → cmd; echo END → wait for END
- *   - between = lines[iStart+1 .. iEnd]   (inclusive of END marker line)
- *   - between.slice(1) → skip cmd echo (always 1 element with -J)
- *   - Last line: splitOutput() extracts text before merged END marker
- *   - Filter prompt lines
+ *   - PS1 marker prompt → wait for marker → extract between typed cmd and marker
+ *   - No echo markers injected, no injection risk
  *
- * Usage: tsx .opencode/tools/bash-test.ts
+ * Usage: tsx .opencode/tools/exec-test.ts
  */
 import { spawnSync } from "child_process";
 import * as crypto from "crypto";

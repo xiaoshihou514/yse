@@ -1,5 +1,5 @@
 ---
-description: Developer agent
+description: Developer agent — shell commands via custom exec tool (replaces built-in bash)
 mode: all
 permission:
   bash: deny

@@ -109,14 +109,14 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 - Crashed plugins auto-restart up to 3 times.
 - Plugins outside workspace: `plugins/echo-bot` (Rust), `plugins/opencode-bot` (TypeScript), `plugins/file-tree` (Rust), `plugins/project-manager` (Rust + rig-core + Ollama).
 
-### shell 工具
+### exec 工具
 
-内置 `bash` 已被自定义 `shell` tool 替代（源码 `plugins/opencode-bot/opencode-tools/shell.ts`）：
+内置 `bash` 已被自定义 `exec` tool 替代（源码 `plugins/opencode-bot/opencode-tools/exec.ts`）：
 - 所有命令都通过 tmux session 执行，session 自动创建和管理
 - session 隔离：每个 OpenCode 会话独立 tmux socket `/tmp/yse-tmux/yse-<sessionID>.sock`
 - 支持 SSH 远程执行（`server` 参数）；2 分钟无变化时返回部分输出
-- `just plugin-opencode` 编译插件并复制 shell.ts 到 `.opencode/tools/`
-- **重要：不要手动创建 tmux session。shell 工具已内置所有 tmux 逻辑。**
+- `just plugin-opencode` 编译插件并复制 exec.ts 到 `.opencode/tools/`
+- **重要：不要手动创建 tmux session。exec 工具已内置所有 tmux 逻辑。**
 
 ### SSH quoting
 
