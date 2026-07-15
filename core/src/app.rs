@@ -118,6 +118,8 @@ impl CoreState {
         let key = key_guard.as_ref().ok_or("crypto key not set")?;
         let payload = msg.to_json().map_err(|e| e.to_string())?;
         let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
+        let mut email_body = "[YSE 加密消息]\n\n".as_bytes().to_vec();
+        email_body.extend(&encrypted);
         let sender_name = identity::parse_address(&msg.from_addr)
             .map(|(n, _, _)| n.to_string())
             .unwrap_or_else(|| String::from("未知"));
@@ -129,7 +131,7 @@ impl CoreState {
                     (&email_user, &d.display_name),
                     &email_user,
                     &email_subject,
-                    encrypted,
+                    email_body,
                     attachments,
                 )
                 .await
