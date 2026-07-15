@@ -228,6 +228,20 @@ export async function sendPromptStreaming(
             continue;
           }
 
+          if (ev.type === "permission.asked") {
+            try {
+              onEvent("permission_asked", {
+                requestID: ev.id,
+                sessionID: p.sessionID,
+                permission: p.permission,
+                patterns: p.patterns,
+              });
+            } catch (e: unknown) {
+              log(`permission_asked onEvent error: ${e}`);
+            }
+            continue;
+          }
+
           if (!ourMessageId && ev.type === "message.updated") {
             const info = p.info || p;
             if (info?.role === "assistant" && info?.id) {

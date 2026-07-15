@@ -43,6 +43,7 @@ const HELP = `可用命令：
 let stateFile = "";
 let pendingUserRestore: any = null;
 const pendingQuestions = new Map<string, { requestID: string }>();
+const pendingPerms = new Map<string, { requestID: string }>();
 
 async function pendingAnswer(state: BotState, from: string, text: string) {
   const pending = pendingQuestions.get(from);
@@ -59,6 +60,21 @@ async function pendingAnswer(state: BotState, from: string, text: string) {
     sendResponse(from, `✅ 已提交回答: ${text}`);
   } catch (e: unknown) {
     sendResponse(from, `❌ 提交回答失败: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+async function pendingPermit(state: BotState, from: string, action: string) {
+  const pending = pendingPerms.get(from);
+  if (!pending) return;
+  try {
+    await (state.client as any).permission.reply({
+      requestID: pending.requestID,
+      reply: action,
+    });
+    pendingPerms.delete(from);
+    sendResponse(from, `✅ 已确认权限: ${action}`);
+  } catch (e: unknown) {
+    sendResponse(from, `❌ 确认权限失败: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -198,6 +214,10 @@ async function main() {
       // Check if this answers a pending AI question
       if (pendingQuestions.has(from)) {
         await pendingAnswer(state!, from, respValue);
+        continue;
+      }
+      if (pendingPerms.has(from)) {
+        await pendingPermit(state!, from, respValue);
         continue;
       }
       if (!state) {
@@ -526,6 +546,20 @@ function makeEventHandler(from: string) {
         } catch (e: unknown) {
           sendResponse(from, `❓ ${q.question}\n（无法渲染选择列表，请到 OpenCode 界面操作，或输入 /answer <你的回答> 回复）`);
         }
+        break;
+      }
+      case "permission_asked": {
+        const { requestID, permission, patterns } = data;
+        const pats: string[] = typeof patterns === "string"
+          ? (() => { try { return JSON.parse(patterns); } catch { return [patterns]; } })()
+          : (Array.isArray(patterns) ? patterns : []);
+        pendingPerms.set(from, { requestID });
+        sendList(from, `🔐 ${permission}\n${pats.map((p: string) => `  ${p}`).join("\n")}`,
+          "权限确认", [
+            { label: "✅ 允许一次", value: "once" },
+            { label: "🔁 总是允许", value: "always" },
+            { label: "❌ 拒绝", value: "reject" },
+          ]);
         break;
       }
     }
