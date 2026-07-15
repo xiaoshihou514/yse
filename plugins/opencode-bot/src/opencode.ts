@@ -1,6 +1,7 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { type ChildProcess } from "child_process";
 import { log } from "./logger.js";
+import { logToFile } from "./logger.js";
 
 export type OpenCodeClient = ReturnType<typeof createOpencodeClient>;
 
@@ -212,6 +213,10 @@ export async function sendPromptStreaming(
           if (!p?.sessionID || p.sessionID !== sessionId) continue;
 
           log(`SSE event: type=${ev.type} id=${ev.id}`);
+
+          if (ev.type === "message.part.delta") {
+            if (p?.delta) logToFile(`[think field=${p?.field}] ${p.delta}`);
+          }
 
           if (ev.type === "question.v2.asked") {
             try {

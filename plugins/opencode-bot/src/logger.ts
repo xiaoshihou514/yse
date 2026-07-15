@@ -19,3 +19,13 @@ export function log(message: string) {
     } catch {}
   }
 }
+
+export function logToFile(message: string) {
+  if (logFile) {
+    const ts = new Date().toISOString();
+    const formatted = `[${ts}] [opencode-bot] ${message}\n`;
+    try {
+      fs.appendFileSync(logFile, formatted);
+    } catch {}
+  }
+}
