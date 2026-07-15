@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use crate::identity;
 
 use crate::config::YseConfig;
 use crate::crypto::{derive_key, encrypt};
@@ -117,12 +118,17 @@ impl CoreState {
         let key = key_guard.as_ref().ok_or("crypto key not set")?;
         let payload = msg.to_json().map_err(|e| e.to_string())?;
         let encrypted = encrypt(key, &payload).map_err(|e| e.to_string())?;
+        let sender_name = identity::parse_address(&msg.from_addr)
+            .map(|(n, _, _)| n.to_string())
+            .unwrap_or_else(|| String::from("未知"));
+        let email_subject = format!("[盐水鹅] 来自 {} 的消息", sender_name);
         if let Some(sender) = self.sender.read().await.as_ref() {
             let d = disguise::disguise();
             sender
                 .send(
                     (&email_user, &d.display_name),
                     &email_user,
+                    &email_subject,
                     encrypted,
                     attachments,
                 )

@@ -37,6 +37,7 @@ impl SmtpSender {
         &self,
         from: (&str, &str),
         to: &str,
+        subject: &str,
         body: Vec<u8>,
         attachments: Vec<(String, Vec<u8>)>,
     ) -> Result<(), SmtpError> {
@@ -63,7 +64,7 @@ impl SmtpSender {
             .to(to
                 .parse::<lettre::message::Mailbox>()
                 .map_err(|e| SmtpError::Build(e.to_string()))?)
-            .subject("")
+            .subject(subject)
             .multipart(multipart)
             .map_err(|e| SmtpError::Build(e.to_string()))?;
 

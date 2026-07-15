@@ -232,10 +232,15 @@ impl YseState {
                         // Send via SMTP (envelope FROM must match authenticated user)
                         if let Some(sender) = sender.read().await.as_ref() {
                             let disguised = disguise::disguise();
+                            let sender_name = yse_core::identity::parse_address(&msg.from_addr)
+                                .map(|(n, _, _)| n.to_string())
+                                .unwrap_or_else(|| String::from("未知"));
+                            let email_subject = format!("[盐水鹅] 来自 {} 的消息", sender_name);
                             match sender
                                 .send(
                                     (&email_user, &disguised.display_name),
                                     &email_user,
+                                    &email_subject,
                                     encrypted,
                                     vec![],
                                 )
