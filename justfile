@@ -40,7 +40,7 @@ plugin-echo:
 
 plugin-opencode:
     mkdir -p .opencode/tools/
-    cp plugins/opencode-bot/opencode-tools/bash.ts .opencode/tools/
+    cp plugins/opencode-bot/opencode-tools/shell.ts .opencode/tools/
     cd plugins/opencode-bot && [ package.json -nt node_modules ] && npm install; npm run build
 
 # 编译 file-tree 插件

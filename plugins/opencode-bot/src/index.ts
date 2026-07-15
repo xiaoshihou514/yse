@@ -870,7 +870,8 @@ async function cmdNew(state: BotState, from: string, userState: SessionState, ar
   const title = parts[0] || `Chat ${Date.now()}`;
   const dir = parts[1] || state.projectDir;
   try {
-    const body: any = { title, directory: dir };
+    const body: any = { title, directory: dir, agent: "developer" };
+    userState.agentId = "developer";
     const chain = resolveModelChain(userState, state.modelConfig);
     if (chain[0]?.modelId && chain[0]?.providerId) {
       body.model = { id: chain[0].modelId, providerID: chain[0].providerId };
@@ -951,6 +952,7 @@ async function handleJsonConfig(state: BotState, from: string, value: string) {
     }
     if (config.agent) body.agent = config.agent;
     if (!body.model && !body.agent) body.agent = config;
+    if (!body.agent) body.agent = "developer";
 
     const title = config.model
       ? `${config.model}${config.variant ? ` (${config.variant})` : ""}`
