@@ -8,23 +8,18 @@ const SOCKET_DIR = "/tmp/yse-tmux";
 const SHELL = "/bin/bash";
 const POLL_MS = 150;
 const MAX_STALE_MS = 120_000; // 2 min no change → return partial
-const LINE_HAS_PROMPT = /[\w@][\w@:\-.\/~]*[$#%] ?$/;
 
 // ── Helpers ────────────────────────────────────────────────────
-
-function marker(): string {
-  return `__YSE_${crypto.randomUUID().slice(0, 8)}__`;
-}
 
 function sanitize(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
-// ── Tmux SSH proxy ─────────────────────────────────────────────
-
 function shQuote(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
+
+// ── Tmux SSH proxy ─────────────────────────────────────────────
 
 function tmuxProc(
   args: string[],
@@ -73,7 +68,7 @@ function ensureSession(sock: string, server?: string, dir?: string) {
   tmuxProc(args, server, { stdio: "ignore" });
 }
 
-// ── Marker wait ────────────────────────────────────────────────
+// ── Polling wait ────────────────────────────────────────────────
 
 function waitFor(
   sock: string,
@@ -92,16 +87,8 @@ function waitFor(
     const out = capture(sock, server);
     const lines = out.split("\n");
 
-    // Standalone marker
     if (lines.some((l) => l.trim() === mark)) return;
 
-    // Merged marker (not on typed "echo MARK" line)
-    const merged = lines.findLastIndex(
-      (l) => l.trimEnd().endsWith(mark) && !l.includes(`echo ${mark}`),
-    );
-    if (merged >= 0) return;
-
-    // Progress detection: if output unchanged for 2 min, return partial
     if (out !== prev) {
       prev = out;
       lastChange = Date.now();
@@ -114,12 +101,7 @@ function waitFor(
   }
 }
 
-function hasMarker(l: string, mark: string): boolean {
-  const t = l.trim();
-  return t === mark || t.endsWith(mark);
-}
-
-// ── Capture algorithm (24/24 test pass) ────────────────────────
+// ── Capture via PS1 marker ──────────────────────────────────────
 
 function captureOutput(
   sock: string,
@@ -128,67 +110,42 @@ function captureOutput(
   server?: string,
   signal?: AbortSignal,
 ): string {
-  const START = marker();
-  const END = marker();
-
-  // 1. Clear + plant START anchor
-  send(sock, `echo ${START}`, server);
-  waitFor(sock, START, server, signal);
-
-  // 2. Send command + END marker
+  const PS1 = `__YSE_${crypto.randomUUID().slice(0, 8)}__`;
   const cd = dir ? `cd ${shQuote(dir)} && ` : "";
-  send(sock, `${cd}(${cmd}); echo ${END}`, server);
 
-  // 3. Wait for END, track partial output
+  // Set PS1 to random marker + run command
+  send(sock, `PS1='${PS1}'; ${cd}(${cmd})`, server);
+
+  // Wait for PS1 prompt to appear (command finished)
   let partial = "";
   try {
-    waitFor(sock, END, server, signal, (p) => { partial = p; });
+    waitFor(sock, PS1, server, signal, (p) => { partial = p; });
   } catch {
-    // If cancelled or timeout, return what we have
+    if (partial) return partial;
+    return "aborted";
   }
-  if (partial) return partial;
 
   const raw = capture(sock, server);
   const lines = raw.split("\n");
-  const iStart = lines.findLastIndex((l) => hasMarker(l, START));
-  const iEnd = lines.findLastIndex((l) => hasMarker(l, END));
 
-  if (iStart < 0 || iEnd < 0 || iEnd <= iStart) {
-    return `[PARSE_ERR] iStart=${iStart} iEnd=${iEnd}`;
-  }
+  // Find PS1 prompt after command completion
+  const endIdx = lines.findLastIndex((l) => l.trim() === PS1);
+  if (endIdx < 0) return `[PARSE_ERR] prompt not found: PS1=${PS1}`;
 
-  // Between START and END (inclusive)
-  const between = lines.slice(iStart + 1, iEnd + 1);
-  const afterCmd = between.slice(1);
-  const clean: string[] = [];
+  // Find typed command line (contains PS1=)
+  const typedIdx = lines.findLastIndex((l) => l.includes(`PS1='${PS1}'`), endIdx);
+  if (typedIdx < 0) return `[PARSE_ERR] typed command not found`;
 
-  for (let i = 0; i < afterCmd.length; i++) {
-    const l = afterCmd[i];
-    if (i === afterCmd.length - 1) {
-      const content = l.replace(END, "").trim();
-      if (content) clean.push(content);
-      continue;
-    }
-    // Pure prompt line?
-    const m = l.match(LINE_HAS_PROMPT);
-    const isPure = m && (m.index === 0 || l.trimEnd() === m[0]);
-    if (isPure) continue;
-    if (m && m.index! > 0) {
-      clean.push(l.slice(0, m.index)); // extract text before prompt
-    } else {
-      clean.push(l);
-    }
-  }
-
-  return clean.join("\n").trim();
+  // Output = lines between typed command and prompt
+  return lines.slice(typedIdx + 1, endIdx).join("\n").trim();
 }
 
 // ── Progress patterns (early return) ──────────────────────────
 
 const PROGRESS_RE = [
-  /\d+\/\d+/,       // "1/20"
-  /\d+%/,           // "25%"
-  /\[=+>+\s*\]/,    // "[====>     ]"
+  /\d+\/\d+/,
+  /\d+%/,
+  /\[=+>+\s*\]/,
 ];
 
 function hasProgress(out: string): boolean {
@@ -219,10 +176,7 @@ export default tool({
     const dir = args.directory || context.directory || context.worktree;
     const server = args.server;
 
-    // Ensure session
     ensureSession(sock, server, dir);
-
-    // Execute via tmux capture
     return captureOutput(sock, cmd, dir, server, context.abort);
   },
 });
