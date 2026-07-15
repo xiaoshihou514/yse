@@ -80,14 +80,15 @@ Tauri `.setup()` runs before Tokio runtime. Use temporary `tokio::runtime::Runti
 - No auto-start. `SessionRegistry::route()` starts plugin on demand. Crashed plugins auto-restart up to 3 times.
 - Plugins outside workspace: `plugins/echo-bot` (Rust), `plugins/opencode-bot` (TypeScript + OpenCode SDK), `plugins/file-tree` (Rust), `plugins/project-manager` (Rust + rig-core + Ollama).
 
-## bash 工具（自定义，覆盖内置 bash）
+## exec 工具（自定义，SDK inline config 禁用内置 bash）
 
-内置 `bash` 已被项目级自定义 bash tool 替代（源码 `plugins/opencode-bot/opencode-tools/exec.ts`）：
-- 安装为 `.opencode/tools/bash.ts`（同名覆盖内置 bash），所有命令通过 tmux 执行
+内置 `bash` 通过 SDK `createOpencodeServer` 的 inline config 设 `agent.build.tools.bash = false` 禁用，替代为自定义 `exec` tool：
+- 所有命令通过 tmux 执行，session 自动创建和管理
+- 安装到 `.opencode/tools/exec.ts`（project level）
 - session 隔离：每个 OpenCode 会话独立 tmux socket `/tmp/yse-tmux/yse-<sessionID>.sock`
 - 支持 SSH 远程执行（`server` 参数）；2 分钟无变化时返回部分输出
-- `just plugin-opencode` 编译插件并复制 bash.ts 到 `.opencode/tools/`
-- **不要手动创建 tmux session。bash 工具已内置所有 tmux 逻辑。**
+- `just plugin-opencode` 编译插件并复制 exec.ts 到 `.opencode/tools/`
+- **不要手动创建 tmux session。exec 工具已内置所有 tmux 逻辑。**
 
 ## SSH quoting
 

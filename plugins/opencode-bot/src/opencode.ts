@@ -1,5 +1,4 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import { type ChildProcess } from "child_process";
 import { log } from "./logger.js";
 import { logToFile } from "./logger.js";
 
@@ -35,7 +34,7 @@ export interface BotState {
     [userAddr: string]: SessionState;
   };
   modelConfig: ModelConfig;
-  serverProcess: ChildProcess | null;
+  serverProcess: { close: () => void } | null;
 }
 
 export interface SessionShape {
