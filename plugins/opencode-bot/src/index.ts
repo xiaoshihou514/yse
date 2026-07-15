@@ -202,16 +202,9 @@ async function main() {
     }
 
     if (msg.method !== "message") continue;
-    const text = msg.params.text?.trim();
     const from = msg.params.from;
-    if (!text) continue;
-
-    if (!pluginAddr) setPluginAddr(msg.params.to);
-
-    // Handle list selection response from user
     const respValue = msg.params.meta?.plugin?.response?.value;
     if (respValue) {
-      // Check if this answers a pending AI question
       if (pendingQuestions.has(from)) {
         await pendingAnswer(state!, from, respValue);
         continue;
@@ -228,6 +221,11 @@ async function main() {
       saveStateImpl(state);
       continue;
     }
+
+    const text = msg.params.text?.trim();
+    if (!text) continue;
+
+    if (!pluginAddr) setPluginAddr(msg.params.to);
 
     if (text === "?" || text === "？") {
       sendResponse(from, HELP);
