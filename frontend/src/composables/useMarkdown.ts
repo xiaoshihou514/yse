@@ -60,7 +60,10 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
 };
 
 export function renderMarkdown(text: string): string {
-  text = text.replace(/<think>([\s\S]*?)<\/think>/g, (_, c) => `:::think\n${c.trim()}\n:::`);
+  text = text.replace(
+    /<think>([\s\S]*?)<\/think>/g,
+    (_, c) => `:::think\n${c.trim()}\n:::`,
+  );
   return md.render(text);
 }
 

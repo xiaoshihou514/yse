@@ -2,8 +2,14 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { spawn, type ChildProcess } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
-import type { BotState } from "./opencode.js";
+import type { BotState, OpenCodeClient } from "./opencode.js";
 import { log } from "./logger.js";
+
+let _client: OpenCodeClient | null = null;
+
+export function getClient(): OpenCodeClient | null {
+  return _client;
+}
 
 let _serverProcess: ChildProcess | null = null;
 
@@ -82,6 +88,7 @@ export async function initBot(): Promise<BotState | null> {
       baseUrl,
       directory: projectDir,
     });
+    _client = client;
 
     return {
       client, projectDir, baseUrl,

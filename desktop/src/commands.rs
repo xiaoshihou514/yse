@@ -685,15 +685,14 @@ impl YseState {
                                 && m["virtual_addr"].as_str() != Some(&virtual_addr)
                             {
                                 log::info!(
-                                        "updating plugin_mappings: {} -> {} (plugin_id={}, name={})",
-                                        m["virtual_addr"].as_str().unwrap_or(""),
-                                        virtual_addr,
-                                        p.id,
-                                        p.name
-                                    );
-                                    m["virtual_addr"] =
-                                        serde_json::Value::String(virtual_addr.clone());
-                                    changed = true;
+                                    "updating plugin_mappings: {} -> {} (plugin_id={}, name={})",
+                                    m["virtual_addr"].as_str().unwrap_or(""),
+                                    virtual_addr,
+                                    p.id,
+                                    p.name
+                                );
+                                m["virtual_addr"] = serde_json::Value::String(virtual_addr.clone());
+                                changed = true;
                             }
                         }
                         // Remove stale entries with different hash for same plugin_id

@@ -1,6 +1,6 @@
 import { parseStdin, sendResponse, sendList, sendLog, setPluginAddr, pluginAddr } from "./yse.js";
 import { log, setLogFile } from "./logger.js";
-import { initBot, killServer } from "./server.js";
+import { initBot, killServer, getClient } from "./server.js";
 import { diffLines } from "diff";
 import {
   listModels, listSkills, listAgents, listVariants,
@@ -130,14 +130,44 @@ function dequeueMsg(): Promise<any> {
   });
 }
 
-// Background reader — keeps pushing to queue so main thread never waits on stdin
+// Background reader — handles pending permissions/questions directly
+// to avoid deadlock when main loop is blocked on prompt
 (() => {
   const stdinIt = parseStdin()[Symbol.asyncIterator]();
   (async () => {
     try {
       for await (const msg of stdinIt) {
+        const respValue = msg.params?.meta?.plugin?.response?.value;
+        if (respValue) {
+          const cl = getClient();
+          const from = msg.params.from;
+          if (cl && from) {
+            if (pendingPerms.has(from)) {
+              try {
+                const perm = pendingPerms.get(from)!;
+                await cl.permission.reply({ requestID: perm.requestID, reply: respValue as "once" | "always" | "reject" });
+                pendingPerms.delete(from);
+                sendResponse(from, `✅ 已确认权限: ${respValue}`);
+              } catch (e: unknown) {
+                sendResponse(from, `❌ 确认权限失败: ${e instanceof Error ? e.message : String(e)}`);
+              }
+              continue;
+            }
+            if (pendingQuestions.has(from)) {
+              try {
+                const q = pendingQuestions.get(from)!;
+                await cl.question.reply({ requestID: q.requestID, answers: [[respValue]] });
+                pendingQuestions.delete(from);
+                sendResponse(from, `✅ 已提交回答: ${respValue}`);
+              } catch (e: unknown) {
+                sendResponse(from, `❌ 提交回答失败: ${e instanceof Error ? e.message : String(e)}`);
+              }
+              continue;
+            }
+          }
+        }
         msgQueue.push(msg);
-        if (!msg.params?.meta?.plugin?.response && promptAbort) (promptAbort as AbortController).abort();
+        if (!respValue && promptAbort) (promptAbort as AbortController).abort();
       }
     } catch (e: unknown) {
       log(`reader error: ${e}`);
