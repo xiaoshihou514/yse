@@ -20,6 +20,7 @@ process.on("exit", () => {
 function startServer(): { child: ChildProcess; port: Promise<number> } {
   const child = spawn("opencode", ["serve", "--port", "0", "--print-logs"], {
     stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, OPENCODE_DISABLE_CLAUDE_CODE: "1" },
   });
   let stdout = "";
   const port = new Promise<number>((resolve, reject) => {
