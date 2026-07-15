@@ -99,9 +99,6 @@ function buildPromptParams(
       ...(spec.variant ? { variant: spec.variant } : {}),
     };
   }
-  if (agentId) {
-    params.agent = agentId;
-  }
   return params;
 }
 
