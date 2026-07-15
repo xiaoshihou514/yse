@@ -1,4 +1,5 @@
 import { createInterface } from "readline";
+import { log } from "./logger.js";
 
 export interface YseMessage {
   method: string;
@@ -29,7 +30,7 @@ export function parseStdin(): AsyncGenerator<YseMessage> {
         const msg: YseMessage = JSON.parse(trimmed);
         yield msg;
       } catch {
-        process.stderr.write(`[opencode-bot] invalid JSON: ${trimmed}\n`);
+        log(`invalid JSON: ${trimmed}`);
       }
     }
   };

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import type { BotState } from "./opencode.js";
+import { log } from "./logger.js";
 
 let _serverProcess: ChildProcess | null = null;
 
@@ -18,7 +19,7 @@ process.on("exit", () => {
 function startServer(): { child: ChildProcess; port: Promise<number> } {
   const child = spawn("opencode", ["serve", "--port", "0", "--print-logs"], {
     cwd: WORKSPACE,
-    stdio: ["ignore", "pipe", "inherit"],
+    stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
   const port = new Promise<number>((resolve, reject) => {
@@ -31,6 +32,11 @@ function startServer(): { child: ChildProcess; port: Promise<number> } {
       if (m) {
         clearTimeout(timeout);
         resolve(parseInt(m[1], 10));
+      }
+    });
+    child.stderr!.on("data", (data: Buffer) => {
+      for (const line of data.toString().split("\n").filter(Boolean)) {
+        log(`server: ${line}`);
       }
     });
     child.on("error", (e) => {
@@ -52,7 +58,7 @@ export async function initBot(): Promise<BotState | null> {
     const { child, port } = startServer();
     _serverProcess = child;
     const actualPort = await port;
-    process.stderr.write(`[opencode-bot] server started on port ${actualPort}\n`);
+    log(`server started on port ${actualPort}`);
 
     const cwd = process.cwd();
     const baseUrl = `http://127.0.0.1:${actualPort}`;
@@ -65,7 +71,7 @@ export async function initBot(): Promise<BotState | null> {
         if (proj.data?.worktree) projectDir = proj.data.worktree;
         break;
       } catch (e: unknown) {
-        process.stderr.write(`[opencode-bot] project.current attempt ${attempt} failed: ${e instanceof Error ? e.message : String(e)}\n`);
+        log(`project.current attempt ${attempt} failed: ${e instanceof Error ? e.message : String(e)}`);
         if (attempt < 2) {
           await new Promise((r) => setTimeout(r, 1500));
         }
@@ -84,7 +90,7 @@ export async function initBot(): Promise<BotState | null> {
       serverProcess: child,
     };
   } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] initBot failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    log(`initBot failed: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
 }

@@ -1,4 +1,5 @@
 import { parseStdin, sendResponse, sendList, sendLog, setPluginAddr, pluginAddr } from "./yse.js";
+import { log, setLogFile } from "./logger.js";
 import { initBot, killServer } from "./server.js";
 import { diffLines } from "diff";
 import {
@@ -92,7 +93,7 @@ function saveStateImpl(state: BotState) {
       }),
     );
   } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] saveState failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    log(`saveState failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -123,7 +124,7 @@ function dequeueMsg(): Promise<any> {
         if (promptAbort) { (promptAbort as AbortController).abort(); promptAbort = null; }
       }
     } catch (e: unknown) {
-      process.stderr.write(`[opencode-bot] reader error: ${e}\n`);
+      log(`reader error: ${e}`);
     }
     msgQueue.push(null); // EOF sentinel
   })();
@@ -153,6 +154,7 @@ async function main() {
       const dir = params.state_dir;
       if (params.virtual_addr && dir) {
         stateFile = path.join(path.dirname(dir), params.virtual_addr, "sessions.json");
+        setLogFile(path.join(path.dirname(dir), params.virtual_addr, "bot.log"));
         try {
           const raw = fs.readFileSync(stateFile, "utf-8");
           const saved: {
@@ -176,7 +178,7 @@ async function main() {
           }
           sendLog("info", `loaded state from ${stateFile}`);
         } catch (e: unknown) {
-          process.stderr.write(`[opencode-bot] failed to load state: ${e instanceof Error ? e.message : String(e)}\n`);
+          log(`failed to load state: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
       continue;
@@ -741,7 +743,7 @@ async function cmdSessions(state: BotState, from: string) {
     groups.get(dir)!.push(s);
   }
 
-  process.stderr.write(`[opencode-bot] cmdSessions: ${sessions.length} sessions, ${groups.size} dirs: ${JSON.stringify(Array.from(groups.keys()))}\n`);
+  log(`cmdSessions: ${sessions.length} sessions, ${groups.size} dirs: ${JSON.stringify(Array.from(groups.keys()))}`);
 
   if (groups.size === 1) {
     const dir = Array.from(groups.keys())[0];
@@ -884,7 +886,7 @@ async function handleListResponse(state: BotState, from: string, value: string) 
 }
 
 main().catch((e) => {
-  process.stderr.write(`[opencode-bot] fatal: ${e}\n`);
+  log(`fatal: ${e}`);
   process.exit(1);
 });
 

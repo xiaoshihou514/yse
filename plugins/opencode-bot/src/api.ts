@@ -1,6 +1,7 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { execSync } from "child_process";
 import type { BotState, OpenCodeClient, ApiModel, ApiSkill, ApiAgent, SessionShape } from "./opencode.js";
+import { log } from "./logger.js";
 
 export function ensureTmuxSession(sessionId: string) {
   const sid = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
@@ -26,7 +27,7 @@ export async function listModels(
         : `provider: ${m.providerID ?? "?"}`,
     }));
   } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] listModels failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    log(`listModels failed: ${e instanceof Error ? e.message : String(e)}`);
     return [];
   }
 }
@@ -44,7 +45,7 @@ export async function listSkills(
       description: s.description ?? "",
     }));
   } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] listSkills failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    log(`listSkills failed: ${e instanceof Error ? e.message : String(e)}`);
     return [];
   }
 }
@@ -62,7 +63,7 @@ export async function listAgents(
       description: a.description ?? a.id ?? "",
     }));
   } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] listAgents failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    log(`listAgents failed: ${e instanceof Error ? e.message : String(e)}`);
     return [];
   }
 }
@@ -104,7 +105,7 @@ export async function fetchAllSessions(
         }));
     }
   } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] v2 session.list failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    log(`v2 session.list failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   try {
@@ -117,11 +118,11 @@ export async function fetchAllSessions(
         ?? null;
     if (!rawArray) {
       const raw = JSON.stringify(result).slice(0, 200);
-      process.stderr.write(`[opencode-bot] unexpected session.list format: ${raw}\n`);
+      log(`unexpected session.list format: ${raw}`);
       return [];
     }
     if (!Array.isArray(rawArray)) {
-      process.stderr.write(`[opencode-bot] sessions is not an array: ${JSON.stringify(rawArray).slice(0, 200)}\n`);
+      log(`sessions is not an array: ${JSON.stringify(rawArray).slice(0, 200)}`);
       return [];
     }
     return (rawArray as Array<{ id?: string; title?: string; directory?: string; worktree?: string; location?: { directory?: string }; updatedAt?: number; time?: { updated?: number }; updated?: number }>)
@@ -132,7 +133,7 @@ export async function fetchAllSessions(
         updatedAt: s.updatedAt || s.time?.updated || s.updated || 0,
       }));
   } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] fetchAllSessions failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    log(`fetchAllSessions failed: ${e instanceof Error ? e.message : String(e)}`);
     return [];
   }
 }

@@ -1,5 +1,6 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { type ChildProcess } from "child_process";
+import { log } from "./logger.js";
 
 export type OpenCodeClient = ReturnType<typeof createOpencodeClient>;
 
@@ -212,7 +213,7 @@ export async function sendPromptStreaming(
           const p = ev.properties;
           if (!p?.sessionID || p.sessionID !== sessionId) continue;
 
-          process.stderr.write(`[opencode-bot] SSE event: type=${ev.type} id=${ev.id}\n`);
+          log(`SSE event: type=${ev.type} id=${ev.id}`);
 
           if (ev.type === "question.v2.asked") {
             try {
@@ -222,7 +223,7 @@ export async function sendPromptStreaming(
                 questions: p.questions,
               });
             } catch (e: unknown) {
-              process.stderr.write(`[opencode-bot] question_asked onEvent error: ${e}\n`);
+              log(`question_asked onEvent error: ${e}`);
             }
             continue;
           }
@@ -251,11 +252,11 @@ export async function sendPromptStreaming(
           }
         }
       } catch (e: unknown) {
-        process.stderr.write(`[opencode-bot] SSE consumer error: ${e instanceof Error ? e.message : String(e)}\n`);
+        log(`SSE consumer error: ${e instanceof Error ? e.message : String(e)}`);
       }
     })();
   } catch (e: unknown) {
-    process.stderr.write(`[opencode-bot] SSE subscribe failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    log(`SSE subscribe failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   try {
@@ -292,7 +293,7 @@ export async function sendPromptStreaming(
     abortController.abort();
     if (eventConsumer) {
       try { await eventConsumer; } catch (e: unknown) {
-        process.stderr.write(`[opencode-bot] eventConsumer await failed: ${e instanceof Error ? e.message : String(e)}\n`);
+        log(`eventConsumer await failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
   }
