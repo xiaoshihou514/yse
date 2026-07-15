@@ -41,7 +41,7 @@ plugin-echo:
 plugin-opencode:
     mkdir -p plugins/opencode-bot/workspace/.opencode/tools/
     cp plugins/opencode-bot/opencode-tools/bash.ts plugins/opencode-bot/workspace/.opencode/tools/
-    cd plugins/opencode-bot && npm install && npm run build
+    cd plugins/opencode-bot && [ package.json -nt node_modules ] && npm install; npm run build
 
 # 编译 file-tree 插件
 plugin-file-tree:

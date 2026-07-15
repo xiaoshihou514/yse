@@ -386,6 +386,48 @@ function formatTodoOutput(input: any): string {
   return lines.join("\n");
 }
 
+function formatCompactDiff(oldStr: string, newStr: string, ctxLines = 3): string {
+  const changes = diffLines(oldStr, newStr);
+
+  const lines: Array<{ prefix: string; text: string; changed: boolean }> = [];
+  for (const c of changes) {
+    const prefix = c.added ? "+" : c.removed ? "-" : " ";
+    const changed = !!(c.added || c.removed);
+    const ls = c.value.replace(/\n$/, "").split("\n");
+    for (const l of ls) {
+      lines.push({ prefix, text: l, changed });
+    }
+  }
+
+  if (!lines.some((l) => l.changed)) return "";
+
+  const include = new Set<number>();
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].changed) {
+      for (let j = Math.max(0, i - ctxLines); j <= Math.min(lines.length - 1, i + ctxLines); j++) {
+        include.add(j);
+      }
+    }
+  }
+
+  const blocks: string[][] = [];
+  let current: string[] = [];
+  let lastIncluded = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!include.has(i)) continue;
+    if (lastIncluded >= 0 && i - lastIncluded > ctxLines) {
+      if (current.length > 0) { blocks.push(current); current = []; }
+    }
+    current.push(`${lines[i].prefix} ${lines[i].text}`);
+    lastIncluded = i;
+  }
+  if (current.length > 0) blocks.push(current);
+
+  if (blocks.length === 0) return "";
+  return blocks.map((b) => b.join("\n")).join("\n\n...\n\n");
+}
+
 function makeEventHandler(from: string) {
   return (type: string, data: any) => {
     switch (type) {
@@ -403,13 +445,8 @@ function makeEventHandler(from: string) {
           if (data.name === "edit") {
             const oldS = data.input?.oldString || "";
             const newS = data.input?.newString || "";
-            const changes = diffLines(oldS, newS);
-            const diff = changes.map((c) => {
-              const prefix = c.added ? "+" : c.removed ? "-" : " ";
-              const lines = c.value.replace(/\n$/, "").split("\n");
-              return lines.map((l) => `${prefix} ${l}`).join("\n");
-            }).join("\n");
-            sendResponse(from, `🔧 edit${path ? ` (${path})` : ""}\n\`\`\`diff\n${diff}\n\`\`\``);
+            const diffText = formatCompactDiff(oldS, newS);
+            sendResponse(from, `🔧 edit${path ? ` (${path})` : ""}\n\`\`\`diff\n${diffText}\n\`\`\``);
           } else {
             const content = data.input?.content || "";
             sendResponse(from, `🔧 write${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 2000)}\n\`\`\``);
