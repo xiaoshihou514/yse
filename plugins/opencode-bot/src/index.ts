@@ -137,7 +137,7 @@ function dequeueMsg(): Promise<any> {
     try {
       for await (const msg of stdinIt) {
         msgQueue.push(msg);
-        if (promptAbort) (promptAbort as AbortController).abort();
+        if (!msg.params?.meta?.plugin?.response && promptAbort) (promptAbort as AbortController).abort();
       }
     } catch (e: unknown) {
       log(`reader error: ${e}`);
