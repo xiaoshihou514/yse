@@ -731,7 +731,14 @@ async function handleCommand(
         sendResponse(from, "暂无可用 plan");
         break;
       }
-      const agentId = JSON.parse(list[0].value).agent;
+      const planEntry = list.find((a) =>
+        a.label.toLowerCase().includes("plan") || a.value.toLowerCase().includes("plan")
+      );
+      if (!planEntry) {
+        sendResponse(from, "未找到 plan agent，请检查配置");
+        break;
+      }
+      const agentId = JSON.parse(planEntry.value).agent;
       const chain = resolveModelChain(userState, state.modelConfig);
       const ctrl = new AbortController();
       promptAbort = ctrl;

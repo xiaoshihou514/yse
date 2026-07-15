@@ -1,9 +1,14 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { spawn, type ChildProcess } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
 import type { BotState, OpenCodeClient } from "./opencode.js";
 import { log } from "./logger.js";
 
 let _client: OpenCodeClient | null = null;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const YSE_ROOT = path.resolve(__dirname, "../../..");
 
 export function getClient(): OpenCodeClient | null {
   return _client;
@@ -19,6 +24,7 @@ process.on("exit", () => {
 
 function startServer(): { child: ChildProcess; port: Promise<number> } {
   const child = spawn("opencode", ["serve", "--port", "0", "--print-logs"], {
+    cwd: YSE_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, OPENCODE_DISABLE_CLAUDE_CODE: "1" },
   });
