@@ -231,7 +231,7 @@ export async function sendPromptStreaming(
           if (ev.type === "permission.asked") {
             try {
               onEvent("permission_asked", {
-                requestID: ev.id,
+                requestID: p.id || ev.id,
                 sessionID: p.sessionID,
                 permission: p.permission,
                 patterns: p.patterns,
