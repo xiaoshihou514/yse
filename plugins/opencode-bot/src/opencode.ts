@@ -212,12 +212,21 @@ export async function sendPromptStreaming(
     log(`v1 prompt: session=${sessionId}${agentId ? ` agent=${agentId}` : ""}`);
     const params: any = { sessionID: sessionId, parts: [{ type: "text", text }] };
     if (agentId) params.agent = agentId;
-    const result = await client.session.prompt(params);
 
-    if (result.error) {
-      const errMsg = (result.error as any)?.data?.message ?? (result.error as any)?.message ?? JSON.stringify(result.error);
-      log(`v1 prompt error: ${errMsg}`);
-      return { text: `Error: ${errMsg}` };
+    let result: any;
+    while (true) {
+      try {
+        result = await client.session.prompt(params);
+        if (!result.error) break;
+        const errMsg = (result.error as any)?.data?.message ?? (result.error as any)?.message ?? JSON.stringify(result.error);
+        log(`v1 prompt error: ${errMsg}, retrying...`);
+      } catch (e: unknown) {
+        log(`v1 prompt failed: ${e instanceof Error ? e.message : String(e)}, retrying...`);
+      }
+      if (signal?.aborted) {
+        return { text: "Error: aborted" };
+      }
+      await new Promise(r => setTimeout(r, 2000));
     }
 
     const data = result.data as { parts?: PromptPart[]; info?: any };
@@ -252,12 +261,22 @@ export async function sendPrompt(
   text: string,
   agentId?: string,
 ): Promise<string> {
-  try {
-    const params: any = { sessionID: sessionId, parts: [{ type: "text", text }] };
-    if (agentId) params.agent = agentId;
-    const result = await client.session.prompt(params);
-    return extractTextParts(result.data as { parts?: PromptPart[] });
-  } catch (e: unknown) {
-    return `Error: ${e instanceof Error ? e.message : String(e)}`;
+  const params: any = { sessionID: sessionId, parts: [{ type: "text", text }] };
+  if (agentId) params.agent = agentId;
+
+  while (true) {
+    try {
+      const result = await client.session.prompt(params);
+      if (result.data) {
+        const textResult = extractTextParts(result.data as { parts?: PromptPart[] });
+        if (textResult !== "(empty response)") return textResult;
+        return textResult;
+      }
+      const errMsg = (result.error as any)?.data?.message ?? (result.error as any)?.message ?? JSON.stringify(result.error);
+      log(`sendPrompt error: ${errMsg}, retrying...`);
+    } catch (e: unknown) {
+      log(`sendPrompt failed: ${e instanceof Error ? e.message : String(e)}, retrying...`);
+    }
+    await new Promise(r => setTimeout(r, 2000));
   }
 }

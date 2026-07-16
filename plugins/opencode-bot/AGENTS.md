@@ -61,3 +61,16 @@ cd plugins/opencode-bot && npm install && npm run build
 ### 依赖
 
 - `@opencode-ai/sdk` — OpenCode TypeScript SDK
+
+## exec 工具已知问题
+
+exec 工具（`opencode-tools/exec.ts`）通过 tmux session 执行命令，每次调用生成随机 PS1 标记（`__YSE_<uuid>__`），用 `capture-pane -p -J` 捕获输出后解析命令和 PS1 间的行。
+
+### sleep 阻塞 shell
+
+AI 在 exec 中运行 `sleep N` 等长时间阻塞命令会导致后面的所有 exec 调用排队等待 shell 空闲。exec 的 `waitFor` 在 120 秒无变化后返回部分输出，此时 PS1 可能仍未出现，解析失败返回 `[PARSE_ERR]` 或空。AI 看到空输出后迷惑。
+
+**避免方式：**
+- 不要用 `sleep` 等后台进程——用 `tmux send-keys C-c` 中断当前命令再发新命令（exec 未实现）
+- 轮询后台进程用工具内的 `watch` 或 `while` 循环，而不是多个串行 exec 调用
+- 如果 shell 卡住，手动 `/abort` 后重新发消息
