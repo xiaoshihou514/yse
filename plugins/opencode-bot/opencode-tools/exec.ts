@@ -156,10 +156,9 @@ function hasProgress(out: string): boolean {
 
 export default tool({
   description: `Execute shell commands via tmux. Supports long-running tasks without timeout.
-  The built-in bash is disabled for this agent — use this exec tool to run shell commands.
+  Use this exec tool to run shell commands only if the built-in bash tool is disabled for this agent.
   - "command": the shell command to run
   - "server" (optional): SSH host for remote execution
-  The user can attach with: tmux -S /tmp/yse-tmux/yse-<sessionID>.sock attach
   If output contains progress indicators (\\d+/\\d+, \\d+%), the tool may return partial output early.`,
   args: {
     command: tool.schema.string().describe("The shell command to execute"),

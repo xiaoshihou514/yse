@@ -1,7 +1,9 @@
+use imap::extensions::idle::{self, WaitOutcome};
 use log::{debug, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::thread;
 use thiserror::Error;
 use tokio::time::{interval, Duration};
 
@@ -162,6 +164,94 @@ impl ImapPoller {
             }
         }
         debug!("IMAP: poller stopped");
+    }
+
+    /// Run the IDLE loop with a log callback.
+    /// Uses a dedicated OS thread (Session is not Send).
+    /// Falls back to 10s polling if the server does not support IDLE.
+    pub async fn run_idle_with_log<F>(self, mut on_message: F, log_fn: LogFn)
+    where
+        F: FnMut(Vec<u8>) + Send + 'static,
+    {
+        debug!("IMAP IDLE: starting");
+        thread::spawn(move || {
+            let mut backoff: u64 = 1;
+
+            'outer: while self.running.load(Ordering::SeqCst) {
+                let mut session = match self.connect_sync_log(&log_fn) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("IMAP IDLE connect failed: {}", e);
+                        warn!("{}", msg);
+                        log_fn("error", msg);
+                        thread::sleep(Duration::from_secs(backoff));
+                        backoff = (backoff * 2).min(60);
+                        continue;
+                    }
+                };
+                backoff = 1;
+
+                log_fn("debug", "IMAP IDLE: initial fetch".into());
+                self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
+
+                let has_idle = session
+                    .capabilities()
+                    .ok()
+                    .map(|caps| caps.has_str("IDLE"))
+                    .unwrap_or(false);
+
+                if !has_idle {
+                    warn!("IMAP IDLE not supported, falling back to 10s polling");
+                    log_fn(
+                        "warn",
+                        "IMAP IDLE not supported, falling back to 10s polling".into(),
+                    );
+                    while self.running.load(Ordering::SeqCst) {
+                        if session.noop().is_err() {
+                            break;
+                        }
+                        self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
+                        for _ in 0..60 {
+                            thread::sleep(Duration::from_secs(1));
+                            if !self.running.load(Ordering::SeqCst) {
+                                break 'outer;
+                            }
+                        }
+                    }
+                    continue 'outer;
+                }
+
+                log_fn("info", "IMAP IDLE: entering IDLE loop".into());
+                'idle: loop {
+                    if !self.running.load(Ordering::SeqCst) {
+                        break 'outer;
+                    }
+
+                    let result = {
+                        let mut handle = session.idle();
+                        handle.wait_while(idle::stop_on_any)
+                    };
+
+                    match result {
+                        Ok(WaitOutcome::MailboxChanged) => {
+                            log_fn("debug", "IMAP IDLE: mailbox changed".into());
+                            self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
+                        }
+                        Ok(WaitOutcome::TimedOut) => {
+                            log_fn("debug", "IMAP IDLE: timeout, refreshing".into());
+                            self.fetch_new_sync(&mut session, &mut on_message, &log_fn);
+                        }
+                        Err(e) => {
+                            let msg = format!("IMAP IDLE error: {}, reconnecting", e);
+                            warn!("{}", msg);
+                            log_fn("warn", msg);
+                            break 'idle;
+                        }
+                    }
+                }
+            }
+            debug!("IMAP IDLE: stopped");
+        });
     }
 
     fn fetch_new_sync<F>(

@@ -127,8 +127,13 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    if let Err(e) = state.core.send_encrypted(&msg, vec![]).await {
-        log::error!("{}", e);
+    let is_local =
+        identity::is_self_addressed(&msg.to_addr, &state.core.config.read().await.own_address);
+
+    if !is_local {
+        if let Err(e) = state.core.send_encrypted(&msg, vec![]).await {
+            log::error!("{}", e);
+        }
     }
 
     log::info!("sent message to {}", to);
@@ -193,7 +198,7 @@ pub async fn start_polling(
         let pm = yse_core::plugin::process_manager::PluginProcessManager::new();
         let eh = emit_handle.clone();
         poller
-            .run_with_log(
+            .run_idle_with_log(
                 move |raw_email| {
                     let parsed = match yse_core::email::parser::parse_incoming(&raw_email) {
                         Ok(p) => p,

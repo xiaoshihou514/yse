@@ -181,6 +181,10 @@ async function main() {
   let state: BotState | null = null;
   try {
     state = await initBot();
+    if (state) {
+      const agentList = await listAgents(state);
+      log(`available agents: ${agentList.map(a => a.label).join(", ") || "(none)"}`);
+    }
   } catch (e: unknown) {
     sendLog("error", `failed to connect to OpenCode: ${e instanceof Error ? e.message : String(e)}`);
     sendLog(
@@ -293,14 +297,12 @@ async function main() {
       const [cmd, ...args] = text.slice(1).split(/\s+/);
       await handleCommand(state, from, userState, cmd, args.join(" "));
     } else if (userState.sessionId) {
-      const chain = resolveModelChain(userState, state.modelConfig);
       pendingQuestions.delete(from);
 
       const ctrl = new AbortController();
       promptAbort = ctrl;
       const result = await sendPromptStreaming(
-        state.client, userState.sessionId, text, state.projectDir,
-        chain, userState.agentId,
+        state.client, userState.sessionId, text,
         makeEventHandler(from),
         ctrl.signal,
       );
@@ -314,11 +316,10 @@ async function main() {
       promptAbort = null;
       pendingQuestions.delete(from);
 
-      if (result.text.trim().length < 20) {
+      if (result.text === "(empty response)" || result.text.trim().length < 5) {
         const summary = await sendPrompt(
           state.client, userState.sessionId,
           "你上一轮任务做了什么？用一两句话简单总结一下。",
-          state.projectDir, chain, userState.agentId,
         );
         if (summary && summary !== "(empty response)") {
           sendResponse(from, summary);
@@ -341,21 +342,6 @@ async function main() {
 
 // ---- Event formatting for streaming ----
 
-function formatToolInput(input: any): string {
-  if (!input) return "";
-  const keys = Object.keys(input);
-  if (keys.length === 0) return "";
-  const parts = keys.slice(0, 3).map((k) => {
-    const v = input[k];
-    if (typeof v === "string") return `${k}=${v.slice(0, 80)}`;
-    if (typeof v === "number" || typeof v === "boolean") return `${k}=${v}`;
-    return `${k}=${JSON.stringify(v).slice(0, 80)}`;
-  });
-  let s = parts.join(", ");
-  if (keys.length > 3) s += ", …";
-  return s;
-}
-
 function isWriteTool(name: string): boolean {
   return name === "write" || name === "edit";
 }
@@ -365,76 +351,7 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-function extLang(filePath: string): string {
-  const i = filePath.lastIndexOf(".");
-  if (i < 0) return "";
-  return filePath.slice(i + 1);
-}
-
-function formatReadOutput(out: string): string {
-  const pathM = out.match(/<path>([^<]*)<\/path>/);
-  const path = pathM?.[1] || "";
-  const typeM = out.match(/<type>([^<]*)<\/type>/);
-  const type = typeM?.[1] || "";
-  const entriesM = out.match(/<entries>\n?([\s\S]*?)\n?<\/entries>/);
-  const contentM = out.match(/<content>\n?([\s\S]*?)\n?<\/content>/);
-  const entriesRaw = entriesM?.[1] || contentM?.[1] || "";
-  const entries = entriesRaw
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("(") && !l.startsWith("<"));
-
-  if (type === "directory") {
-    if (entries.length > 0) {
-      return `📂 ${path}\n${entries.map((e) => `  ${e}`).join("\n")}`;
-    }
-    return `📂 ${path}\n  (空目录)`;
-  }
-  if ((type === "file" || (!type && contentM)) && entriesRaw) {
-    const lang = extLang(path);
-    const content = entriesRaw.slice(0, 1000);
-    const truncated = entriesRaw.length > 1000 ? "\n... (truncated)" : "";
-    return `📄 ${path}\n\`\`\`${lang}\n${content}\n\`\`\`${truncated}`;
-  }
-  return out;
-}
-
-const STATUS_ICONS: Record<string, string> = {
-  completed: "x",
-  in_progress: "",
-  pending: "",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  completed: "",
-  in_progress: " *(进行中)*",
-  pending: "",
-};
-
-function formatTodoOutput(input: any): string {
-  const todos: any[] = input?.todos ?? [];
-  if (!Array.isArray(todos) || todos.length === 0) return "";
-
-  const lines: string[] = [];
-  for (const t of todos) {
-    const text = t.content || t.task || t.title || String(t);
-    const status: string = t.status || "pending";
-    const icon = STATUS_ICONS[status] ?? " ";
-    const label = STATUS_LABELS[status] ?? "";
-    lines.push(`- [${icon}] ${text}${label}`);
-  }
-
-  const completed = todos.filter((t: any) =>
-    t.status === "completed" || t.status === "done"
-  ).length;
-  const total = todos.length;
-  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-  lines.push(`\n────────── ${completed}/${total} (${pct}%) ──────────`);
-
-  return lines.join("\n");
-}
-
-function formatCompactDiff(oldStr: string, newStr: string, ctxLines = 3): string {
+function formatCompactDiff(oldStr: string, newStr: string, ctxLines = 1): string {
   const changes = diffLines(oldStr, newStr);
 
   const lines: Array<{ prefix: string; text: string; changed: boolean }> = [];
@@ -497,54 +414,29 @@ function makeEventHandler(from: string) {
             sendResponse(from, `🔧 edit${path ? ` (${path})` : ""}\n\`\`\`diff\n${diffText}\n\`\`\``);
           } else {
             const content = data.input?.content || "";
-            sendResponse(from, `🔧 write${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 2000)}\n\`\`\``);
-          }
-        } else if (data.name === "read") {
-          const path = data.input?.filePath || data.input?.filePattern || formatToolInput(data.input);
-          sendResponse(from, `📂 read: ${path.slice(0, 200)}`);
-        } else if (data.name === "todowrite") {
-          const count = Array.isArray(data.input?.todos) ? data.input.todos.length : 0;
-          if (count > 0) {
-            sendResponse(from, `📋 任务列表\n${formatTodoOutput(data.input)}`);
-          } else {
-            sendResponse(from, `📋 更新任务列表`);
+            sendResponse(from, `🔧 write${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 200)}\n\`\`\``);
           }
         } else if (data.name === "question") {
           // handled by question_asked event → sendList
-        } else {
-          sendResponse(from, `🔧 ${data.name}(${formatToolInput(data.input)})`);
         }
         break;
       }
       case "tool_success": {
         const raw = (data.output || "");
         if (data.name === "bash" && !raw) break;
+        if (data.name === "question") {
+          sendResponse(from, `❓ 问题已回答`);
+          break;
+        }
         let msg = `✅ ${data.name} 完成`;
-        if (raw) {
-          if (data.name === "bash") {
-            if (raw.length > 300) {
-              msg += `\n:::details 输出 (${raw.length} 字符)\n\n\`\`\`\n${raw}\n\`\`\`\n\n:::`;
-            } else {
-              msg += `\n\`\`\`\n${raw}\n\`\`\``;
-            }
-          } else if (isWriteTool(data.name)) {
-            msg += `\n\`\`\`diff\n${raw.slice(0, 2000)}\n\`\`\``;
-          } else if (data.name === "read") {
-            const content = formatReadOutput(raw);
-            if (raw.length > 300) {
-              msg += `\n:::details 文件内容 (${raw.length} 字符)\n\n${content}\n\n:::`;
-            } else {
-              msg += `\n${content}`;
-            }
-          } else if (data.name === "todowrite") {
-            msg = `✅ 任务列表已更新`;
-          } else if (data.name === "question") {
-            msg = `❓ 问题已回答`;
+        if (raw && data.name === "bash") {
+          if (raw.length > 300) {
+            msg += `\n:::details 输出 (${raw.length} 字符)\n\n\`\`\`\n${raw}\n\`\`\`\n\n:::`;
           } else {
-            msg += `\n${raw.slice(0, 2000)}`;
+            msg += `\n\`\`\`\n${raw}\n\`\`\``;
           }
         }
-        sendResponse(from, msg);
+        if (raw) sendResponse(from, msg);
         break;
       }
       case "tool_failed":
@@ -739,14 +631,13 @@ async function handleCommand(
         break;
       }
       const agentId = JSON.parse(planEntry.value).agent;
-      const chain = resolveModelChain(userState, state.modelConfig);
       const ctrl = new AbortController();
       promptAbort = ctrl;
       const result = await sendPromptStreaming(
-        state.client, userState.sessionId, arg, state.projectDir,
-        chain, agentId,
+        state.client, userState.sessionId, arg,
         makeEventHandler(from),
         ctrl.signal,
+        agentId,
       );
       if (ctrl.signal.aborted) {
         promptAbort = null;

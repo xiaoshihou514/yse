@@ -64,48 +64,12 @@ interface PromptPart {
   text?: string;
 }
 
-interface PromptParams {
-  sessionID: string;
-  parts: { type: "text"; text: string }[];
-  directory?: string;
-  model?: { modelID: string; providerID: string; variant?: string };
-  agent?: string;
+function extractTextParts(msg: { text?: string; parts?: PromptPart[]; content?: PromptPart[] }): string {
+  if (msg.text) return msg.text;
+  const items = msg.content ?? msg.parts ?? [];
+  const textParts = items.filter((p) => p.type === "text").map((p) => p.text).filter((t): t is string => !!t);
+  return textParts.join("\n") || "(empty response)";
 }
-
-function extractTextParts(msg: { parts?: PromptPart[] }): string {
-  const texts = (msg?.parts ?? [])
-    .filter((p) => p.type === "text")
-    .map((p) => p.text)
-    .filter((t): t is string => !!t);
-  return texts.join("\n") || "(empty response)";
-}
-
-function buildPromptParams(
-  sessionId: string,
-  text: string,
-  directory: string | undefined,
-  spec: ModelSpec,
-  agentId: string | undefined,
-): PromptParams {
-  const params: PromptParams = {
-    sessionID: sessionId,
-    parts: [{ type: "text", text }],
-    ...(directory ? { directory } : {}),
-  };
-  if (spec.modelId && spec.providerId) {
-    params.model = {
-      modelID: spec.modelId,
-      providerID: spec.providerId,
-      ...(spec.variant ? { variant: spec.variant } : {}),
-    };
-  }
-  if (agentId) {
-    params.agent = agentId;
-  }
-  return params;
-}
-
-// ---- Pure model resolution logic ----
 
 export function resolveModelChain(
   session: { modelMode?: string; modelId?: string; providerId?: string; modelVariant?: string },
@@ -123,36 +87,6 @@ export function resolveModelChain(
     return [{ modelId: "", providerId: "" }];
   }
   return chain;
-}
-
-export function isQuotaError(e: unknown): boolean {
-  if (!e || typeof e !== "object" || !("message" in e)) return false;
-  const msg = String((e as { message: unknown }).message).toLowerCase();
-  return ["quota", "rate", "limit", "exhausted", "insufficient", "429"].some(k => msg.includes(k));
-}
-
-export async function tryModelsWithFallback(
-  chain: ModelSpec[],
-  attemptFn: (spec: ModelSpec, index: number) => Promise<string>,
-  onSwitch?: (from: ModelSpec, to: ModelSpec) => void,
-): Promise<string> {
-  const attempts = chain.length > 0 ? chain : [{ modelId: "", providerId: "" }];
-  let lastError: unknown = null;
-  for (let i = 0; i < attempts.length; i++) {
-    try {
-      return await attemptFn(attempts[i], i);
-    } catch (e: unknown) {
-      if (isQuotaError(e)) {
-        lastError = e;
-        if (i + 1 < attempts.length) {
-          onSwitch?.(attempts[i], attempts[i + 1]);
-        }
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw lastError || new Error("所有模型均不可用");
 }
 
 // ---- State management ----
@@ -173,7 +107,7 @@ export function getUserState(
   return state.sessions[key];
 }
 
-// ---- Prompt sending ----
+// ---- Prompt sending (v1 API) ----
 
 export interface PromptResult {
   text: string;
@@ -184,13 +118,10 @@ export async function sendPromptStreaming(
   client: OpenCodeClient,
   sessionId: string,
   text: string,
-  directory: string | undefined,
-  chain: ModelSpec[],
-  agentId: string | undefined,
   onEvent: (type: string, data: any) => void,
   signal?: AbortSignal,
+  agentId?: string,
 ): Promise<PromptResult> {
-  let ourMessageId: string | null = null;
   const abortController = new AbortController();
   let eventStream: any = null;
   let eventConsumer: Promise<void> | null = null;
@@ -217,10 +148,10 @@ export async function sendPromptStreaming(
           log(`SSE event: type=${ev.type} id=${ev.id}`);
 
           if (ev.type === "message.part.delta") {
-            if (p?.delta) logToFile(`[think field=${p?.field}] ${p.delta}`);
+            if (p?.delta) logToFile(`[text] ${p.delta}`);
           }
 
-          if (ev.type === "question.v2.asked") {
+          if (ev.type === "question.v2.asked" || ev.type === "question.asked") {
             try {
               onEvent("question_asked", {
                 requestID: ev.id,
@@ -230,6 +161,7 @@ export async function sendPromptStreaming(
             } catch (e: unknown) {
               log(`question_asked onEvent error: ${e}`);
             }
+            client.v2.session.question.reject({ sessionID: sessionId, requestID: ev.id }).catch(() => {});
             continue;
           }
 
@@ -244,19 +176,9 @@ export async function sendPromptStreaming(
             } catch (e: unknown) {
               log(`permission_asked onEvent error: ${e}`);
             }
+            client.v2.session.permission.reply({ sessionID: sessionId, requestID: p.id || ev.id, reply: "always" }).catch(() => {});
             continue;
           }
-
-          if (!ourMessageId && ev.type === "message.updated") {
-            const info = p.info || p;
-            if (info?.role === "assistant" && info?.id) {
-              ourMessageId = info.id;
-            }
-          }
-          if (!ourMessageId) continue;
-
-          const msgId = p.info?.part?.messageID || p.messageID || p.info?.messageID;
-          if (msgId && msgId !== ourMessageId) continue;
 
           if (ev.type === "message.part.updated") {
             const part = p.info?.part || p.part;
@@ -264,9 +186,17 @@ export async function sendPromptStreaming(
             const s = part.state;
             if (!s) continue;
             if (s.status === "running" || s.status === "pending") {
-              onEvent("tool_called", { name: part.tool, input: s.input });
+              try { onEvent("tool_called", { name: part.tool, input: s.input }); } catch (e: unknown) {
+                log(`tool_called onEvent error: ${e}`);
+              }
             } else if (s.status === "completed") {
-              onEvent("tool_success", { name: part.tool, output: s.output || "", result: s.metadata });
+              try { onEvent("tool_success", { name: part.tool, output: s.output || "", result: s.metadata }); } catch (e: unknown) {
+                log(`tool_success onEvent error: ${e}`);
+              }
+            } else if (s.status === "failed") {
+              try { onEvent("tool_failed", { name: part.tool, error: s.error }); } catch (e: unknown) {
+                log(`tool_failed onEvent error: ${e}`);
+              }
             }
           }
         }
@@ -279,26 +209,24 @@ export async function sendPromptStreaming(
   }
 
   try {
-    let promptInfo: any = null;
-    const resultText = await tryModelsWithFallback(
-      chain,
-      async (spec) => {
-        ourMessageId = null;
-        const params = buildPromptParams(sessionId, text, directory, spec, agentId);
-        const result = await client.session.prompt(params);
-        promptInfo = (result.data as any)?.info;
-        return extractTextParts(result.data as { parts?: PromptPart[] });
-      },
-      (from, to) => {
-        onEvent("model_switched", {
-          from: { modelId: from.modelId, providerId: from.providerId },
-          to: { modelId: to.modelId, providerId: to.providerId },
-        });
-      },
-    );
-    const tokens = promptInfo?.tokens;
+    log(`v1 prompt: session=${sessionId}${agentId ? ` agent=${agentId}` : ""}`);
+    const params: any = { sessionID: sessionId, parts: [{ type: "text", text }] };
+    if (agentId) params.agent = agentId;
+    const result = await client.session.prompt(params);
+
+    if (result.error) {
+      const errMsg = (result.error as any)?.data?.message ?? (result.error as any)?.message ?? JSON.stringify(result.error);
+      log(`v1 prompt error: ${errMsg}`);
+      return { text: `Error: ${errMsg}` };
+    }
+
+    const data = result.data as { parts?: PromptPart[]; info?: any };
+    const textResult = extractTextParts(data);
+    const tokens = data.info?.tokens;
+    log(`v1 result: parts=${data.parts?.length ?? 0} text_len=${textResult.length}`);
+
     return {
-      text: resultText,
+      text: textResult,
       tokens: tokens ? {
         input: tokens.input ?? tokens.prompt,
         output: tokens.output ?? tokens.completion,
@@ -322,19 +250,13 @@ export async function sendPrompt(
   client: OpenCodeClient,
   sessionId: string,
   text: string,
-  directory?: string,
-  chain?: ModelSpec[],
   agentId?: string,
 ): Promise<string> {
   try {
-    return await tryModelsWithFallback(
-      chain ?? [{ modelId: "", providerId: "" }],
-      async (spec) => {
-        const params = buildPromptParams(sessionId, text, directory, spec, agentId);
-        const result = await client.session.prompt(params);
-        return extractTextParts(result.data as { parts?: PromptPart[] });
-      },
-    );
+    const params: any = { sessionID: sessionId, parts: [{ type: "text", text }] };
+    if (agentId) params.agent = agentId;
+    const result = await client.session.prompt(params);
+    return extractTextParts(result.data as { parts?: PromptPart[] });
   } catch (e: unknown) {
     return `Error: ${e instanceof Error ? e.message : String(e)}`;
   }

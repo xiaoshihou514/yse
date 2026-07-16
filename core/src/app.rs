@@ -1,8 +1,8 @@
+use crate::identity;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::identity;
 
 use crate::config::YseConfig;
 use crate::crypto::{derive_key, encrypt};

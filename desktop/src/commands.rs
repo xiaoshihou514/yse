@@ -13,7 +13,7 @@ use yse_core::{
     },
     identity,
     message::Message,
-    plugin::process_manager::ProcessInfo,
+    plugin::{process_manager::ProcessInfo, session::RouteResult},
     store::PluginConfig,
 };
 
@@ -207,6 +207,22 @@ impl YseState {
                             return;
                         }
 
+                        // Skip SMTP for self-addressed messages (plugin → local user)
+                        {
+                            let cfg = config.read().await;
+                            if identity::is_self_addressed(&to_addr, &cfg.own_address) {
+                                if let Some(h) = app_handle.lock().unwrap().as_ref() {
+                                    let _ = h.emit("new-message", &msg);
+                                }
+                                log::info!(
+                                    "plugin Send saved local-only msg {}: {}",
+                                    msg.id,
+                                    text.as_deref().unwrap_or("")
+                                );
+                                return;
+                            }
+                        }
+
                         let payload = match msg.to_json() {
                             Ok(p) => p,
                             Err(_) => {
@@ -345,7 +361,7 @@ pub async fn send_message(
 
     // Route to local plugin if addressed to this machine
     let plugin_configs = state.core.store.list_plugins().await.unwrap_or_default();
-    let _ = state
+    let route_result = state
         .core
         .session_registry
         .route(
@@ -359,14 +375,25 @@ pub async fn send_message(
         )
         .await;
 
-    // Send via SMTP — fail the command if delivery fails
-    if let Err(e) = state.core.send_encrypted(&msg, attachments).await {
-        log::error!("SMTP send failed: {}", e);
-        return Err(format!("SMTP 发送失败: {}", e));
-    }
+    // Local recipient → skip SMTP (no email round-trip needed).
+    // Messages are local if either:
+    //   1. The address name matches our own (self-addressed)
+    //   2. A local plugin accepted it (route → Dispatched)
+    let own_name = &state.core.config.read().await.own_address.clone();
+    let is_local = identity::is_self_addressed(&msg.to_addr, own_name)
+        || route_result == RouteResult::Dispatched;
 
-    // Only mark processed after successful send (prevents IMAP re-route of local copy)
-    let _ = state.core.store.mark_processed(&msg.id).await;
+    if !is_local {
+        // Send via SMTP — fail the command if delivery fails
+        if let Err(e) = state.core.send_encrypted(&msg, attachments).await {
+            log::error!("SMTP send failed: {}", e);
+            return Err(format!("SMTP 发送失败: {}", e));
+        }
+
+        // Only mark processed after successful send
+        // (prevents IMAP from re-routing the SMTP copy)
+        let _ = state.core.store.mark_processed(&msg.id).await;
+    }
 
     log::info!("sent message to {}", to);
     Ok(())
@@ -471,7 +498,7 @@ impl YseState {
             });
 
             poller
-                .run_with_log(
+                .run_idle_with_log(
                     move |raw_email| {
                         let parsed = match parse_incoming(&raw_email) {
                             Ok(p) => p,

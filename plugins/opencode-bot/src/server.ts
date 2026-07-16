@@ -21,12 +21,9 @@ process.on("exit", () => {
 
 const CONFIG = {
   agent: {
-    build: {
-      tools: { bash: false },
-    },
-    plan: {
-      tools: { bash: false },
-    },
+    build: { tools: { bash: false } },
+    general: { tools: { bash: false } },
+    plan: { tools: { write: false, edit: false, apply_patch: false, bash: false } },
   },
 };
 
