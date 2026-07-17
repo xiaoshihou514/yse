@@ -151,10 +151,9 @@ function ensureSession(
 
 function renameMainToTask(
   sock: string,
+  dir?: string,
   server?: string,
   controlPath?: string,
-  _cmd?: string,
-  _ps1?: string,
 ): string {
   const id = `task_${++taskCounter}`;
   const winName = `task-${taskCounter}`;
@@ -163,11 +162,10 @@ function renameMainToTask(
     server,
     { controlPath, stdio: "ignore" },
   );
-  tmuxProc(
-    ["-S", sock, "new-window", "-d", "-n", "main", SHELL],
-    server,
-    { controlPath, stdio: "ignore" },
-  );
+  const args = ["-S", sock, "new-window", "-d", "-n", "main"];
+  if (dir) args.push("-c", dir);
+  args.push(SHELL);
+  tmuxProc(args, server, { controlPath, stdio: "ignore" });
   return id;
 }
 
@@ -192,7 +190,7 @@ function executeCommand(
 
   while (true) {
     if (opts?.signal?.aborted) {
-      const taskId = renameMainToTask(sock, server, opts?.controlPath, cmd, PS1);
+      const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
       tasks.set(taskId, {
         id: taskId,
         pane: `yse:task-${taskCounter}`,
@@ -227,7 +225,7 @@ function executeCommand(
       prev = out;
       lastChange = Date.now();
     } else if (Date.now() - lastChange > MAX_STALE_MS) {
-      const taskId = renameMainToTask(sock, server, opts?.controlPath, cmd, PS1);
+      const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
       tasks.set(taskId, {
         id: taskId,
         pane: `yse:task-${taskCounter}`,
