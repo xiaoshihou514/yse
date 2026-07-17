@@ -172,37 +172,43 @@ function ensureSession(
 
 function renameMainToTask(
   sock: string,
-  cmd: string,
-  dir: string | undefined,
-  ps1: string,
+  dir?: string,
   server?: string,
   controlPath?: string,
 ): string {
   const id = `task_${++taskCounter}`;
   const winName = `task-${taskCounter}`;
 
-  // Send C-c to interrupt any running command
-  tmuxProc(
-    ["-S", sock, "send-keys", "-t", "yse:main", "C-c"],
+  // Get current main window index
+  const idxResult = tmuxProc(
+    ["-S", sock, "display-message", "-p", "-F", "#{window_index}", "-t", "yse:main"],
     server,
-    { controlPath, stdio: "ignore" },
+    { controlPath },
   );
-  spawnSync("sleep", ["0.3"], { stdio: "ignore" });
+  const curIdx = (idxResult.stdout || "").trim();
 
-  // Create a new window for the background task
-  const newArgs = ["-S", sock, "new-window", "-d", "-n", winName];
+  // Rename old window to task-N by index (preserves running command intact)
+  if (curIdx) {
+    tmuxProc(
+      ["-S", sock, "rename-window", "-t", `yse:${curIdx}`, winName],
+      server,
+      { controlPath, stdio: "ignore" },
+    );
+    tmuxProc(
+      ["-S", sock, "set-option", "-t", `yse:${curIdx}`, "remain-on-exit", "on"],
+      server,
+      { controlPath, stdio: "ignore" },
+    );
+  }
+
+  // Create new main window with working directory
+  const newArgs = ["-S", sock, "new-window", "-d", "-n", "main"];
   if (dir) newArgs.push("-c", dir);
   newArgs.push(SHELL);
   tmuxProc(newArgs, server, { controlPath, stdio: "ignore" });
-  spawnSync("sleep", ["0.3"], { stdio: "ignore" });
-
-  // Re-send the command with the same PS1 marker to the task pane
-  const cd = dir ? `cd ${shQuote(dir)} && ` : "";
-  send(sock, `PS1='${ps1}'; ${cd}(${cmd})`, server, { controlPath, pane: `yse:${winName}` });
-
-  // Set remain-on-exit on the task pane
+  spawnSync("sleep", ["0.3"], { stdio: "ignore" }); // wait for shell
   tmuxProc(
-    ["-S", sock, "set-option", "-t", `yse:${winName}`, "remain-on-exit", "on"],
+    ["-S", sock, "set-option", "-t", "yse:main", "remain-on-exit", "on"],
     server,
     { controlPath, stdio: "ignore" },
   );
@@ -232,7 +238,7 @@ function executeCommand(
 
   while (true) {
     if (opts?.signal?.aborted) {
-      const taskId = renameMainToTask(sock, cmd, dir, PS1, server, opts?.controlPath);
+      const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
       tasks.set(taskId, {
         id: taskId,
         pane: `yse:task-${taskCounter}`,
@@ -242,6 +248,7 @@ function executeCommand(
       });
       const err = new Error(`命令被中断，已转入后台 task_id=${taskId}`);
       (err as Record<string, unknown>).details = { task_id: taskId };
+      err.name = "AbortError";
       throw err;
     }
 
@@ -267,7 +274,7 @@ function executeCommand(
       prev = out;
       lastChange = Date.now();
     } else if (Date.now() - lastChange > MAX_STALE_MS) {
-      const taskId = renameMainToTask(sock, cmd, dir, PS1, server, opts?.controlPath);
+      const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
       tasks.set(taskId, {
         id: taskId,
         pane: `yse:task-${taskCounter}`,
@@ -299,13 +306,23 @@ function queryTask(
   if (!task) {
     return { status: "error", message: "任务不存在或已被清理" };
   }
+  // Check that the task pane still exists
+  const paneCheck = tmuxProc(
+    ["-S", sock, "has-session", "-t", task.pane],
+    server,
+    { controlPath },
+  );
+  if (paneCheck.status !== 0) {
+    tasks.delete(taskId);
+    return { status: "error", message: "任务窗格丢失，无法获取结果" };
+  }
 
   const start = Date.now();
   let lastChange = start;
   let prev = "";
 
   while (true) {
-    if (opts?.signal?.aborted) throw new Error("aborted");
+    if (opts?.signal?.aborted) { const e = new Error("aborted"); e.name = "AbortError"; throw e; }
 
     const out = capture(sock, server, { controlPath: opts?.controlPath, pane: task.pane });
     const lines = out.split("\n");
@@ -363,6 +380,10 @@ export default tool({
   },
 
   async execute(args, context) {
+    if (args.command && args.task_id) {
+      return JSON.stringify({ status: "error", message: "不能同时指定 command 和 task_id" });
+    }
+
     const sid = sanitize(context.sessionID || "default");
     const sock = `${SOCKET_DIR}/yse-${sid}.sock`;
     const dir = args.directory || context.directory || context.worktree;
