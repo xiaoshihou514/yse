@@ -230,8 +230,21 @@ export async function sendPromptStreaming(
     }
 
     const data = result.data as { parts?: PromptPart[]; info?: any };
-    const textResult = extractTextParts(data);
-    const tokens = data.info?.tokens;
+    let textResult = extractTextParts(data);
+    let tokens = data?.info?.tokens;
+
+    // If v1 prompt returned empty parts, fall back to v2 messages()
+    if (!data.parts?.length || textResult === "(empty response)") {
+      const msgsResult = await client.v2.session.messages({ sessionID: sessionId, order: "desc", limit: 5 });
+      const msgs: any[] = msgsResult.data?.data ?? [];
+      const assistantMsg = msgs.find((m: any) => (m.role ?? m.type) === "assistant");
+      if (assistantMsg) {
+        textResult = extractTextParts(assistantMsg);
+        tokens = assistantMsg.tokens;
+        log(`v2 messages fallback: content=${(assistantMsg.content ?? assistantMsg.parts)?.length} text_len=${textResult.length}`);
+      }
+    }
+
     log(`v1 result: parts=${data.parts?.length ?? 0} text_len=${textResult.length}`);
 
     return {
@@ -268,7 +281,13 @@ export async function sendPrompt(
     try {
       const result = await client.session.prompt(params);
       if (result.data) {
-        const textResult = extractTextParts(result.data as { parts?: PromptPart[] });
+        let textResult = extractTextParts(result.data as { parts?: PromptPart[] });
+        if (textResult === "(empty response)") {
+          const msgsResult = await client.v2.session.messages({ sessionID: sessionId, order: "desc", limit: 5 });
+          const msgs: any[] = msgsResult.data?.data ?? [];
+          const assistantMsg = msgs.find((m: any) => (m.role ?? m.type) === "assistant");
+          if (assistantMsg) textResult = extractTextParts(assistantMsg);
+        }
         if (textResult !== "(empty response)") return textResult;
         return textResult;
       }
