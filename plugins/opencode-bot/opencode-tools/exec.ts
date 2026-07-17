@@ -39,6 +39,67 @@ interface TaskInfo {
 
 let taskCounter = 0;
 const tasks = new Map<string, TaskInfo>();
+let currentSid = "";
+
+// ── Task persistence ──────────────────────────────────────────
+
+function saveTasks(sid: string, sock: string) {
+  const json = JSON.stringify({ version: 1, tasks: Array.from(tasks.values()) });
+  tmuxProc(["-S", sock, "set-environment", "-t", "yse", "YSE_TASKS", json], undefined);
+}
+
+function setTask(taskId: string, info: TaskInfo, sock: string) {
+  tasks.set(taskId, info);
+  saveTasks(currentSid, sock);
+}
+
+function deleteTask(taskId: string, sock: string) {
+  tasks.delete(taskId);
+  saveTasks(currentSid, sock);
+}
+
+function loadTasks(sid: string, sock: string, server?: string) {
+  // Read tasks from tmux environment variable
+  const r = tmuxProc(
+    ["-S", sock, "show-environment", "-t", "yse", "YSE_TASKS"],
+    server,
+    { encoding: "utf-8" },
+  );
+  if (!r.stdout) return;
+  // show-environment w/ variable name gives "YSE_TASKS=value"
+  const val = r.stdout.trim().replace(/^YSE_TASKS=/, "");
+  if (!val) return;
+  try {
+    const parsed = JSON.parse(val);
+    if (!Array.isArray(parsed.tasks)) return;
+
+    // Get current window names from tmux to validate panes
+    const winResult = tmuxProc(
+      ["-S", sock, "list-windows", "-t", "yse", "-F", "#{window_name}"],
+      server,
+    );
+    const existingWindows = (winResult.stdout || "").split("\n").map(s => s.trim()).filter(Boolean);
+
+    let maxCounter = 0;
+    const restored: [string, TaskInfo][] = [];
+
+    for (const t of parsed.tasks) {
+      if (!t.id || !t.pane || !t.ps1) continue;
+      const winName = t.pane.replace(/^yse:/, "");
+      if (!existingWindows.includes(winName)) continue;
+      restored.push([t.id, t]);
+
+      const num = parseInt(t.id.replace("task_", ""), 10);
+      if (!isNaN(num) && num > maxCounter) maxCounter = num;
+    }
+
+    taskCounter = maxCounter;
+    for (const [k, v] of restored) tasks.set(k, v);
+    if (restored.length > 0) saveTasks(sid, sock);
+  } catch {
+    // Corrupted file — ignore
+  }
+}
 
 // ── SSH ControlMaster ─────────────────────────────────────────
 
@@ -269,13 +330,13 @@ function executeCommand(
   while (true) {
     if (opts?.signal?.aborted) {
       const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
-      tasks.set(taskId, {
+      setTask(taskId, {
         id: taskId,
         pane: `yse:task-${taskCounter}`,
         ps1: PS1,
         cmd,
         startTime: Date.now(),
-      });
+      }, sock);
       const err = new Error(`命令被中断，已转入后台 task_id=${taskId}`);
       (err as Record<string, unknown>).details = { task_id: taskId };
       err.name = "AbortError";
@@ -302,13 +363,13 @@ function executeCommand(
 
     if (Date.now() - start > MAX_STALE_MS) {
       const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
-      tasks.set(taskId, {
+      setTask(taskId, {
         id: taskId,
         pane: `yse:task-${taskCounter}`,
         ps1: PS1,
         cmd,
         startTime: Date.now(),
-      });
+      }, sock);
       return {
         status: "running",
         task_id: taskId,
@@ -340,7 +401,7 @@ function queryTask(
     { controlPath },
   );
   if (paneCheck.status !== 0) {
-    tasks.delete(taskId);
+    deleteTask(taskId, sock);
     return { status: "error", message: "任务窗格丢失，无法获取结果" };
   }
 
@@ -363,10 +424,10 @@ function queryTask(
       const endIdx = allLines.findLastIndex((l) => l.trim() === task.ps1);
       const typedIdx = allLines.findLastIndex((l) => l.includes(`PS1='${task.ps1}'`), endIdx);
       if (typedIdx < 0 || endIdx < 0) {
-        tasks.delete(taskId);
+        deleteTask(taskId, sock);
         return { status: "error", message: "PARSE_ERR: prompt markers not found" };
       }
-      tasks.delete(taskId);
+      deleteTask(taskId, sock);
       return {
         status: "completed",
         output: allLines.slice(typedIdx + 1, endIdx).join("\n").trim(),
@@ -412,6 +473,7 @@ export default tool({
     }
 
     const sid = sanitize(context.sessionID || "default");
+    currentSid = sid;
     const sock = `${SOCKET_DIR}/yse-${sid}.sock`;
     const dir = args.directory || context.directory || context.worktree;
     const server = args.server;
@@ -423,6 +485,7 @@ export default tool({
     }
 
     ensureSession(sock, server, dir, controlPath);
+    loadTasks(sid, sock, server);
 
     if (args.task_id) {
       const result = queryTask(sock, args.task_id, server, {
