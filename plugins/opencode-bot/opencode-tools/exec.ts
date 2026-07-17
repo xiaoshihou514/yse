@@ -319,10 +319,13 @@ function executeCommand(
   opts?: { controlPath?: string; signal?: AbortSignal },
 ): ExecResult {
   const PS1 = `__YSE_${crypto.randomUUID().slice(0, 8)}__`;
-  const cd = dir ? `cd ${shQuote(dir)} && ` : "";
-  const fullCmd = `PS1='${PS1}'; ${cd}(${cmd})`;
 
-  send(sock, fullCmd, server, { controlPath: opts?.controlPath });
+  // Step 1: set PS1 marker
+  send(sock, `PS1='${PS1}'`, server, { controlPath: opts?.controlPath });
+  // Step 2: cd to directory (if needed)
+  if (dir) send(sock, `cd ${shQuote(dir)}`, server, { controlPath: opts?.controlPath });
+  // Step 3: execute command
+  send(sock, cmd, server, { controlPath: opts?.controlPath });
 
   const start = Date.now();
   let partial = "";
