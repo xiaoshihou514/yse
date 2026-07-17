@@ -111,12 +111,13 @@ function sshControlPath(server: string, sid: string): string {
 function ensureSSHMaster(server: string, sid: string): string {
   spawnSync("mkdir", ["-p", SSH_CONTROL_DIR], { stdio: "ignore" });
   const cp = sshControlPath(server, sid);
-  const check = spawnSync("ssh", ["-O", "check", "-S", cp, server], {
+  const SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"];
+  const check = spawnSync("ssh", [...SSH_OPTS, "-O", "check", "-S", cp, server], {
     stdio: "ignore",
     timeout: 5000,
   });
   if (check.status !== 0) {
-    spawnSync("ssh", ["-M", "-S", cp, "-f", "-N", server], {
+    spawnSync("ssh", [...SSH_OPTS, "-M", "-S", cp, "-f", "-N", server], {
       stdio: "ignore",
       timeout: 10000,
     });
@@ -126,16 +127,17 @@ function ensureSSHMaster(server: string, sid: string): string {
 
 function ensureControlAlive(server: string, sid: string): string {
   const cp = sshControlPath(server, sid);
-  const check = spawnSync("ssh", ["-O", "check", "-S", cp, server], {
+  const SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"];
+  const check = spawnSync("ssh", [...SSH_OPTS, "-O", "check", "-S", cp, server], {
     stdio: "ignore",
     timeout: 5000,
   });
   if (check.status !== 0) {
-    spawnSync("ssh", ["-M", "-S", cp, "-f", "-N", server], {
+    spawnSync("ssh", [...SSH_OPTS, "-M", "-S", cp, "-f", "-N", server], {
       stdio: "ignore",
       timeout: 10000,
     });
-    const retry = spawnSync("ssh", ["-O", "check", "-S", cp, server], {
+    const retry = spawnSync("ssh", [...SSH_OPTS, "-O", "check", "-S", cp, server], {
       stdio: "ignore",
       timeout: 5000,
     });
@@ -228,7 +230,7 @@ function ensureSession(
     const winResult = tmuxProc(
       ["-S", sock, "list-windows", "-t", "yse", "-F", "#{window_name}"],
       server,
-      { controlPath },
+    { controlPath: opts?.controlPath },
     );
     const windows = (winResult.stdout || "").split("\n").map(s => s.trim()).filter(Boolean);
     if (windows.includes("main")) return;
