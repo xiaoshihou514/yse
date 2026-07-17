@@ -397,13 +397,14 @@ function makeEventHandler(from: string) {
   return (type: string, data: any) => {
     switch (type) {
       case "tool_called": {
-        if (data.name === "bash") {
-          const cmd = data.input?.command || "";
+        if (data.name === "bash" || data.name === "exec") {
+          const cmd = data.input?.command || data.input?.task_id || "";
           if (!cmd.trim()) break;
+          const label = data.name === "bash" ? "🔧 bash" : "🔧 exec";
           if (cmd.length > 200) {
-            sendResponse(from, `🔧 bash\n:::details 命令 (${cmd.length} 字符)\n\`\`\`bash\n${cmd}\n\`\`\`\n:::`);
+            sendResponse(from, `${label}\n:::details 命令 (${cmd.length} 字符)\n\`\`\`bash\n${cmd}\n\`\`\`\n:::`);
           } else {
-            sendResponse(from, `🔧 bash\n\`\`\`bash\n${cmd}\n\`\`\``);
+            sendResponse(from, `${label}\n\`\`\`bash\n${cmd}\n\`\`\``);
           }
         } else if (isWriteTool(data.name)) {
           const path = data.input?.filePath || "";
@@ -429,14 +430,21 @@ function makeEventHandler(from: string) {
           break;
         }
         let msg = `✅ ${data.name} 完成`;
-        if (raw && data.name === "bash") {
-          if (raw.length > 300) {
-            msg += `\n:::details 输出 (${raw.length} 字符)\n\n\`\`\`\n${raw}\n\`\`\`\n\n:::`;
+
+        let display = raw;
+        if (data.name === "exec") {
+          try { const j = JSON.parse(raw); display = j.output || j.message || raw; } catch {}
+        }
+
+        if (display && (data.name === "bash" || data.name === "exec")) {
+          const label = data.name === "bash" ? "🔧 bash" : "🔧 exec";
+          if (display.length > 300) {
+            msg += `\n:::details 输出 (${display.length} 字符)\n\n\`\`\`\n${display}\n\`\`\`\n\n:::`;
           } else {
-            msg += `\n\`\`\`\n${raw}\n\`\`\``;
+            msg += `\n\`\`\`\n${display}\n\`\`\``;
           }
         }
-        if (raw) sendResponse(from, msg);
+        if (display) sendResponse(from, msg);
         break;
       }
       case "tool_failed":
