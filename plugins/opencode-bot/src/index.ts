@@ -328,11 +328,6 @@ async function main() {
         sendResponse(from, result.text);
       }
 
-      if (result.tokens) {
-        const i = formatTokens(result.tokens.input);
-        const o = formatTokens(result.tokens.output);
-        sendResponse(from, `词元：输入${i}，输出${o}`);
-      }
       sendResponse(from, "✅ 处理完成");
     } else {
       sendResponse(from, "请先选择会话：/sessions 或 /new [标题]");
@@ -344,11 +339,6 @@ async function main() {
 
 function isWriteTool(name: string): boolean {
   return name === "write" || name === "edit";
-}
-
-function formatTokens(n: number): string {
-  if (n >= 10000) return `${(n / 10000).toFixed(2)}万`;
-  return String(n);
 }
 
 function formatCompactDiff(oldStr: string, newStr: string, ctxLines = 1): string {

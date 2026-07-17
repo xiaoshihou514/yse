@@ -230,7 +230,7 @@ function ensureSession(
     const winResult = tmuxProc(
       ["-S", sock, "list-windows", "-t", "yse", "-F", "#{window_name}"],
       server,
-    { controlPath: opts?.controlPath },
+      { controlPath },
     );
     const windows = (winResult.stdout || "").split("\n").map(s => s.trim()).filter(Boolean);
     if (windows.includes("main")) return;
