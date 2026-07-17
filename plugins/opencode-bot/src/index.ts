@@ -421,7 +421,7 @@ function makeEventHandler(from: string) {
           const items = data.input?.todos || data.input?.items || [];
           if (Array.isArray(items) && items.length > 0) {
             const lines = items.map((t: any) => {
-              const icon = t.status === "completed" ? "✅" : t.status === "in_progress" ? "🔄" : "⬜";
+              const icon = t.status === "completed" ? "✅" : t.status === "in_progress" ? "🔄" : "🟦";
               const prio = t.priority ? ` [${t.priority}]` : "";
               return `  ${icon} ${t.content}${prio}`;
             }).join("\n");

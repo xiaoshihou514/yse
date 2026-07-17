@@ -138,12 +138,17 @@ function ensureSession(
       : ["-o", "RequestTTY=no", server, `mkdir -p ${shQuote(SOCKET_DIR)}`];
     spawnSync("ssh", sshArgs, { stdio: "ignore", timeout: 5000 });
   }
+  // Check if session already exists
+  const check = tmuxProc(["-S", sock, "has-session", "-t", "yse"], server, { controlPath });
+  if (check.status === 0) return;
+  // Create new session
   const args = ["-f", "/dev/null", "-S", sock, "new-session", "-d", "-s", "yse", "-n", "main"];
   if (dir) args.push("-c", dir);
   args.push(SHELL);
   tmuxProc(args, server, { controlPath, stdio: "ignore" });
+  spawnSync("sleep", ["0.3"], { stdio: "ignore" }); // wait for shell
   tmuxProc(
-    ["-S", sock, "rename-window", "-t", "yse:0", "main"],
+    ["-S", sock, "set-option", "-t", "yse:main", "remain-on-exit", "on"],
     server,
     { controlPath, stdio: "ignore" },
   );
@@ -151,21 +156,41 @@ function ensureSession(
 
 function renameMainToTask(
   sock: string,
-  dir?: string,
+  cmd: string,
+  dir: string | undefined,
+  ps1: string,
   server?: string,
   controlPath?: string,
 ): string {
   const id = `task_${++taskCounter}`;
   const winName = `task-${taskCounter}`;
+
+  // Send C-c to interrupt any running command
   tmuxProc(
-    ["-S", sock, "rename-window", "-t", "yse:main", winName],
+    ["-S", sock, "send-keys", "-t", "yse:main", "C-c"],
     server,
     { controlPath, stdio: "ignore" },
   );
-  const args = ["-S", sock, "new-window", "-d", "-n", "main"];
-  if (dir) args.push("-c", dir);
-  args.push(SHELL);
-  tmuxProc(args, server, { controlPath, stdio: "ignore" });
+  spawnSync("sleep", ["0.3"], { stdio: "ignore" });
+
+  // Create a new window for the background task
+  const newArgs = ["-S", sock, "new-window", "-d", "-n", winName];
+  if (dir) newArgs.push("-c", dir);
+  newArgs.push(SHELL);
+  tmuxProc(newArgs, server, { controlPath, stdio: "ignore" });
+  spawnSync("sleep", ["0.3"], { stdio: "ignore" });
+
+  // Re-send the command with the same PS1 marker to the task pane
+  const cd = dir ? `cd ${shQuote(dir)} && ` : "";
+  send(sock, `PS1='${ps1}'; ${cd}(${cmd})`, server, { controlPath, pane: `yse:${winName}` });
+
+  // Set remain-on-exit on the task pane
+  tmuxProc(
+    ["-S", sock, "set-option", "-t", `yse:${winName}`, "remain-on-exit", "on"],
+    server,
+    { controlPath, stdio: "ignore" },
+  );
+
   return id;
 }
 
@@ -180,8 +205,9 @@ function executeCommand(
 ): ExecResult {
   const PS1 = `__YSE_${crypto.randomUUID().slice(0, 8)}__`;
   const cd = dir ? `cd ${shQuote(dir)} && ` : "";
+  const fullCmd = `PS1='${PS1}'; ${cd}(${cmd})`;
 
-  send(sock, `PS1='${PS1}'; ${cd}(${cmd})`, server, { controlPath: opts?.controlPath });
+  send(sock, fullCmd, server, { controlPath: opts?.controlPath });
 
   const start = Date.now();
   let lastChange = start;
@@ -190,7 +216,7 @@ function executeCommand(
 
   while (true) {
     if (opts?.signal?.aborted) {
-      const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
+      const taskId = renameMainToTask(sock, cmd, dir, PS1, server, opts?.controlPath);
       tasks.set(taskId, {
         id: taskId,
         pane: `yse:task-${taskCounter}`,
@@ -225,7 +251,7 @@ function executeCommand(
       prev = out;
       lastChange = Date.now();
     } else if (Date.now() - lastChange > MAX_STALE_MS) {
-      const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
+      const taskId = renameMainToTask(sock, cmd, dir, PS1, server, opts?.controlPath);
       tasks.set(taskId, {
         id: taskId,
         pane: `yse:task-${taskCounter}`,
