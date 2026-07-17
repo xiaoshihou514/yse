@@ -7,7 +7,7 @@ import * as crypto from "crypto";
 const SOCKET_DIR = "/tmp/yse-tmux";
 const SSH_CONTROL_DIR = "/tmp/yse-ssh";
 const SHELL = "/bin/bash";
-const POLL_MS = 150;
+const POLL_MS = 200;
 const MAX_STALE_MS = 120_000;
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -59,6 +59,28 @@ function ensureSSHMaster(server: string, sid: string): string {
       stdio: "ignore",
       timeout: 10000,
     });
+  }
+  return cp;
+}
+
+function ensureControlAlive(server: string, sid: string): string {
+  const cp = sshControlPath(server, sid);
+  const check = spawnSync("ssh", ["-O", "check", "-S", cp, server], {
+    stdio: "ignore",
+    timeout: 5000,
+  });
+  if (check.status !== 0) {
+    spawnSync("ssh", ["-M", "-S", cp, "-f", "-N", server], {
+      stdio: "ignore",
+      timeout: 10000,
+    });
+    const retry = spawnSync("ssh", ["-O", "check", "-S", cp, server], {
+      stdio: "ignore",
+      timeout: 5000,
+    });
+    if (retry.status !== 0) {
+      throw new Error(`无法建立 SSH 连接到 ${server}`);
+    }
   }
   return cp;
 }
@@ -141,20 +163,25 @@ function ensureSession(
   // Check if session already exists
   const check = tmuxProc(["-S", sock, "has-session", "-t", "yse"], server, { controlPath });
   if (check.status === 0) {
-    // Ensure window 0 is named "main" (YSE plugin may have named it differently)
-    const nameResult = tmuxProc(
-      ["-S", sock, "display-message", "-p", "-F", "#{window_name}", "-t", "yse:0"],
+    // Ensure a window named "main" exists (it may have been renamed or deleted)
+    const winResult = tmuxProc(
+      ["-S", sock, "list-windows", "-t", "yse", "-F", "#{window_name}"],
       server,
       { controlPath },
     );
-    const curName = (nameResult.stdout || "").trim();
-    if (curName && curName !== "main" && !curName.startsWith("task-")) {
-      tmuxProc(
-        ["-S", sock, "rename-window", "-t", "yse:0", "main"],
-        server,
-        { controlPath, stdio: "ignore" },
-      );
-    }
+    const windows = (winResult.stdout || "").split("\n").map(s => s.trim()).filter(Boolean);
+    if (windows.includes("main")) return;
+    // No main window — create one
+    const newArgs = ["-S", sock, "new-window", "-d", "-n", "main"];
+    if (dir) newArgs.push("-c", dir);
+    newArgs.push(SHELL);
+    tmuxProc(newArgs, server, { controlPath, stdio: "ignore" });
+    spawnSync("sleep", ["0.3"], { stdio: "ignore" });
+    tmuxProc(
+      ["-S", sock, "set-option", "-t", "yse:main", "remain-on-exit", "on"],
+      server,
+      { controlPath, stdio: "ignore" },
+    );
     return;
   }
   // Create new session
@@ -206,7 +233,12 @@ function renameMainToTask(
   if (dir) newArgs.push("-c", dir);
   newArgs.push(SHELL);
   tmuxProc(newArgs, server, { controlPath, stdio: "ignore" });
-  spawnSync("sleep", ["0.3"], { stdio: "ignore" }); // wait for shell
+  spawnSync("sleep", ["0.3"], { stdio: "ignore" });
+  tmuxProc(
+    ["-S", sock, "select-window", "-t", "yse:main"],
+    server,
+    { controlPath, stdio: "ignore" },
+  );
   tmuxProc(
     ["-S", sock, "set-option", "-t", "yse:main", "remain-on-exit", "on"],
     server,
@@ -232,8 +264,6 @@ function executeCommand(
   send(sock, fullCmd, server, { controlPath: opts?.controlPath });
 
   const start = Date.now();
-  let lastChange = start;
-  let prev = "";
   let partial = "";
 
   while (true) {
@@ -270,10 +300,7 @@ function executeCommand(
       };
     }
 
-    if (out !== prev) {
-      prev = out;
-      lastChange = Date.now();
-    } else if (Date.now() - lastChange > MAX_STALE_MS) {
+    if (Date.now() - start > MAX_STALE_MS) {
       const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
       tasks.set(taskId, {
         id: taskId,
@@ -306,9 +333,9 @@ function queryTask(
   if (!task) {
     return { status: "error", message: "任务不存在或已被清理" };
   }
-  // Check that the task pane still exists
+  // Check that the task window still exists
   const paneCheck = tmuxProc(
-    ["-S", sock, "has-session", "-t", task.pane],
+    ["-S", sock, "has-window", "-t", task.pane],
     server,
     { controlPath },
   );
@@ -318,11 +345,14 @@ function queryTask(
   }
 
   const start = Date.now();
-  let lastChange = start;
-  let prev = "";
 
   while (true) {
-    if (opts?.signal?.aborted) { const e = new Error("aborted"); e.name = "AbortError"; throw e; }
+    if (opts?.signal?.aborted) {
+      const err = new Error(`查询任务 ${taskId} 被中断`);
+      err.name = "AbortError";
+      (err as Record<string, unknown>).details = { task_id: taskId };
+      throw err;
+    }
 
     const out = capture(sock, server, { controlPath: opts?.controlPath, pane: task.pane });
     const lines = out.split("\n");
@@ -343,10 +373,7 @@ function queryTask(
       };
     }
 
-    if (out !== prev) {
-      prev = out;
-      lastChange = Date.now();
-    } else if (Date.now() - lastChange > MAX_STALE_MS) {
+    if (Date.now() - start > MAX_STALE_MS) {
       return {
         status: "running",
         task_id: taskId,
@@ -392,6 +419,7 @@ export default tool({
     let controlPath: string | undefined;
     if (server) {
       controlPath = ensureSSHMaster(server, sid);
+      ensureControlAlive(server, sid);
     }
 
     ensureSession(sock, server, dir, controlPath);
