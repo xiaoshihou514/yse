@@ -417,6 +417,18 @@ function makeEventHandler(from: string) {
             const content = data.input?.content || "";
             sendResponse(from, `🔧 write${path ? ` (${path})` : ""}\n\`\`\`diff\n+ ${content.slice(0, 200)}\n\`\`\``);
           }
+        } else if (data.name === "todowrite") {
+          const items = data.input?.todos || data.input?.items || [];
+          if (Array.isArray(items) && items.length > 0) {
+            const lines = items.map((t: any) => {
+              const icon = t.status === "completed" ? "✅" : t.status === "in_progress" ? "🔄" : "⬜";
+              const prio = t.priority ? ` [${t.priority}]` : "";
+              return `  ${icon} ${t.content}${prio}`;
+            }).join("\n");
+            sendResponse(from, `📋 todowrite\n${lines}`);
+          } else if (data.input?.content) {
+            sendResponse(from, `📋 todowrite\n${data.input.content.slice(0, 500)}`);
+          }
         } else if (data.name === "question") {
           // handled by question_asked event → sendList
         }
