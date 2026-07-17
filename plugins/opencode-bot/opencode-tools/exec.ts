@@ -140,7 +140,23 @@ function ensureSession(
   }
   // Check if session already exists
   const check = tmuxProc(["-S", sock, "has-session", "-t", "yse"], server, { controlPath });
-  if (check.status === 0) return;
+  if (check.status === 0) {
+    // Ensure window 0 is named "main" (YSE plugin may have named it differently)
+    const nameResult = tmuxProc(
+      ["-S", sock, "display-message", "-p", "-F", "#{window_name}", "-t", "yse:0"],
+      server,
+      { controlPath },
+    );
+    const curName = (nameResult.stdout || "").trim();
+    if (curName && curName !== "main" && !curName.startsWith("task-")) {
+      tmuxProc(
+        ["-S", sock, "rename-window", "-t", "yse:0", "main"],
+        server,
+        { controlPath, stdio: "ignore" },
+      );
+    }
+    return;
+  }
   // Create new session
   const args = ["-f", "/dev/null", "-S", sock, "new-session", "-d", "-s", "yse", "-n", "main"];
   if (dir) args.push("-c", dir);
