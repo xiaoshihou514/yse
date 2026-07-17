@@ -320,12 +320,10 @@ function executeCommand(
 ): ExecResult {
   const PS1 = `__YSE_${crypto.randomUUID().slice(0, 8)}__`;
 
-  // Step 1: set PS1 marker
-  send(sock, `PS1='${PS1}'`, server, { controlPath: opts?.controlPath });
-  // Step 2: cd to directory (if needed)
+  // Step 1: cd to directory (if needed) — before PS1, excluded from parse
   if (dir) send(sock, `cd ${shQuote(dir)}`, server, { controlPath: opts?.controlPath });
-  // Step 3: execute command
-  send(sock, cmd, server, { controlPath: opts?.controlPath });
+  // Step 2: set PS1 marker + execute command (same line for clean parse)
+  send(sock, `PS1='${PS1}'; ${cmd}`, server, { controlPath: opts?.controlPath });
 
   const start = Date.now();
   let partial = "";
