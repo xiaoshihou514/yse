@@ -401,7 +401,7 @@ function queryTask(
   const paneCheck = tmuxProc(
     ["-S", sock, "has-window", "-t", task.pane],
     server,
-    { controlPath },
+    { controlPath: opts?.controlPath },
   );
   if (paneCheck.status !== 0) {
     deleteTask(taskId, sock);
