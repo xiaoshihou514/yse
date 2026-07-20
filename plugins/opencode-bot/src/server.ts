@@ -29,8 +29,20 @@ const CONFIG = {
 
 export async function initBot(): Promise<BotState | null> {
   try {
-    const server = await createOpencodeServer({ port: 0, config: CONFIG });
-    _server = server;
+    // Retry with increasing timeout (first attempt may be slow on fresh data dir)
+    let server: Awaited<ReturnType<typeof createOpencodeServer>> | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        server = await createOpencodeServer({ port: 4096, config: CONFIG, timeout: 15000 });
+        _server = server;
+        break;
+      } catch (e) {
+        if (attempt === 2) throw e;
+        log(`server start attempt ${attempt + 1} failed, retrying...`);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+    if (!server) throw new Error("server failed to start after retries");
     const baseUrl = server.url;
     const actualPort = new URL(baseUrl).port;
     log(`server started on port ${actualPort}`);
@@ -61,7 +73,7 @@ export async function initBot(): Promise<BotState | null> {
       client, projectDir, baseUrl,
       sessions: {},
       modelConfig: { defaultModel: undefined, fallbackChain: [] },
-      serverProcess: server,
+      serverProcess: server!,
     };
   } catch (e: unknown) {
     log(`initBot failed: ${e instanceof Error ? e.message : String(e)}`);

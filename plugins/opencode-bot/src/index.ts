@@ -316,7 +316,7 @@ async function main() {
       promptAbort = null;
       pendingQuestions.delete(from);
 
-      if (result.text === "(empty response)" || result.text.trim().length < 5) {
+      if (result.text === "(empty response)" || result.text.trim().length < 20) {
         const summary = await sendPrompt(
           state.client, userState.sessionId,
           "你上一轮任务做了什么？用一两句话简单总结一下。",

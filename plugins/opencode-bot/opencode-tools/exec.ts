@@ -85,7 +85,7 @@ function loadTasks(sid: string, sock: string, server?: string) {
 
     for (const t of parsed.tasks) {
       if (!t.id || !t.pane || !t.ps1) continue;
-      const winName = t.pane.replace(/^yse:/, "");
+      const winName = t.pane;
       if (!existingWindows.includes(winName)) continue;
       restored.push([t.id, t]);
 
@@ -103,6 +103,25 @@ function loadTasks(sid: string, sock: string, server?: string) {
 
 // ── SSH ControlMaster ─────────────────────────────────────────
 
+function parseServer(server: string): { target: string; port?: number } {
+  // Support user@host:port format
+  const idx = server.lastIndexOf(":");
+  if (idx > server.indexOf("@")) {
+    const port = parseInt(server.slice(idx + 1), 10);
+    if (!isNaN(port) && port > 0 && port < 65536) {
+      return { target: server.slice(0, idx), port };
+    }
+  }
+  return { target: server };
+}
+
+function sshArgs(server: string, extra: string[] = []): string[] {
+  const { target, port } = parseServer(server);
+  const args = ["-F", "/dev/null", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"];
+  if (port) args.push("-p", String(port));
+  return [...args, ...extra, target];
+}
+
 function sshControlPath(server: string, sid: string): string {
   const hash = crypto.createHash("md5").update(server).digest("hex").slice(0, 8);
   return `${SSH_CONTROL_DIR}/${sanitize(sid)}-${hash}`;
@@ -111,13 +130,12 @@ function sshControlPath(server: string, sid: string): string {
 function ensureSSHMaster(server: string, sid: string): string {
   spawnSync("mkdir", ["-p", SSH_CONTROL_DIR], { stdio: "ignore" });
   const cp = sshControlPath(server, sid);
-  const SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"];
-  const check = spawnSync("ssh", [...SSH_OPTS, "-O", "check", "-S", cp, server], {
+  const check = spawnSync("ssh", [...sshArgs(server, ["-O", "check", "-S", cp])], {
     stdio: "ignore",
     timeout: 5000,
   });
   if (check.status !== 0) {
-    spawnSync("ssh", [...SSH_OPTS, "-M", "-S", cp, "-f", "-N", server], {
+    spawnSync("ssh", [...sshArgs(server, ["-M", "-S", cp, "-f", "-N"])], {
       stdio: "ignore",
       timeout: 10000,
     });
@@ -127,17 +145,16 @@ function ensureSSHMaster(server: string, sid: string): string {
 
 function ensureControlAlive(server: string, sid: string): string {
   const cp = sshControlPath(server, sid);
-  const SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"];
-  const check = spawnSync("ssh", [...SSH_OPTS, "-O", "check", "-S", cp, server], {
+  const check = spawnSync("ssh", [...sshArgs(server, ["-O", "check", "-S", cp])], {
     stdio: "ignore",
     timeout: 5000,
   });
   if (check.status !== 0) {
-    spawnSync("ssh", [...SSH_OPTS, "-M", "-S", cp, "-f", "-N", server], {
+    spawnSync("ssh", [...sshArgs(server, ["-M", "-S", cp, "-f", "-N"])], {
       stdio: "ignore",
       timeout: 10000,
     });
-    const retry = spawnSync("ssh", [...SSH_OPTS, "-O", "check", "-S", cp, server], {
+    const retry = spawnSync("ssh", [...sshArgs(server, ["-O", "check", "-S", cp])], {
       stdio: "ignore",
       timeout: 5000,
     });
@@ -164,10 +181,12 @@ function tmuxProc(args: string[], server?: string, opts?: TmuxOpts) {
   let cmdArgs: string[];
   if (server && cp) {
     cmd = "ssh";
-    cmdArgs = ["-S", cp, server, ["tmux", ...args].map(shQuote).join(" ")];
+    const { target, port } = parseServer(server);
+    const portArgs = port ? ["-p", String(port)] : [];
+    cmdArgs = ["-F", "/dev/null", ...portArgs, "-S", cp, target, ["tmux", ...args].map(shQuote).join(" ")];
   } else if (server) {
     cmd = "ssh";
-    cmdArgs = ["-o", "RequestTTY=no", server, ["tmux", ...args].map(shQuote).join(" ")];
+    cmdArgs = [...sshArgs(server), ["tmux", ...args].map(shQuote).join(" ")];
   } else {
     cmd = "tmux";
     cmdArgs = args;
@@ -218,10 +237,12 @@ function ensureSession(
 ) {
   spawnSync("mkdir", ["-p", SOCKET_DIR], { stdio: "ignore" });
   if (server) {
-    const sshArgs = controlPath
-      ? ["-S", controlPath, server, `mkdir -p ${shQuote(SOCKET_DIR)}`]
-      : ["-o", "RequestTTY=no", server, `mkdir -p ${shQuote(SOCKET_DIR)}`];
-    spawnSync("ssh", sshArgs, { stdio: "ignore", timeout: 5000 });
+    const { target, port } = parseServer(server);
+    const portArgs = port ? ["-p", String(port)] : [];
+    const mkdirArgs = controlPath
+      ? ["-F", "/dev/null", ...portArgs, "-S", controlPath, target, `mkdir -p ${shQuote(SOCKET_DIR)}`]
+      : ["-F", "/dev/null", ...portArgs, ...sshArgs(server).slice(2), `mkdir -p ${shQuote(SOCKET_DIR)}`];
+    spawnSync("ssh", mkdirArgs, { stdio: "ignore", timeout: 5000 });
   }
   // Check if session already exists
   const check = tmuxProc(["-S", sock, "has-session", "-t", "yse"], server, { controlPath });
@@ -328,14 +349,13 @@ function executeCommand(
   send(sock, `PS1='${PS1}'; ${cmd}`, server, { controlPath: opts?.controlPath });
 
   const start = Date.now();
-  let partial = "";
 
   while (true) {
     if (opts?.signal?.aborted) {
       const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
       setTask(taskId, {
         id: taskId,
-        pane: `yse:task-${taskCounter}`,
+        pane: `task-${taskCounter}`,
         ps1: PS1,
         cmd,
         startTime: Date.now(),
@@ -348,19 +368,16 @@ function executeCommand(
 
     const out = capture(sock, server, { controlPath: opts?.controlPath });
     const lines = out.split("\n");
-    partial = out;
 
     if (lines.some((l) => l.trim() === PS1)) {
-      const raw = capture(sock, server, { controlPath: opts?.controlPath });
-      const allLines = raw.split("\n");
-      const endIdx = allLines.findLastIndex((l) => l.trim() === PS1);
-      const typedIdx = allLines.findLastIndex((l) => l.includes(`PS1='${PS1}'`), endIdx);
+      const endIdx = lines.findLastIndex((l) => l.trim() === PS1);
+      const typedIdx = lines.findLastIndex((l) => l.includes(`PS1='${PS1}'`), endIdx);
       if (typedIdx < 0 || endIdx < 0) {
         return { status: "error", message: "PARSE_ERR: prompt markers not found" };
       }
       return {
         status: "completed",
-        output: allLines.slice(typedIdx + 1, endIdx).join("\n").trim(),
+        output: lines.slice(typedIdx + 1, endIdx).join("\n").trim(),
       };
     }
 
@@ -368,7 +385,7 @@ function executeCommand(
       const taskId = renameMainToTask(sock, dir, server, opts?.controlPath);
       setTask(taskId, {
         id: taskId,
-        pane: `yse:task-${taskCounter}`,
+        pane: `task-${taskCounter}`,
         ps1: PS1,
         cmd,
         startTime: Date.now(),
@@ -377,7 +394,6 @@ function executeCommand(
         status: "running",
         task_id: taskId,
         message: "命令仍在执行中，稍后使用 task_id 获取结果。",
-        output: partial,
       };
     }
 
@@ -397,13 +413,14 @@ function queryTask(
   if (!task) {
     return { status: "error", message: "任务不存在或已被清理" };
   }
-  // Check that the task window still exists
+  // Check that the task window still exists (tmux has no has-window command)
   const paneCheck = tmuxProc(
-    ["-S", sock, "has-window", "-t", task.pane],
+    ["-S", sock, "list-windows", "-t", "yse", "-F", "#{window_name}"],
     server,
     { controlPath: opts?.controlPath },
   );
-  if (paneCheck.status !== 0) {
+  const windows = (paneCheck.stdout || "").split("\n").map(s => s.trim()).filter(Boolean);
+  if (!windows.includes(task.pane)) {
     deleteTask(taskId, sock);
     return { status: "error", message: "任务窗格丢失，无法获取结果" };
   }
@@ -418,14 +435,23 @@ function queryTask(
       throw err;
     }
 
-    const out = capture(sock, server, { controlPath: opts?.controlPath, pane: task.pane });
+    // Periodically check SSH connection health (every ~30s = 150 iterations at 200ms)
+    const iter = Math.floor((Date.now() - start) / POLL_MS);
+    if (server && opts?.controlPath && iter > 0 && iter % 150 === 0) {
+      try {
+        ensureControlAlive(server, sanitize(currentSid));
+      } catch (e) {
+        return { status: "error", message: `SSH 连接断开且无法重建: ${(e as Error).message}` };
+      }
+    }
+
+    const paneTarget = `yse:${task.pane}`;
+    const out = capture(sock, server, { controlPath: opts?.controlPath, pane: paneTarget });
     const lines = out.split("\n");
 
     if (lines.some((l) => l.trim() === task.ps1)) {
-      const raw = capture(sock, server, { controlPath: opts?.controlPath, pane: task.pane });
-      const allLines = raw.split("\n");
-      const endIdx = allLines.findLastIndex((l) => l.trim() === task.ps1);
-      const typedIdx = allLines.findLastIndex((l) => l.includes(`PS1='${task.ps1}'`), endIdx);
+      const endIdx = lines.findLastIndex((l) => l.trim() === task.ps1);
+      const typedIdx = lines.findLastIndex((l) => l.includes(`PS1='${task.ps1}'`), endIdx);
       if (typedIdx < 0 || endIdx < 0) {
         deleteTask(taskId, sock);
         return { status: "error", message: "PARSE_ERR: prompt markers not found" };
@@ -433,16 +459,7 @@ function queryTask(
       deleteTask(taskId, sock);
       return {
         status: "completed",
-        output: allLines.slice(typedIdx + 1, endIdx).join("\n").trim(),
-      };
-    }
-
-    if (Date.now() - start > MAX_STALE_MS) {
-      return {
-        status: "running",
-        task_id: taskId,
-        message: "命令仍在执行中",
-        output: out,
+        output: lines.slice(typedIdx + 1, endIdx).join("\n").trim(),
       };
     }
 

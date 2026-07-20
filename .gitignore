@@ -11,6 +11,8 @@ dist
 .opencode/tmux-tasks.json
 plugins/.opencode/
 
+.reasonix
+
 frontend/node_modules
 frontend/dist
 frontend/node_modules/.vite
@@ -22,3 +24,8 @@ mobile/*.apk
 # Plugin build artifacts
 plugins/*/target/
 desktop/icons
+
+.test*
+plugins/opencode-bot/*.py
+plugins/opencode-bot/*js
+plugins/opencode-bot/*ts
