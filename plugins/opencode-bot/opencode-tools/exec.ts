@@ -474,7 +474,8 @@ export default tool({
   使用 exec 工具运行 shell 命令：
   - "command": 要执行的命令（省略时返回后台任务列表）
   - "directory": 工作目录（可选）
-  - "server": SSH 远程主机，如 user@host（可选）
+  - "server": SSH 远程主机，如 user@host（可选）。远程执行请使用此参数，
+    不要自行拼接 ssh 命令，exec 会自动管理 SSH 连接。
   - "task_id": 查询后台任务结果（与 command 互斥）
 
   返回 JSON: { status: "completed"|"running"|"error", output?, task_id?, message? }

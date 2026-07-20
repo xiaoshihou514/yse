@@ -121,6 +121,7 @@ export async function sendPromptStreaming(
   onEvent: (type: string, data: any) => void,
   signal?: AbortSignal,
   agentId?: string,
+  modelChain?: ModelSpec[],
 ): Promise<PromptResult> {
   const abortController = new AbortController();
   let eventStream: any = null;
@@ -148,7 +149,7 @@ export async function sendPromptStreaming(
           log(`SSE event: type=${ev.type} id=${ev.id}`);
 
           if (ev.type === "message.part.delta") {
-            if (p?.delta) logToFile(`[text] ${p.delta}`);
+            if (p?.delta) log(`[text] ${p.delta}`);
           }
 
           if (ev.type === "question.v2.asked" || ev.type === "question.asked") {
@@ -214,19 +215,52 @@ export async function sendPromptStreaming(
     if (agentId) params.agent = agentId;
 
     let result: any;
-    while (true) {
+    const MAX_RETRIES = 10;
+    const models = modelChain?.length ? [...modelChain] : [];
+    let modelIndex = 0;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // Switch model if moving to next in chain (skip for first model, already set on session)
+      if (attempt > 0 && modelIndex > 0 && models[modelIndex]) {
+        const m = models[modelIndex];
+        try {
+          await (client as any).v2.session.switchModel({
+            sessionID: sessionId,
+            model: { id: m.modelId, providerID: m.providerId, variant: m.variant },
+          });
+          log(`switched to fallback model: ${m.modelId} (${m.providerId})`);
+        } catch (e) {
+          log(`switch model failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
       try {
         result = await client.session.prompt(params);
         if (!result.error) break;
         const errMsg = (result.error as any)?.data?.message ?? (result.error as any)?.message ?? JSON.stringify(result.error);
-        log(`v1 prompt error: ${errMsg}, retrying...`);
+        log(`v1 prompt error: ${errMsg} (attempt ${attempt + 1}/${MAX_RETRIES})`);
       } catch (e: unknown) {
-        log(`v1 prompt failed: ${e instanceof Error ? e.message : String(e)}, retrying...`);
+        log(`v1 prompt failed: ${e instanceof Error ? e.message : String(e)} (attempt ${attempt + 1}/${MAX_RETRIES})`);
       }
+
       if (signal?.aborted) {
         return { text: "Error: aborted" };
       }
-      await new Promise(r => setTimeout(r, 2000));
+
+      // Move to next model in chain for next retry
+      if (models.length > 0) {
+        modelIndex = (modelIndex + 1) % models.length;
+      }
+
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    if (!result || result.error) {
+      const errMsg = result?.error
+        ? ((result.error as any)?.data?.message ?? (result.error as any)?.message ?? JSON.stringify(result.error))
+        : "all retries failed";
+      return { text: `Error: ${errMsg}` };
     }
 
     const data = result.data as { parts?: PromptPart[]; info?: any };
@@ -278,24 +312,32 @@ export async function sendPrompt(
   if (agentId) params.agent = agentId;
 
   while (true) {
-    try {
-      const result = await client.session.prompt(params);
-      if (result.data) {
-        let textResult = extractTextParts(result.data as { parts?: PromptPart[] });
-        if (textResult === "(empty response)") {
-          const msgsResult = await client.v2.session.messages({ sessionID: sessionId, order: "desc", limit: 5 });
-          const msgs: any[] = msgsResult.data?.data ?? [];
-          const assistantMsg = msgs.find((m: any) => (m.role ?? m.type) === "assistant");
-          if (assistantMsg) textResult = extractTextParts(assistantMsg);
+    let retries = 0;
+    const MAX_RETRIES = 3;
+    while (retries < MAX_RETRIES) {
+      retries++;
+      try {
+        const result = await client.session.prompt(params);
+        if (result.data) {
+          let textResult = extractTextParts(result.data as { parts?: PromptPart[] });
+          if (textResult === "(empty response)") {
+            const msgsResult = await client.v2.session.messages({ sessionID: sessionId, order: "desc", limit: 5 });
+            const msgs: any[] = msgsResult.data?.data ?? [];
+            const assistantMsg = msgs.find((m: any) => (m.role ?? m.type) === "assistant");
+            if (assistantMsg) textResult = extractTextParts(assistantMsg);
+          }
+          if (textResult !== "(empty response)") return textResult;
+          return textResult;
         }
-        if (textResult !== "(empty response)") return textResult;
-        return textResult;
+        const errMsg = (result.error as any)?.data?.message ?? (result.error as any)?.message ?? JSON.stringify(result.error);
+        log(`sendPrompt error: ${errMsg} (attempt ${retries}/${MAX_RETRIES})`);
+      } catch (e: unknown) {
+        log(`sendPrompt failed: ${e instanceof Error ? e.message : String(e)} (attempt ${retries}/${MAX_RETRIES})`);
       }
-      const errMsg = (result.error as any)?.data?.message ?? (result.error as any)?.message ?? JSON.stringify(result.error);
-      log(`sendPrompt error: ${errMsg}, retrying...`);
-    } catch (e: unknown) {
-      log(`sendPrompt failed: ${e instanceof Error ? e.message : String(e)}, retrying...`);
+      if (retries < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
     }
-    await new Promise(r => setTimeout(r, 2000));
+    return "(empty response)";
   }
 }

@@ -32,6 +32,10 @@
         </div>
         <div class="settings-group">
           <div class="settings-group-label">操作</div>
+          <div class="settings-item" @click="$emit('search')">
+            <span class="settings-item-label">搜索聊天记录</span>
+            <span class="settings-item-arrow"><ChevronRightIcon /></span>
+          </div>
           <div class="settings-item" @click="$emit('toggleHide')">
             <span class="settings-item-label">{{
               isHidden ? "取消隐藏" : "隐藏对话"
@@ -73,6 +77,7 @@ defineEmits<{
   changeAvatar: [];
   toggleHide: [];
   delete: [];
+  search: [];
 }>();
 
 const isMobile = useIsMobile();

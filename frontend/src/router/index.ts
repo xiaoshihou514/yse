@@ -5,6 +5,7 @@ import ContactsView from "@/views/ContactsView.vue";
 import ConfigView from "@/views/ConfigView.vue";
 import WelcomeView from "@/views/WelcomeView.vue";
 import ScanView from "@/views/ScanView.vue";
+import MobileSearchView from "@/views/MobileSearchView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -18,6 +19,12 @@ const router = createRouter({
       path: "/scan",
       name: "scan",
       component: ScanView,
+      meta: { fullscreen: true },
+    },
+    {
+      path: "/mobile-search",
+      name: "mobile-search",
+      component: MobileSearchView,
       meta: { fullscreen: true },
     },
   ],

@@ -120,6 +120,9 @@
             <span class="topbar-name">{{
               resolveDisplayName(selectedContact)
             }}</span>
+            <span class="topbar-search" @click="showSearch = true"
+              ><t-icon name="search"
+            /></span>
             <span class="topbar-more" @click="showSettings = true"
               ><t-icon name="ellipsis"
             /></span>
@@ -139,6 +142,7 @@
             <div
               v-for="msg in conversation"
               :key="msg.id"
+              :ref="(el: any) => setMsgRef(msg.id, el)"
               :class="[
                 'msg-row',
                 nameFromAddr(msg.from) === ownAddress
@@ -214,6 +218,7 @@
       @changeAvatar="pickAvatar(selectedContact!)"
       @toggleHide="toggleSettingsHide"
       @delete="deleteSettingsConversation"
+      @search="isMobile ? router.push('/mobile-search') : (showSearch = true)"
     />
 
     <ForwardDialog
@@ -256,16 +261,28 @@
         </div>
       </div>
     </div>
+
+<<<<<<< Updated upstream
+    <SearchView
+      v-if="!isMobile && showSearch"
+      :contact-addr="selectedContact"
+      @close="showSearch = false"
+      @jump="onSearchJump"
+    />
+=======
+    <SearchView v-if="!isMobile && showSearch" :contact-addr="selectedContact" @close="showSearch = false" @jump="onSearchJump" />
+>>>>>>> Stashed changes
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import ContactListItem from "@/components/ContactListItem.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import ChatSettingsPanel from "@/components/ChatSettingsPanel.vue";
 import ForwardDialog from "@/components/ForwardDialog.vue";
+import SearchView from "@/views/SearchView.vue";
 import MessageBubble from "@/components/MessageBubble.vue";
 import ChatInput from "@/components/ChatInput.vue";
 import { useYseStore } from "@/stores/yse";
@@ -281,6 +298,7 @@ import {
 } from "tdesign-icons-vue-next";
 
 const route = useRoute();
+const router = useRouter();
 const store = useYseStore();
 const isMobile = useIsMobile();
 const inputText = ref("");
@@ -297,9 +315,18 @@ function onPopState() {
     history.pushState(null, "", route.fullPath);
   }
 }
+function onSearchJump(msgId: string, contactAddr: string) {
+  showSearch.value = false;
+  selectedContact.value = contactAddr;
+  void scrollToMessage(msgId);
+}
 onMounted(() => {
   history.pushState(null, "", route.fullPath);
   window.addEventListener("popstate", onPopState);
+  // Check for contact query param (from search)
+  if (route.query.contact) {
+    selectedContact.value = route.query.contact as string;
+  }
 });
 onUnmounted(() => window.removeEventListener("popstate", onPopState));
 
@@ -322,6 +349,23 @@ const pullRefreshing = ref(false);
 let pullStartY = 0;
 const renameDialog = ref({ visible: false, name: "" });
 const showSettings = ref(false);
+const showSearch = ref(false);
+
+// Msg refs for scroll-to-message
+const msgRefs: Record<string, HTMLElement> = {};
+function setMsgRef(id: string, el: any) {
+  if (el) msgRefs[id] = el as HTMLElement;
+}
+async function scrollToMessage(msgId: string) {
+  await nextTick();
+  await nextTick();
+  const el = msgRefs[msgId];
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  } else {
+    scrollToBottom();
+  }
+}
 
 const ctxMenu = ref<{ visible: boolean; x: number; y: number; text: string }>({
   visible: false,
@@ -1001,6 +1045,19 @@ onMounted(async () => {
   transition: background 0.2s;
 }
 .topbar-more:hover {
+  background: var(--td-bg-color-secondarycontainer);
+}
+.topbar-search {
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 6px;
+  font-size: 18px;
+  color: var(--td-text-color-secondary);
+  display: flex;
+  align-items: center;
+  transition: background 0.2s;
+}
+.topbar-search:hover {
   background: var(--td-bg-color-secondarycontainer);
 }
 

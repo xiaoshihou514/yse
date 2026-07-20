@@ -305,6 +305,8 @@ async function main() {
         state.client, userState.sessionId, text,
         makeEventHandler(from),
         ctrl.signal,
+        undefined,
+        resolveModelChain(userState, state.modelConfig),
       );
 
       if (ctrl.signal.aborted) {
@@ -648,6 +650,7 @@ async function handleCommand(
         makeEventHandler(from),
         ctrl.signal,
         agentId,
+        resolveModelChain(userState, state.modelConfig),
       );
       if (ctrl.signal.aborted) {
         promptAbort = null;
