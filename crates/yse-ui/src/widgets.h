@@ -104,6 +104,7 @@ struct Dialog {
 struct FileDialog {
   QFileDialog* q = nullptr;
   bool alive = false;
+  int last_result = 0;
   void* cb_data = nullptr;
   QMetaObject::Connection finished_connection;
   QMetaObject::Connection destroyed_connection;
@@ -182,6 +183,7 @@ void filedialog_show(FileDialog* d);
 void filedialog_accept(FileDialog* d);
 void filedialog_close(FileDialog* d);
 rust::String filedialog_selected_file(FileDialog* d);
+int filedialog_last_result(FileDialog* d);
 void filedialog_set_finished_cb(FileDialog* d, Void* data);
 void filedialog_drop(FileDialog* d);
 

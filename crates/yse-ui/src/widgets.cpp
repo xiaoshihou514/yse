@@ -742,14 +742,20 @@ rust::String filedialog_selected_file(FileDialog* d)
   return rust::String(first.toUtf8().constData());
 }
 
+int filedialog_last_result(FileDialog* d)
+{
+  return d != nullptr ? d->last_result : 0;
+}
+
 void filedialog_set_finished_cb(FileDialog* d, Void* data)
 {
   QObject::disconnect(d->finished_connection);
     d->cb_data = static_cast<void*>(data);
     d->finished_connection = QObject::connect(
-    d->q, &QFileDialog::finished, d->q, [d](int /*result*/) {
+    d->q, &QFileDialog::finished, d->q, [d](int result) {
       auto* data = static_cast<yse_ui::Void*>(d->cb_data);
       QPointer<QFileDialog> q = d->q;
+      d->last_result = result;
       d->alive = false;
       d->cb_data = nullptr;
       if (data != nullptr) {

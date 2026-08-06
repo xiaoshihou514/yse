@@ -148,6 +148,7 @@ mod bridge {
         unsafe fn filedialog_accept(d: *mut FileDialog);
         unsafe fn filedialog_close(d: *mut FileDialog);
         unsafe fn filedialog_selected_file(d: *mut FileDialog) -> String;
+        unsafe fn filedialog_last_result(d: *mut FileDialog) -> i32;
         unsafe fn filedialog_set_finished_cb(d: *mut FileDialog, data: *mut Void);
         unsafe fn filedialog_drop(d: *mut FileDialog);
         unsafe fn settings_new(organization: &str, application: &str) -> *mut Settings;
@@ -1874,8 +1875,12 @@ impl FileDialogState {
         }
         let keep_alive = self.self_weak.upgrade();
         self.finished.set(true);
-        let path = unsafe { ffi::filedialog_selected_file(self.ptr) };
-        let selected = if path.is_empty() { None } else { Some(path) };
+        let selected = if unsafe { ffi::filedialog_last_result(self.ptr) } == QDIALOG_ACCEPTED {
+            let path = unsafe { ffi::filedialog_selected_file(self.ptr) };
+            (!path.is_empty()).then_some(path)
+        } else {
+            None
+        };
         if let Some(sink) = self.result_sink.borrow().as_ref() {
             sink.send(selected);
         }
