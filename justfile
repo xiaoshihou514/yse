@@ -47,9 +47,9 @@ windows-diag:
 windows-build:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 build
 
-# Run the yse-ui examples headless on Windows.
-windows-examples:
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 examples
+# Run a yse-ui example as a real window on Windows (e.g. `just windows-example settings`).
+windows-example name:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 example {{name}}
 
 # Run the full local gate on Windows.
 windows-check:

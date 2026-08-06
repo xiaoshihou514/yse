@@ -1,14 +1,15 @@
-# Windows host helper for Yse: setup (Qt via aqt), build, examples, check, diag.
+# Windows host helper for Yse: setup (Qt via aqt), build, example, check, diag.
 #
 # Usage (PowerShell 5.1+):
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 setup
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 diag
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 build
-#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 examples
+#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 example settings
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 check
 
 param(
-    [Parameter(Mandatory = $true)][string]$Command
+    [Parameter(Mandatory = $true)][string]$Command,
+    [string]$Name
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,11 +83,12 @@ switch ($Command) {
     'build' {
         Invoke-Cargo @('build', '--workspace')
     }
-    'examples' {
-        $env:QT_QPA_PLATFORM = 'offscreen'
-        $env:YSE_SMOKE = '1'
-        Invoke-Cargo @('run', '-p', 'yse-ui', '--example', 'settings')
-        Invoke-Cargo @('run', '-p', 'yse-ui', '--example', 'data_browser')
+    'example' {
+        if (-not $Name) {
+            throw "example requires a name, e.g. just windows-example settings"
+        }
+        # No QT_QPA_PLATFORM / YSE_SMOKE: show a real window.
+        Invoke-Cargo @('run', '-p', 'yse-ui', '--example', $Name)
     }
     'check' {
         Invoke-Cargo @('fmt', '--check')
@@ -94,6 +96,6 @@ switch ($Command) {
         Invoke-Cargo @('test', '--workspace')
     }
     default {
-        throw "unknown command: $Command (expected setup|diag|build|examples|check)"
+        throw "unknown command: $Command (expected setup|diag|build|example|check)"
     }
 }
