@@ -423,6 +423,9 @@ void widget_drop(Widget* w)
 
 void widget_show(Widget* w)
 {
+  if (w->alive && w->q != nullptr) {
+    w->q->show();
+  }
   if (w->alive && w->state != nullptr) {
     w->state->setVisible(true);
   }
@@ -430,6 +433,12 @@ void widget_show(Widget* w)
 
 void widget_set_visible(Widget* w, bool visible)
 {
+  if (w->alive && w->q != nullptr) {
+    // A generated property's initial value can already equal `visible`, in
+    // which case Qt emits no change signal.  Apply the native property too so
+    // `set_visible(false)` reliably hides a freshly-created widget.
+    w->q->setVisible(visible);
+  }
   if (w->alive && w->state != nullptr) {
     w->state->setVisible(visible);
   }
