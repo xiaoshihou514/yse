@@ -1,12 +1,15 @@
 //! A Filelight-inspired disk inspector with cancellable background scanning.
 
+#[path = "support/example_style.rs"]
+mod example_style;
+
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 use yse_model::{Subscription, Task, Var, spawn_task};
-use yse_ui::{Application, QtGuiScheduler, StringTableModel, Window, clone};
+use yse_ui::{Application, FileDialog, QtGuiScheduler, StringTableModel, Window, clone};
 
 type ScanTask = Task<Result<Vec<Vec<String>>, String>>;
 
@@ -70,9 +73,22 @@ fn scan(path: String) -> Result<Vec<Vec<String>>, String> {
 
 fn main() {
     let app = Application::init();
+    example_style::apply(&app);
     let window = Window::new();
     window.set_title("Filelight — Yse edition");
-    window.set_size(760, 500);
+    window.set_size(860, 580);
+    let menubar = window.menu_bar();
+    let scan_action = menubar.menu_with("Scan", |menu| {
+        menu.action("Scan location")
+            .icon("view-refresh")
+            .shortcut("F5")
+    });
+    let open_action = menubar.menu_with("Location", |menu| {
+        menu.action("Choose folder…").icon("folder-open")
+    });
+    let toolbar = window.toolbar();
+    toolbar.add(&open_action);
+    toolbar.add(&scan_action);
     let path = Var::new(String::from("."));
     let status = Var::new(String::from(
         "Choose a folder and scan its largest children.",
@@ -87,24 +103,86 @@ fn main() {
     );
     let task = Rc::new(RefCell::new(None::<ScanTask>));
     let subscriptions = Rc::new(RefCell::new(Vec::<Subscription>::new()));
-    let (path_edit, scan_button, cancel_button, status_label) = window.ui().column(|ui| {
-        ui.label("Filelight");
-        ui.label("Largest folders are ordered like a sunburst legend; the table remains useful without a custom canvas.");
-        let (path_edit, scan, cancel) = ui.row(|ui| (ui.line_edit(""), ui.button("Scan"), ui.button("Cancel")));
-        ui.table_view(&table);
+    let (
+        _title,
+        path_edit,
+        browse_button,
+        scan_button,
+        cancel_button,
+        disk_map,
+        table_view,
+        status_label,
+    ) = window.ui().column(|ui| {
+        let title = ui.label("Disk usage");
+        let helper = ui.label("Choose a folder to inspect its largest children.");
+        helper.set_style_class("muted");
+        let (path_edit, browse, scan, cancel) = ui.row(|ui| {
+            (
+                ui.line_edit(""),
+                ui.button("Browse…"),
+                ui.button("Scan"),
+                ui.button("Cancel"),
+            )
+        });
+        let disk_map = ui.disk_map();
+        let table_view = ui.table_view(&table);
         let status_label = ui.label("");
-        (path_edit, scan, cancel, status_label)
+        (
+            title,
+            path_edit,
+            browse,
+            scan,
+            cancel,
+            disk_map,
+            table_view,
+            status_label,
+        )
     });
+    browse_button.set_icon("folder-open");
+    browse_button.set_style_class("quiet");
+    scan_button.set_style_class("accent");
+    cancel_button.set_style_class("quiet");
+    status_label.set_style_class("muted");
+    table_view.set_visible(false);
     path_edit.bind_text_two_way(&path);
     status_label.bind_text(&status.signal());
-    scan_button.on_click(clone!(path, status, table, task, subscriptions => move |_| {
+    scan_button.on_click(clone!(path, status, table, table_view, task, subscriptions, disk_map => move |_| {
         status.set(format!("Scanning {}…", path.value()));
         let work = spawn_task(Arc::new(QtGuiScheduler), { let path = path.value().to_string(); move |_| scan(path) });
-        subscriptions.borrow_mut().push(work.results().observe(clone!(status, table => move |result| match result {
-            Ok(rows) => { let count = rows.len(); table.replace_all(rows.to_vec()); status.set(format!("Scanned {count} top-level entries")); }
+        subscriptions.borrow_mut().push(work.results().observe(clone!(status, table, table_view, disk_map => move |result| match result {
+            Ok(rows) => { let count = rows.len(); let labels = rows.iter().map(|row| row[0].clone()).collect::<Vec<_>>(); let shares = rows.iter().filter_map(|row| row[2].trim().trim_end_matches('%').parse::<f64>().ok()).collect::<Vec<_>>(); table.replace_all(rows.to_vec()); table_view.set_visible(true); disk_map.set_segments(labels, shares); status.set(format!("Scan complete · {count} top-level entries")); }
             Err(error) => status.set(format!("Scan failed: {error}")),
         })));
         *task.borrow_mut() = Some(work);
+    }));
+    scan_action.on_trigger(clone!(path, status, table, table_view, task, subscriptions, disk_map => move |_| {
+        status.set(format!("Scanning {}…", path.value()));
+        let work = spawn_task(Arc::new(QtGuiScheduler), { let path = path.value().to_string(); move |_| scan(path) });
+        subscriptions.borrow_mut().push(work.results().observe(clone!(status, table, table_view, disk_map => move |result| match result {
+            Ok(rows) => { let count = rows.len(); let labels = rows.iter().map(|row| row[0].clone()).collect::<Vec<_>>(); let shares = rows.iter().filter_map(|row| row[2].trim().trim_end_matches('%').parse::<f64>().ok()).collect::<Vec<_>>(); table.replace_all(rows.to_vec()); table_view.set_visible(true); disk_map.set_segments(labels, shares); status.set(format!("Scan complete · {count} top-level entries")); }
+            Err(error) => status.set(format!("Scan failed: {error}")),
+        })));
+        *task.borrow_mut() = Some(work);
+    }));
+    open_action.on_trigger(clone!(window, path, status, subscriptions => move |_| {
+        let dialog = FileDialog::directory(&window, "Choose a folder to scan");
+        subscriptions.borrow_mut().push(dialog.result().observe(clone!(path, status => move |selected| {
+            if let Some(folder) = selected {
+                path.set(folder.clone());
+                status.set(format!("{} selected — press Scan or F5.", folder));
+            }
+        })));
+        dialog.show();
+    }));
+    browse_button.on_click(clone!(window, path, status, subscriptions => move |_| {
+        let dialog = FileDialog::directory(&window, "Choose a folder to scan");
+        subscriptions.borrow_mut().push(dialog.result().observe(clone!(path, status => move |selected| {
+            if let Some(folder) = selected {
+                path.set(folder.clone());
+                status.set(format!("{} selected — press Scan or F5.", folder));
+            }
+        })));
+        dialog.show();
     }));
     cancel_button.on_click(clone!(task, status => move |_| {
         if let Some(task) = task.borrow().as_ref() { task.cancel(); }
@@ -114,6 +192,9 @@ fn main() {
         path.set(String::from("/tmp"));
         scan_button.click();
         app.quit_after(400);
+    } else if std::env::var("YSE_SCREENSHOT").is_ok() {
+        path.set(String::from("."));
+        scan_button.click();
     }
     window.show();
     std::process::exit(app.exec());

@@ -8,6 +8,8 @@
 namespace yse_ui::rust {
 using ::rust::Str;
 using ::rust::String;
+template <typename T>
+using Vec = ::rust::Vec<T>;
 }
 
 #include <QCoreApplication>
@@ -16,12 +18,16 @@ using ::rust::String;
 #include <QtGui/QKeySequence>
 #include <QtGui/QIcon>
 #include <QtCore/QMetaObject>
+#include <QtGui/QFont>
+#include <QtGui/QPainter>
+#include <QtCore/QVector>
 #include <QTimer>
 #include <QtGui/QAction>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QBoxLayout>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QDateTimeEdit>
+#include <QtWidgets/QDateEdit>
 #include <QtWidgets/QFileDialog>
 #include <QItemSelectionModel>
 #include <QtWidgets/QGridLayout>
@@ -34,13 +40,119 @@ using ::rust::String;
 #include <QtWidgets/QMenuBar>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QSizePolicy>
+#include <QtWidgets/QStyle>
 #include <QtWidgets/QToolBar>
+#include <QtWidgets/QTimeEdit>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
+
+#include <numeric>
 
 #include "yse-ui/src/lib.cxx.h"
 
 namespace {
+
+class DiskMapWidget final : public QWidget {
+public:
+  struct Segment { QString label; double share; };
+
+  explicit DiskMapWidget(QWidget* parent) : QWidget(parent) {
+    setMinimumHeight(210);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  }
+
+  void setSegments(rust::Vec<rust::String> labels, rust::Vec<double> shares) {
+    segments_.clear();
+    const auto count = std::min(labels.size(), shares.size());
+    for (size_t index = 0; index < count; ++index) {
+      if (shares[index] > 0.0) {
+        segments_.push_back({QString::fromUtf8(labels[index].data(), labels[index].size()), shares[index]});
+      }
+    }
+    update();
+  }
+
+protected:
+  void paintEvent(QPaintEvent*) override {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QRectF bounds = rect().adjusted(18, 12, -18, -12);
+    const qreal legendWidth = std::min<qreal>(220, bounds.width() * .38);
+    const QRectF chartBounds(bounds.left(), bounds.top(), bounds.width() - legendWidth - 18, bounds.height());
+    const qreal diameter = std::min(chartBounds.width(), chartBounds.height());
+    const QRectF circle(chartBounds.left() + (chartBounds.width() - diameter) / 2.0,
+                        chartBounds.top() + (chartBounds.height() - diameter) / 2.0,
+                        diameter, diameter);
+    const QRectF legendBounds(bounds.right() - legendWidth, bounds.top(), legendWidth, bounds.height());
+    const QVector<QColor> colors = {QColor("#3daee9"), QColor("#8e7cc3"), QColor("#f6c344"), QColor("#ef6c6c"), QColor("#42b883"), QColor("#e67e22")};
+    const double total = std::accumulate(segments_.cbegin(), segments_.cend(), 0.0,
+      [](double value, const Segment& segment) { return value + segment.share; });
+    if (total <= 0.0) {
+      const QSize iconSize(64, 64);
+      const QRect iconRect(bounds.center().x() - iconSize.width() / 2,
+                           bounds.center().y() - 64,
+                           iconSize.width(), iconSize.height());
+      QIcon::fromTheme("folder-open").paint(&painter, iconRect);
+      painter.setPen(palette().color(QPalette::Text));
+      QFont title = painter.font();
+      title.setPointSizeF(title.pointSizeF() + 2.0);
+      title.setWeight(QFont::DemiBold);
+      painter.setFont(title);
+      painter.drawText(QRectF(bounds.left(), iconRect.bottom() + 12, bounds.width(), 30),
+                       Qt::AlignHCenter | Qt::AlignTop, "Choose a folder to scan");
+      painter.setFont(font());
+      painter.setPen(palette().color(QPalette::PlaceholderText));
+      painter.drawText(QRectF(bounds.left(), iconRect.bottom() + 42, bounds.width(), 30),
+                       Qt::AlignHCenter | Qt::AlignTop,
+                       "Filelight will show the folders using the most space.");
+      return;
+    }
+    int start = 90 * 16;
+    for (int index = 0; index < segments_.size(); ++index) {
+      const int span = -qRound(segments_[index].share / total * 360.0 * 16.0);
+      painter.setPen(QPen(palette().color(QPalette::Window), 2));
+      painter.setBrush(colors[index % colors.size()]);
+      painter.drawPie(circle, start, span);
+      start += span;
+    }
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(palette().color(QPalette::Window));
+    painter.drawEllipse(circle.adjusted(diameter * .27, diameter * .27, -diameter * .27, -diameter * .27));
+    const auto largest = std::max_element(segments_.cbegin(), segments_.cend(),
+      [](const Segment& left, const Segment& right) { return left.share < right.share; });
+    painter.setPen(palette().color(QPalette::Text));
+    painter.drawText(circle, Qt::AlignCenter,
+      QString("%1%\n%2").arg(largest->share / total * 100.0, 0, 'f', 1).arg(largest->label));
+
+    const QFontMetrics metrics(painter.font());
+    constexpr int rowHeight = 26;
+    const int visibleSegments = std::min(static_cast<int>(segments_.size()), 6);
+    for (int index = 0; index < visibleSegments; ++index) {
+      const int y = static_cast<int>(legendBounds.top()) + index * rowHeight;
+      painter.setPen(Qt::NoPen);
+      painter.setBrush(colors[index % colors.size()]);
+      painter.drawRoundedRect(QRectF(legendBounds.left(), y + 5, 11, 11), 2, 2);
+      painter.setPen(palette().color(QPalette::Text));
+      const auto label = metrics.elidedText(segments_[index].label, Qt::ElideRight,
+                                            static_cast<int>(legendBounds.width()) - 62);
+      painter.drawText(QRectF(legendBounds.left() + 18, y, legendBounds.width() - 62, rowHeight),
+                       Qt::AlignVCenter | Qt::AlignLeft, label);
+      painter.drawText(QRectF(legendBounds.right() - 42, y, 42, rowHeight),
+                       Qt::AlignVCenter | Qt::AlignRight,
+                       QString::number(segments_[index].share / total * 100.0, 'f', 1) + "%");
+    }
+    if (segments_.size() > visibleSegments) {
+      painter.setPen(palette().color(QPalette::PlaceholderText));
+      painter.drawText(QRectF(legendBounds.left(), legendBounds.top() + visibleSegments * rowHeight,
+                              legendBounds.width(), rowHeight), Qt::AlignVCenter | Qt::AlignLeft,
+                       QString("+%1 more").arg(segments_.size() - visibleSegments));
+    }
+  }
+
+private:
+  QVector<Segment> segments_;
+};
 
 QApplication* ensure_app()
 {
@@ -88,6 +200,11 @@ Widget* widget_wrap_child(QWidget* q, Widget* parent)
 void app_init()
 {
   ensure_app();
+}
+
+void app_set_style_sheet(rust::Str style_sheet)
+{
+  ensure_app()->setStyleSheet(QString::fromUtf8(style_sheet.data(), style_sheet.size()));
 }
 
 int app_exec()
@@ -162,6 +279,31 @@ Widget* widget_new_datetime_edit(rust::Str iso_datetime, Widget* parent)
   return new_child(edit, parent);
 }
 
+Widget* widget_new_date_edit(rust::Str iso_date, Widget* parent)
+{
+  auto* edit = new QDateEdit(parent != nullptr ? parent->q : nullptr);
+  edit->setCalendarPopup(true);
+  edit->setDisplayFormat("ddd, d MMM yyyy");
+  const auto value = QDate::fromString(QString::fromUtf8(iso_date.data(), iso_date.size()), Qt::ISODate);
+  edit->setDate(value.isValid() ? value : QDate::currentDate());
+  return new_child(edit, parent);
+}
+
+Widget* widget_new_time_edit(rust::Str iso_time, Widget* parent)
+{
+  auto* edit = new QTimeEdit(parent != nullptr ? parent->q : nullptr);
+  edit->setDisplayFormat("HH:mm");
+  edit->setWrapping(true);
+  const auto value = QTime::fromString(QString::fromUtf8(iso_time.data(), iso_time.size()), "HH:mm");
+  edit->setTime(value.isValid() ? value : QTime::currentTime());
+  return new_child(edit, parent);
+}
+
+Widget* widget_new_disk_map(Widget* parent)
+{
+  return new_child(new DiskMapWidget(parent != nullptr ? parent->q : nullptr), parent);
+}
+
 Widget* widget_new_checkbox(rust::Str text, Widget* parent)
 {
   auto* checkbox = new QCheckBox(QString::fromUtf8(text.data(), text.size()),
@@ -233,8 +375,11 @@ Widget* widget_new_toolbar(Widget* window)
 
 Widget* menu_new(rust::Str title, Widget* menubar)
 {
-  auto* q = new QMenu(QString::fromUtf8(title.data(), title.size()), menubar->q);
-  static_cast<QMenuBar*>(menubar->q)->addMenu(q);
+  // QMenuBar owns menus created through this overload and configures them as
+  // popup menus.  Constructing a QMenu as an ordinary QWidget child prevents
+  // Wayland from granting the popup mouse grab required to open it.
+  auto* q = static_cast<QMenuBar*>(menubar->q)->addMenu(
+    QString::fromUtf8(title.data(), title.size()));
   return new_widget(q, false);
 }
 
@@ -304,6 +449,16 @@ void widget_set_title(Widget* w, rust::Str title)
   }
 }
 
+void widget_set_style_class(Widget* w, rust::Str style_class)
+{
+  if (w != nullptr && w->alive && w->q != nullptr) {
+    w->q->setProperty("yseClass", QString::fromUtf8(style_class.data(), style_class.size()));
+    w->q->style()->unpolish(w->q);
+    w->q->style()->polish(w->q);
+    w->q->update();
+  }
+}
+
 void widget_resize(Widget* w, int width, int height)
 {
   if (w->alive && w->q != nullptr) {
@@ -330,7 +485,12 @@ void layout_add_spacer(Widget* w)
 void grid_add(Widget* grid, Widget* child, int row, int column)
 {
   if (grid->alive && child->alive && grid->q != nullptr && child->q != nullptr) {
-    qobject_cast<QGridLayout*>(grid->q->layout())->addWidget(child->q, row, column);
+    auto* layout = qobject_cast<QGridLayout*>(grid->q->layout());
+    child->q->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    layout->setColumnStretch(column, 1);
+    layout->setRowStretch(row, 1);
+    layout->addWidget(child->q, row, column);
+    grid->q->updateGeometry();
   }
 }
 
@@ -375,6 +535,47 @@ void datetime_edit_set_value(Widget* w, rust::Str iso_datetime)
 rust::String datetime_edit_value(Widget* w)
 {
   return rust::String(static_cast<QDateTimeEdit*>(w->q)->dateTime().toString(Qt::ISODate).toUtf8().constData());
+}
+
+void date_edit_set_value(Widget* w, rust::Str iso_date)
+{
+  if (w->alive && w->q != nullptr) {
+    const auto value = QDate::fromString(QString::fromUtf8(iso_date.data(), iso_date.size()), Qt::ISODate);
+    if (value.isValid()) static_cast<QDateEdit*>(w->q)->setDate(value);
+  }
+}
+
+rust::String date_edit_value(Widget* w)
+{
+  return rust::String(static_cast<QDateEdit*>(w->q)->date().toString(Qt::ISODate).toUtf8().constData());
+}
+
+void time_edit_set_value(Widget* w, rust::Str iso_time)
+{
+  if (w->alive && w->q != nullptr) {
+    const auto value = QTime::fromString(QString::fromUtf8(iso_time.data(), iso_time.size()), "HH:mm");
+    if (value.isValid()) static_cast<QTimeEdit*>(w->q)->setTime(value);
+  }
+}
+
+rust::String time_edit_value(Widget* w)
+{
+  return rust::String(static_cast<QTimeEdit*>(w->q)->time().toString("HH:mm").toUtf8().constData());
+}
+
+void disk_map_set_segments(Widget* w, rust::Vec<rust::String> labels, rust::Vec<double> shares)
+{
+  if (w->alive && w->q != nullptr) {
+    static_cast<DiskMapWidget*>(w->q)->setSegments(std::move(labels), std::move(shares));
+  }
+}
+
+void button_set_icon(Widget* w, rust::Str theme_name)
+{
+  if (w->alive && w->q != nullptr) {
+    static_cast<QPushButton*>(w->q)->setIcon(
+      QIcon::fromTheme(QString::fromUtf8(theme_name.data(), theme_name.size())));
+  }
 }
 
 void checkbox_set_checked(Widget* w, bool checked)
@@ -487,6 +688,21 @@ FileDialog* filedialog_open_new(Widget* parent, rust::Str title)
   auto* q = new QFileDialog(parent != nullptr ? parent->q : nullptr);
   q->setWindowTitle(QString::fromUtf8(title.data(), title.size()));
   q->setFileMode(QFileDialog::ExistingFile);
+  auto* dialog = new FileDialog(q, true, nullptr);
+  dialog->destroyed_connection = QObject::connect(q, &QObject::destroyed, [dialog] {
+    dialog->alive = false;
+    dialog->q = nullptr;
+    dialog->cb_data = nullptr;
+  });
+  return dialog;
+}
+
+FileDialog* filedialog_directory_new(Widget* parent, rust::Str title)
+{
+  auto* q = new QFileDialog(parent != nullptr ? parent->q : nullptr);
+  q->setWindowTitle(QString::fromUtf8(title.data(), title.size()));
+  q->setFileMode(QFileDialog::Directory);
+  q->setOption(QFileDialog::ShowDirsOnly, true);
   auto* dialog = new FileDialog(q, true, nullptr);
   dialog->destroyed_connection = QObject::connect(q, &QObject::destroyed, [dialog] {
     dialog->alive = false;

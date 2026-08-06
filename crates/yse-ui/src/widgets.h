@@ -121,6 +121,7 @@ struct Settings {
 // Application ---------------------------------------------------------------
 
 void app_init();
+void app_set_style_sheet(rust::Str style_sheet);
 int app_exec();
 void app_quit_after(int ms);
 void app_schedule_gui(Void* task);
@@ -133,6 +134,9 @@ Widget* widget_new_label(rust::Str text, Widget* parent);
 Widget* widget_new_button(rust::Str text, Widget* parent);
 Widget* widget_new_line_edit(rust::Str text, Widget* parent);
 Widget* widget_new_datetime_edit(rust::Str iso_datetime, Widget* parent);
+Widget* widget_new_date_edit(rust::Str iso_date, Widget* parent);
+Widget* widget_new_time_edit(rust::Str iso_time, Widget* parent);
+Widget* widget_new_disk_map(Widget* parent);
 Widget* widget_new_checkbox(rust::Str text, Widget* parent);
 Widget* widget_new_row(Widget* parent);
 Widget* widget_new_column(Widget* parent);
@@ -156,6 +160,7 @@ void widget_show(Widget* w);
 void widget_set_visible(Widget* w, bool visible);
 void widget_set_enabled(Widget* w, bool enabled);
 void widget_set_title(Widget* w, rust::Str title);
+void widget_set_style_class(Widget* w, rust::Str style_class);
 void widget_resize(Widget* w, int width, int height);
 void layout_add(Widget* layout, Widget* child);
 void layout_add_spacer(Widget* w);
@@ -172,6 +177,7 @@ void dialog_set_finished_cb(Dialog* d, Void* data);
 void dialog_drop(Dialog* d);
 
 FileDialog* filedialog_open_new(Widget* parent, rust::Str title);
+FileDialog* filedialog_directory_new(Widget* parent, rust::Str title);
 void filedialog_show(FileDialog* d);
 void filedialog_accept(FileDialog* d);
 void filedialog_close(FileDialog* d);
@@ -204,6 +210,12 @@ void line_edit_set_text(Widget* w, rust::Str text);
 rust::String line_edit_text(Widget* w);
 void datetime_edit_set_value(Widget* w, rust::Str iso_datetime);
 rust::String datetime_edit_value(Widget* w);
+void date_edit_set_value(Widget* w, rust::Str iso_date);
+rust::String date_edit_value(Widget* w);
+void time_edit_set_value(Widget* w, rust::Str iso_time);
+rust::String time_edit_value(Widget* w);
+void disk_map_set_segments(Widget* w, rust::Vec<rust::String> labels, rust::Vec<double> shares);
+void button_set_icon(Widget* w, rust::Str theme_name);
 void checkbox_set_checked(Widget* w, bool checked);
 bool checkbox_checked(Widget* w);
 void button_click(Widget* w);

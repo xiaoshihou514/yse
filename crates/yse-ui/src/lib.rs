@@ -48,6 +48,7 @@ mod bridge {
         type Settings;
 
         fn app_init();
+        fn app_set_style_sheet(style_sheet: &str);
         fn app_exec() -> i32;
         fn app_quit_after(ms: i32);
         unsafe fn app_schedule_gui(task: *mut Void);
@@ -58,6 +59,9 @@ mod bridge {
         unsafe fn widget_new_button(text: &str, parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_line_edit(text: &str, parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_datetime_edit(iso_datetime: &str, parent: *mut Widget) -> *mut Widget;
+        unsafe fn widget_new_date_edit(iso_date: &str, parent: *mut Widget) -> *mut Widget;
+        unsafe fn widget_new_time_edit(iso_time: &str, parent: *mut Widget) -> *mut Widget;
+        unsafe fn widget_new_disk_map(parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_checkbox(text: &str, parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_row(parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_column(parent: *mut Widget) -> *mut Widget;
@@ -72,6 +76,7 @@ mod bridge {
         unsafe fn widget_set_visible(w: *mut Widget, visible: bool);
         unsafe fn widget_set_enabled(w: *mut Widget, enabled: bool);
         unsafe fn widget_set_title(w: *mut Widget, title: &str);
+        unsafe fn widget_set_style_class(w: *mut Widget, style_class: &str);
         unsafe fn widget_resize(w: *mut Widget, width: i32, height: i32);
         unsafe fn layout_add(layout: *mut Widget, child: *mut Widget);
         unsafe fn layout_add_spacer(w: *mut Widget);
@@ -82,6 +87,12 @@ mod bridge {
         unsafe fn line_edit_text(w: *mut Widget) -> String;
         unsafe fn datetime_edit_set_value(w: *mut Widget, iso_datetime: &str);
         unsafe fn datetime_edit_value(w: *mut Widget) -> String;
+        unsafe fn date_edit_set_value(w: *mut Widget, iso_date: &str);
+        unsafe fn date_edit_value(w: *mut Widget) -> String;
+        unsafe fn time_edit_set_value(w: *mut Widget, iso_time: &str);
+        unsafe fn time_edit_value(w: *mut Widget) -> String;
+        unsafe fn disk_map_set_segments(w: *mut Widget, labels: Vec<String>, shares: Vec<f64>);
+        unsafe fn button_set_icon(w: *mut Widget, theme_name: &str);
         unsafe fn checkbox_set_checked(w: *mut Widget, checked: bool);
         unsafe fn checkbox_checked(w: *mut Widget) -> bool;
         unsafe fn button_click(w: *mut Widget);
@@ -132,6 +143,7 @@ mod bridge {
         unsafe fn dialog_set_finished_cb(d: *mut Dialog, data: *mut Void);
         unsafe fn dialog_drop(d: *mut Dialog);
         unsafe fn filedialog_open_new(parent: *mut Widget, title: &str) -> *mut FileDialog;
+        unsafe fn filedialog_directory_new(parent: *mut Widget, title: &str) -> *mut FileDialog;
         unsafe fn filedialog_show(d: *mut FileDialog);
         unsafe fn filedialog_accept(d: *mut FileDialog);
         unsafe fn filedialog_close(d: *mut FileDialog);
@@ -264,6 +276,20 @@ impl Application {
         Self
     }
 
+    /// Apply an application-wide Qt style sheet.
+    ///
+    /// Yse otherwise inherits the platform's palette, fonts, and widget
+    /// style. Use an empty sheet (or [`Self::clear_style_sheet`]) to restore
+    /// those defaults.
+    pub fn set_style_sheet(&self, style_sheet: impl AsRef<str>) {
+        ffi::app_set_style_sheet(style_sheet.as_ref());
+    }
+
+    /// Remove an application-wide style sheet and restore the platform style.
+    pub fn clear_style_sheet(&self) {
+        ffi::app_set_style_sheet("");
+    }
+
     /// Run the Qt event loop; returns the application exit code.
     pub fn exec(&self) -> i32 {
         ffi::app_exec()
@@ -371,11 +397,11 @@ impl Window {
 
     /// Create a grid layout inside this window.
     pub fn grid(&self) -> Grid {
-        Grid {
-            inner: unsafe {
-                Component::from_raw_child(ffi::widget_new_grid(self.inner.raw()), &self.inner)
-            },
-        }
+        let inner = unsafe {
+            Component::from_raw_child(ffi::widget_new_grid(self.inner.raw()), &self.inner)
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        Grid { inner }
     }
 
     /// Create a menu bar for this window.
@@ -430,6 +456,16 @@ macro_rules! widget_wrapper {
             /// Escape hatch: the underlying Qt `QWidget` pointer.
             pub fn qobject_ptr(&self) -> *mut Void {
                 self.inner.raw() as *mut Void
+            }
+
+            /// Set an application-defined style class for scoped Qt style-sheet rules.
+            ///
+            /// This leaves the platform style untouched unless the application supplies
+            /// matching rules through [`Application::set_style_sheet`].
+            pub fn set_style_class(&self, style_class: impl AsRef<str>) {
+                if self.inner.is_alive() {
+                    unsafe { ffi::widget_set_style_class(self.inner.raw(), style_class.as_ref()) };
+                }
             }
         }
 
@@ -812,6 +848,19 @@ pub struct Button {
 }
 
 impl Button {
+    /// Use an icon from the active platform icon theme.
+    pub fn set_icon(&self, theme_name: impl AsRef<str>) {
+        if self.inner.is_alive() {
+            unsafe { ffi::button_set_icon(self.inner.raw(), theme_name.as_ref()) };
+        }
+    }
+
+    /// Set an icon-theme name and return the button for chaining.
+    pub fn icon(self, theme_name: impl AsRef<str>) -> Self {
+        self.set_icon(theme_name);
+        self
+    }
+
     /// A stream of click events.
     pub fn clicked(&self) -> EventStream<()> {
         if self.inner.clicked_sink.borrow().is_none() {
@@ -964,6 +1013,75 @@ impl DateTimeEdit {
 }
 
 widget_wrapper!(DateTimeEdit);
+
+/// A Qt calendar date editor with a popup calendar.
+pub struct DateEdit {
+    inner: Rc<Component>,
+}
+
+impl DateEdit {
+    /// Return the selected date in ISO 8601 form.
+    pub fn value(&self) -> String {
+        unsafe { ffi::date_edit_value(self.inner.raw()) }
+    }
+
+    /// Set an ISO 8601 date value.
+    pub fn set_value(&self, value: impl Into<String>) {
+        if self.inner.is_alive() {
+            unsafe { ffi::date_edit_set_value(self.inner.raw(), &value.into()) };
+        }
+    }
+}
+
+widget_wrapper!(DateEdit);
+
+/// A Qt time editor with dedicated hour and minute spin controls.
+pub struct TimeEdit {
+    inner: Rc<Component>,
+}
+
+impl TimeEdit {
+    /// Return the selected local time as `HH:mm`.
+    pub fn value(&self) -> String {
+        unsafe { ffi::time_edit_value(self.inner.raw()) }
+    }
+
+    /// Set a `HH:mm` time value.
+    pub fn set_value(&self, value: impl Into<String>) {
+        if self.inner.is_alive() {
+            unsafe { ffi::time_edit_set_value(self.inner.raw(), &value.into()) };
+        }
+    }
+}
+
+widget_wrapper!(TimeEdit);
+
+/// A painted disk-usage overview that displays proportional child segments.
+pub struct DiskMap {
+    inner: Rc<Component>,
+}
+
+impl DiskMap {
+    /// Replace the displayed segments. Shares are percentages and need not add
+    /// up exactly to 100; the widget normalizes them for display.
+    pub fn set_segments(
+        &self,
+        labels: impl IntoIterator<Item = String>,
+        shares: impl IntoIterator<Item = f64>,
+    ) {
+        if self.inner.is_alive() {
+            unsafe {
+                ffi::disk_map_set_segments(
+                    self.inner.raw(),
+                    labels.into_iter().collect(),
+                    shares.into_iter().collect(),
+                )
+            };
+        }
+    }
+}
+
+widget_wrapper!(DiskMap);
 
 /// A checkbox.
 pub struct CheckBox {
@@ -1530,6 +1648,13 @@ impl Clone for TableView {
 }
 
 impl TableView {
+    /// Show or hide the table without dropping its model or selection state.
+    pub fn set_visible(&self, visible: bool) {
+        if self.inner.is_alive() {
+            unsafe { ffi::widget_set_visible(self.inner.raw(), visible) };
+        }
+    }
+
     /// A stream of selection changes, each carrying the selected row indices.
     pub fn selection_changed(&self) -> EventStream<Vec<usize>> {
         if self.selection.sink.borrow().is_none() {
@@ -1778,6 +1903,26 @@ impl FileDialog {
     /// Create an open-file dialog parented to `window`.
     pub fn open(window: &Window, title: impl Into<String>) -> Self {
         let ptr = unsafe { ffi::filedialog_open_new(window.inner.raw(), &title.into()) };
+        let state = Rc::new_cyclic(|self_weak| FileDialogState {
+            ptr,
+            result_sink: RefCell::new(None),
+            finished: Cell::new(false),
+            parent: Rc::downgrade(&window.inner),
+            self_weak: self_weak.clone(),
+            retained_id: Cell::new(None),
+        });
+        state
+            .retained_id
+            .set(Some(window.inner.retain(state.clone())));
+        unsafe {
+            ffi::filedialog_set_finished_cb(ptr, &*state as *const FileDialogState as *mut Void);
+        }
+        Self { inner: state }
+    }
+
+    /// Create a native folder-selection dialog parented to `window`.
+    pub fn directory(window: &Window, title: impl Into<String>) -> Self {
+        let ptr = unsafe { ffi::filedialog_directory_new(window.inner.raw(), &title.into()) };
         let state = Rc::new_cyclic(|self_weak| FileDialogState {
             ptr,
             result_sink: RefCell::new(None),

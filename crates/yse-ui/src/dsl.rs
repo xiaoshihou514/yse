@@ -24,8 +24,8 @@
 
 use crate::component::Component;
 use crate::{
-    Button, CheckBox, DateTimeEdit, Label, LineEdit, ListView, SelectionBridge, StringListModel,
-    StringTableModel, TableView, Window, ffi,
+    Button, CheckBox, DateEdit, DateTimeEdit, DiskMap, Label, LineEdit, ListView, SelectionBridge,
+    StringListModel, StringTableModel, TableView, TimeEdit, Window, ffi,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -470,6 +470,27 @@ impl Ui {
         let inner =
             self.leaf(unsafe { ffi::widget_new_datetime_edit(&iso_datetime.into(), parent.raw()) });
         DateTimeEdit { inner }
+    }
+
+    /// Create a native Qt calendar date editor.
+    pub fn date_edit(&self, iso_date: impl Into<String>) -> DateEdit {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_date_edit(&iso_date.into(), parent.raw()) });
+        DateEdit { inner }
+    }
+
+    /// Create a native Qt time editor with hour and minute spin controls.
+    pub fn time_edit(&self, iso_time: impl Into<String>) -> TimeEdit {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_time_edit(&iso_time.into(), parent.raw()) });
+        TimeEdit { inner }
+    }
+
+    /// Create a proportional disk-usage overview.
+    pub fn disk_map(&self) -> DiskMap {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_disk_map(parent.raw()) });
+        DiskMap { inner }
     }
 
     /// Create a checkbox in this layout.
