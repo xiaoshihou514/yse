@@ -9,6 +9,7 @@ mod action;
 mod callback;
 mod component;
 mod dsl;
+mod media;
 
 #[cxx::bridge(namespace = "yse_ui")]
 mod bridge {
@@ -17,8 +18,22 @@ mod bridge {
         cells: Vec<String>,
     }
 
+    struct MediaProbeResult {
+        ok: bool,
+        summary: String,
+        duration_ms: i64,
+        has_video: bool,
+        has_audio: bool,
+    }
+
+    struct MediaConvertResult {
+        ok: bool,
+        message: String,
+    }
+
     unsafe extern "C++" {
         include!("yse-ui/src/widgets.h");
+        include!("yse-ui/src/media.h");
 
         type Widget;
         type Void;
@@ -127,6 +142,9 @@ mod bridge {
         unsafe fn widget_set_clicked_cb(w: *mut Widget, data: *mut Void);
         unsafe fn widget_set_text_changed_cb(w: *mut Widget, data: *mut Void);
         unsafe fn widget_set_toggled_cb(w: *mut Widget, data: *mut Void);
+
+        fn media_probe(path: &str) -> MediaProbeResult;
+        fn media_convert(input: &str, output: &str, preset: i32) -> MediaConvertResult;
     }
 
     extern "Rust" {
@@ -203,7 +221,12 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use yse_model::{EventStream, ListChange, ListModel, Scheduler, Signal, Sink, Subscription, Var};
 
-pub use dsl::{button, checkbox, column, label, line_edit, list_view, row, spacer, table_view};
+pub use dsl::{
+    BoolValue, ButtonView, CheckBoxView, IntoBoolValue, IntoTextValue, LabelView, LayoutView,
+    LineEditView, MountContext, SpacerView, TextValue, Ui, View, button, checkbox, column, label,
+    line_edit, row, spacer,
+};
+pub use media::{MediaInfo, MediaPreset, convert_media, probe_media};
 
 /// Clone each named binding and move the clones into `body` (typically a
 /// `move` closure), avoiding `let x = x.clone();` boilerplate.

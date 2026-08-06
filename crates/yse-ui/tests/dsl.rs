@@ -11,14 +11,12 @@ fn declarative_tree_builds_and_retains_widgets() {
     let window = Window::new();
     let count = Var::new(0u32);
 
-    let (label, button) = window.ui(|| {
-        column(|| {
-            let label = label("");
-            label.bind_text(&count.signal().map(|c| format!("Count: {c}")));
-            let button = button("Increment");
-            button.on_click(clone!(count => move |_| count.set(*count.value() + 1)));
-            (label, button)
-        })
+    let (label, button) = window.ui().column(|ui| {
+        let label = ui.label("");
+        label.bind_text(&count.signal().map(|c| format!("Count: {c}")));
+        let button = ui.button("Increment");
+        button.on_click(clone!(count => move |_| count.set(*count.value() + 1)));
+        (label, button)
     });
 
     button.click();
@@ -35,17 +33,73 @@ fn declarative_tree_builds_and_retains_widgets() {
 }
 
 #[test]
+fn laminar_style_views_mount_with_reactive_modifiers() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let count = Var::new(0u32);
+    let caption = count.signal().map(|count| format!("Count: {count}"));
+    let can_increment = count.signal().map(|count| *count < 2);
+
+    let (label, (_, button)) = window.mount(column((
+        label(caption),
+        row((
+            spacer(),
+            button("Increment")
+                .enabled(can_increment)
+                .on_click(clone!(count => move |_| count.set(*count.value() + 1))),
+        )),
+    )));
+
+    assert_eq!(label.text(), "Count: 0");
+    button.click();
+    assert_eq!(label.text(), "Count: 1");
+    button.click();
+    assert_eq!(label.text(), "Count: 2");
+}
+
+#[test]
+fn controlled_input_uses_var_as_two_way_state() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let name = Var::new(String::from("Ada"));
+    let (input,) = window.mount(column((line_edit("").controlled(name.clone()),)));
+
+    assert_eq!(input.text(), "Ada");
+    name.set(String::from("Grace"));
+    assert_eq!(input.text(), "Grace");
+}
+
+#[test]
 fn leaf_widgets_require_a_layout() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
     let _app = Application::init();
     let window = Window::new();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        window.ui(|| {
-            label("orphan");
-        });
+        window.ui().label("orphan");
     }));
     assert!(result.is_err(), "a leaf widget without a layout must panic");
+}
+
+#[test]
+fn ui_scope_owns_non_widget_subscriptions() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let count = Var::new(0u32);
+
+    window.ui().column(|ui| {
+        ui.own(count.signal().observe(|_| {}));
+    });
+    assert_eq!(count.signal().observer_count(), 1);
+
+    drop(window);
+    assert_eq!(count.signal().observer_count(), 0);
 }
 
 #[test]

@@ -5,10 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use yse_model::{Command, UndoStack, Var, spawn_task};
-use yse_ui::{
-    Application, MessageBox, MessageBoxButtons, QtGuiScheduler, Window, button, checkbox, clone,
-    column, label, line_edit, row,
-};
+use yse_ui::{Application, MessageBox, MessageBoxButtons, QtGuiScheduler, Window, clone};
 
 /// A reversible name edit, demonstrating undo/redo integration.
 struct SetName {
@@ -63,33 +60,31 @@ fn main() {
 
     // Declarative widget tree: reads top-down; handlers and bindings are
     // registered on the widgets and die with the tree.
-    let (greeting_label, status_label, load_label, submit, remember) = window.ui(|| {
-        column(|| {
-            let greeting_label = label("");
-            greeting_label.bind_text(&name_var.signal().map(|n| format!("Hello, {n}!")));
+    let (greeting_label, status_label, load_label, submit, remember) = window.ui().column(|ui| {
+        let greeting_label = ui.label("");
+        greeting_label.bind_text(&name_var.signal().map(|n| format!("Hello, {n}!")));
 
-            line_edit("Name").bind_text_two_way(&name_var);
+        ui.line_edit("Name").bind_text_two_way(&name_var);
 
-            let remember = checkbox("Remember me");
-            remember.bind_checked(&remember_var.signal());
+        let remember = ui.checkbox("Remember me");
+        remember.bind_checked(&remember_var.signal());
 
-            let status_label = label("idle");
-            status_label.bind_text(&status_var.signal());
+        let status_label = ui.label("idle");
+        status_label.bind_text(&status_var.signal());
 
-            let load_label = label("loading…");
-            load_label.bind_text(&load_var.signal());
+        let load_label = ui.label("loading…");
+        load_label.bind_text(&load_var.signal());
 
-            let submit = row(|| {
-                let submit = button("Submit");
-                submit.bind_enabled(&name_var.signal().map(|n| !n.is_empty()));
-                submit.on_click(clone!(status_var => move |_| {
-                    status_var.set(String::from("submitted"));
-                }));
-                submit
-            });
+        let submit = ui.row(|ui| {
+            let submit = ui.button("Submit");
+            submit.bind_enabled(&name_var.signal().map(|n| !n.is_empty()));
+            submit.on_click(clone!(status_var => move |_| {
+                status_var.set(String::from("submitted"));
+            }));
+            submit
+        });
 
-            (greeting_label, status_label, load_label, submit, remember)
-        })
+        (greeting_label, status_label, load_label, submit, remember)
     });
 
     // Menu wiring.

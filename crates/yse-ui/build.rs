@@ -3,6 +3,7 @@ fn main() {
         .file("src/lib.rs")
         .cpp_file("src/widgets.cpp")
         .cpp_file("src/model.cpp")
+        .cpp_file("src/media.cpp")
         .qt_module("Gui")
         .qt_module("Widgets");
     // MSVC assumes the system code page for narrow literals; force UTF-8 so
@@ -13,4 +14,8 @@ fn main() {
         });
     }
     builder.build();
+
+    for library in ["avformat", "avcodec", "avfilter", "avutil"] {
+        println!("cargo:rustc-link-lib={library}");
+    }
 }

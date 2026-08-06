@@ -11,7 +11,7 @@ use std::time::Duration;
 use yse_model::{CancellationToken, Command, ListModel, Task, UndoStack, Var, spawn_task};
 use yse_ui::{
     Application, MessageBox, MessageBoxButtons, QtGuiScheduler, Settings, StringTableModel, Window,
-    button, clone, column, label, line_edit, table_view,
+    clone,
 };
 
 type LoadResult = Result<Vec<Vec<String>>, String>;
@@ -153,17 +153,17 @@ fn main() {
 
     // Declarative widget tree: selection and apply handlers are registered on
     // the widgets themselves and are released with the tree.
-    let (view, name_edit, apply, status_label) = window.ui(|| {
-        column(|| {
-            let view = table_view(&table);
+    let (view, name_edit, apply, status_label) = window.ui().column(|ui| {
+        let view = ui.table_view(&table);
 
-            let filter_edit = line_edit("Filter");
-            filter_edit.bind_text_two_way(&filter_var);
+        let filter_edit = ui.line_edit("Filter");
+        filter_edit.bind_text_two_way(&filter_var);
 
-            let name_edit = line_edit("Name");
-            let score_edit = line_edit("Score");
+        let name_edit = ui.line_edit("Name");
+        let score_edit = ui.line_edit("Score");
 
-            view.on_selection(clone!(records, visible_indices, name_edit, score_edit => move |rows| {
+        view.on_selection(
+            clone!(records, visible_indices, name_edit, score_edit => move |rows| {
                 if let Some(&row) = rows.first()
                     && let Some(&index) = visible_indices.borrow().get(row)
                     && let Some(record) = records.get(index)
@@ -171,10 +171,12 @@ fn main() {
                     name_edit.set_text(record[0].clone());
                     score_edit.set_text(record[1].clone());
                 }
-            }));
+            }),
+        );
 
-            let apply = button("Apply edit");
-            apply.on_click(clone!(records, visible_indices, view, name_edit, score_edit, undo_stack => move |_| {
+        let apply = ui.button("Apply edit");
+        apply.on_click(
+            clone!(records, visible_indices, view, name_edit, score_edit, undo_stack => move |_| {
                 if let Some(&row) = view.selected_rows().first()
                     && let Some(&index) = visible_indices.borrow().get(row)
                     && let Some(old) = records.get(index)
@@ -189,13 +191,13 @@ fn main() {
                         }));
                     }
                 }
-            }));
+            }),
+        );
 
-            let status_label = label("idle");
-            status_label.bind_text(&status_var.signal());
+        let status_label = ui.label("idle");
+        status_label.bind_text(&status_var.signal());
 
-            (view, name_edit, apply, status_label)
-        })
+        (view, name_edit, apply, status_label)
     });
 
     // Reactive refresh of the visible (filtered + sorted) rows.
