@@ -71,3 +71,21 @@ fn child_dropped_before_window_is_safe() {
     drop(button);
     drop(window);
 }
+
+#[test]
+fn temporary_child_keeps_its_binding_until_window_teardown() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let flag = Var::new(true);
+
+    // The only public Button wrapper is immediately dropped. The window's
+    // retained component tree must still own the binding while its native
+    // child exists.
+    window.column().button("Go").bind_enabled(&flag.signal());
+    assert_eq!(flag.signal().observer_count(), 1);
+
+    drop(window);
+    assert_eq!(flag.signal().observer_count(), 0);
+}

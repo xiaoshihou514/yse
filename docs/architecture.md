@@ -31,6 +31,10 @@ The graph is synchronous, single-threaded, and reference-counted
 - Multiple writes in one `transaction(...)` block notify observers once, with
   the final value. Writes performed during propagation are queued and applied
   in FIFO order in a follow-up pass.
+- A transaction body that panics still settles the writes it already made,
+  clears transaction bookkeeping, and then resumes the original panic. A
+  panicking propagation pass discards its queued stream inputs and resets all
+  scheduled markers, so a later transaction is never silently skipped.
 - Every observation returns a `Subscription`; dropping it (directly or through
   an `Owner`) unsubscribes. Signals always keep current values; streams start
   with their first observer and stop with their last.
@@ -49,10 +53,13 @@ Each widget family is a Rust wrapper around a hand-written C++ shim
 (`src/widgets.cpp` + `src/model.cpp`), bridged with cxx. The shim owns raw
 Qt objects; Rust owns state and lifecycle.
 
-- Every component owns an `Owner` tied to the Qt object lifetime: a
-  `destroyed` hook clears bindings, and wrapper drop performs targeted signal
-  disconnects, so both teardown orders (wrapper first or widget first) are
-  safe.
+- The Rust component tree mirrors Qt parentage (strong parent-to-child,
+  weak child-to-parent). It retains callback state, models, selections,
+  actions, and non-modal dialogs for exactly the native lifetime that can call
+  them. Every component owns an `Owner` tied to the Qt object lifetime: a
+  `destroyed` hook clears bindings, and wrapper drop disconnects only its own
+  saved Qt connections, so both teardown orders are safe without disturbing
+  embedder-installed connections.
 - Bindings: signal-to-property (`bind_text`, `bind_enabled`, ...), widget
   signals to `EventStream` (`clicked()`, `text_changed()`, `toggled()`,
   `selection_changed()`, `triggered()`), and two-way line-edit bindings with a

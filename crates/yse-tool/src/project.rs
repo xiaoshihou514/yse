@@ -165,8 +165,8 @@ pub fn write_project_local(project: &Project, target: &Path) -> Result<(), Strin
     Ok(())
 }
 
-/// Build a release and lay out `dist/<name>/` with the platform binary and a
-/// deployment note. Invokes `windeployqt`/`macdeployqt` when available.
+/// Build a release and lay out `dist/<name>/` with the platform binary.
+/// Windows and macOS invoke Qt's deployment tools to make the output portable.
 pub fn bundle(project: &Project) -> Result<(), String> {
     let dist = env::current_dir()
         .map_err(|error| format!("cannot read current directory: {error}"))?
@@ -175,12 +175,31 @@ pub fn bundle(project: &Project) -> Result<(), String> {
     fs::create_dir_all(&dist)
         .map_err(|error| format!("cannot create {}: {error}", dist.display()))?;
 
+    let binary_name = format!("{}{}", project.name, env::consts::EXE_SUFFIX);
     let binary = env::current_dir()
         .map_err(|error| error.to_string())?
         .join("target")
         .join("release")
-        .join(&project.name);
-    let destination = dist.join(&project.name);
+        .join(binary_name);
+    #[cfg(not(target_os = "macos"))]
+    let destination = dist.join(format!("{}{}", project.name, env::consts::EXE_SUFFIX));
+
+    #[cfg(target_os = "macos")]
+    let destination = {
+        let app = dist.join(format!("{}.app", project.title));
+        let macos = app.join("Contents").join("MacOS");
+        fs::create_dir_all(&macos)
+            .map_err(|error| format!("cannot create {}: {error}", macos.display()))?;
+        fs::write(
+            app.join("Contents").join("Info.plist"),
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>CFBundleExecutable</key><string>{}</string><key>CFBundleIdentifier</key><string>dev.yse.{}</string><key>CFBundleName</key><string>{}</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>\n",
+                project.name, project.name_snake, project.title
+            ),
+        )
+        .map_err(|error| format!("cannot write macOS bundle metadata: {error}"))?;
+        macos.join(&project.name)
+    };
     fs::copy(&binary, &destination)
         .map_err(|error| format!("cannot copy binary {}: {error}", binary.display()))?;
 
@@ -199,7 +218,10 @@ pub fn bundle(project: &Project) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     run_deploy_tool(
         "macdeployqt",
-        &[format!("{}.app", destination.to_string_lossy())],
+        &[dist
+            .join(format!("{}.app", project.title))
+            .to_string_lossy()
+            .to_string()],
         &dist,
     )?;
 

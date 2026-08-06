@@ -99,31 +99,32 @@ fn command_new(args: &[String]) -> Result<(), String> {
 
 fn command_dev(args: &[String]) -> Result<(), String> {
     check_qt()?;
-    let extra = args.join(" ");
-    run_cargo(&format!("run {extra}"))
+    let mut cargo_args = vec!["run".to_string()];
+    cargo_args.extend_from_slice(args);
+    run_cargo(&cargo_args)
 }
 
 fn command_test(_args: &[String]) -> Result<(), String> {
     check_qt()?;
-    run_cargo("test")
+    run_cargo(&["test".to_string()])
 }
 
 fn command_bundle(_args: &[String]) -> Result<(), String> {
     check_qt()?;
     let project = project::Project::from_manifest("yse.toml")?;
-    run_cargo("build --release")?;
+    run_cargo(&["build".to_string(), "--release".to_string()])?;
     project::bundle(&project)
 }
 
-fn run_cargo(subcommand: &str) -> Result<(), String> {
+fn run_cargo(args: &[String]) -> Result<(), String> {
     let status = Command::new("cargo")
-        .args(subcommand.split_whitespace())
+        .args(args)
         .status()
         .map_err(|error| format!("failed to run cargo: {error}"))?;
     if status.success() {
         Ok(())
     } else {
-        Err(format!("cargo {subcommand} failed"))
+        Err(format!("cargo {} failed", args.join(" ")))
     }
 }
 
@@ -137,11 +138,13 @@ fn check_qt() -> Result<(), String> {
     if found {
         return Ok(());
     }
-    let has_qmake = Command::new("qmake6")
-        .arg("-v")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
+    let has_qmake = ["qmake6", "qmake"].iter().any(|tool| {
+        Command::new(tool)
+            .arg("-v")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    });
     if has_qmake {
         return Ok(());
     }

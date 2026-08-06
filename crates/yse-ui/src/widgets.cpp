@@ -184,27 +184,18 @@ void widget_drop(Widget* w)
   if (w == nullptr) {
     return;
   }
-  if (w->alive && w->q != nullptr) {
-    // Disconnect exactly the connections this shim installed, so no Qt signal
-    // can touch a freed component after the wrapper is dropped. Targeted
-    // disconnects avoid Qt's wildcard warning.
-    QObject::disconnect(w->q, &QObject::destroyed, nullptr, nullptr);
-    if (auto* button = qobject_cast<QPushButton*>(w->q)) {
-      QObject::disconnect(button, &QPushButton::clicked, nullptr, nullptr);
-    }
-    if (auto* edit = qobject_cast<QLineEdit*>(w->q)) {
-      QObject::disconnect(edit, &QLineEdit::textChanged, nullptr, nullptr);
-    }
-    if (auto* box = qobject_cast<QCheckBox*>(w->q)) {
-      QObject::disconnect(box, &QCheckBox::toggled, nullptr, nullptr);
-    }
-    if (auto* list = qobject_cast<QListView*>(w->q)) {
-      if (auto* selection = list->selectionModel()) {
-        QObject::disconnect(
-          selection, &QItemSelectionModel::selectionChanged, nullptr, nullptr);
-      }
-    }
-  }
+  // A wrapper owns exactly these connections. Never use a wildcard
+  // disconnect here: embedders may have installed unrelated Qt connections.
+  QObject::disconnect(w->destroyed_connection);
+  QObject::disconnect(w->clicked_connection);
+  QObject::disconnect(w->text_changed_connection);
+  QObject::disconnect(w->toggled_connection);
+  QObject::disconnect(w->selection_connection);
+  w->destroyed_cb_data = nullptr;
+  w->clicked_cb_data = nullptr;
+  w->text_changed_cb_data = nullptr;
+  w->toggled_cb_data = nullptr;
+  w->selection_cb_data = nullptr;
   if (w->owned && w->alive) {
     // Windows own their QWidget; children are deleted by their Qt parent.
     delete w->q;
@@ -331,7 +322,13 @@ Dialog* dialog_message_new(Widget* parent, rust::Str title, rust::Str text, int 
       q->setStandardButtons(QMessageBox::Ok);
       break;
   }
-  return new Dialog{ q, true, 0, nullptr };
+  auto* dialog = new Dialog(q, true, 0, nullptr);
+  dialog->destroyed_connection = QObject::connect(q, &QObject::destroyed, [dialog] {
+    dialog->alive = false;
+    dialog->q = nullptr;
+    dialog->cb_data = nullptr;
+  });
+  return dialog;
 }
 
 void dialog_show(Dialog* d)
@@ -362,15 +359,20 @@ int dialog_last_result(Dialog* d)
 
 void dialog_set_finished_cb(Dialog* d, Void* data)
 {
+  QObject::disconnect(d->finished_connection);
   d->cb_data = static_cast<void*>(data);
-  QObject::connect(
+  d->finished_connection = QObject::connect(
     d->q, &QMessageBox::finished, d->q, [d](int result) {
       d->last_result = result;
-      if (d->cb_data != nullptr) {
-        yse_ui::on_dialog_finished(static_cast<yse_ui::Void*>(d->cb_data));
-      }
+      auto* data = static_cast<yse_ui::Void*>(d->cb_data);
+      auto* q = d->q;
       d->alive = false;
-      d->q->deleteLater();
+      d->cb_data = nullptr;
+      if (data != nullptr) {
+        yse_ui::on_dialog_finished(data);
+      }
+      d->q = nullptr;
+      q->deleteLater();
     });
 }
 
@@ -379,8 +381,10 @@ void dialog_drop(Dialog* d)
   if (d == nullptr) {
     return;
   }
+  QObject::disconnect(d->finished_connection);
+  QObject::disconnect(d->destroyed_connection);
   if (d->alive && d->q != nullptr) {
-    QObject::disconnect(d->q, &QMessageBox::finished, nullptr, nullptr);
+    delete d->q;
   }
   d->alive = false;
   d->cb_data = nullptr;
@@ -392,7 +396,13 @@ FileDialog* filedialog_open_new(Widget* parent, rust::Str title)
   auto* q = new QFileDialog(parent != nullptr ? parent->q : nullptr);
   q->setWindowTitle(QString::fromUtf8(title.data(), title.size()));
   q->setFileMode(QFileDialog::ExistingFile);
-  return new FileDialog{ q, true, nullptr };
+  auto* dialog = new FileDialog(q, true, nullptr);
+  dialog->destroyed_connection = QObject::connect(q, &QObject::destroyed, [dialog] {
+    dialog->alive = false;
+    dialog->q = nullptr;
+    dialog->cb_data = nullptr;
+  });
+  return dialog;
 }
 
 void filedialog_show(FileDialog* d)
@@ -427,14 +437,19 @@ rust::String filedialog_selected_file(FileDialog* d)
 
 void filedialog_set_finished_cb(FileDialog* d, Void* data)
 {
+  QObject::disconnect(d->finished_connection);
   d->cb_data = static_cast<void*>(data);
-  QObject::connect(
+  d->finished_connection = QObject::connect(
     d->q, &QFileDialog::finished, d->q, [d](int /*result*/) {
-      if (d->cb_data != nullptr) {
-        yse_ui::on_filedialog_finished(static_cast<yse_ui::Void*>(d->cb_data));
-      }
+      auto* data = static_cast<yse_ui::Void*>(d->cb_data);
+      auto* q = d->q;
       d->alive = false;
-      d->q->deleteLater();
+      d->cb_data = nullptr;
+      if (data != nullptr) {
+        yse_ui::on_filedialog_finished(data);
+      }
+      d->q = nullptr;
+      q->deleteLater();
     });
 }
 
@@ -443,8 +458,10 @@ void filedialog_drop(FileDialog* d)
   if (d == nullptr) {
     return;
   }
+  QObject::disconnect(d->finished_connection);
+  QObject::disconnect(d->destroyed_connection);
   if (d->alive && d->q != nullptr) {
-    QObject::disconnect(d->q, &QFileDialog::finished, nullptr, nullptr);
+    delete d->q;
   }
   d->alive = false;
   d->cb_data = nullptr;
@@ -510,12 +527,11 @@ void action_drop(Action* a)
   if (a == nullptr) {
     return;
   }
-  if (a->alive && a->q != nullptr) {
-    QObject::disconnect(a->q, &QObject::destroyed, nullptr, nullptr);
-    QObject::disconnect(a->q, &QAction::triggered, nullptr, nullptr);
-  }
+  QObject::disconnect(a->destroyed_connection);
+  QObject::disconnect(a->triggered_connection);
   a->alive = false;
-  a->cb_data = nullptr;
+  a->triggered_cb_data = nullptr;
+  a->destroyed_cb_data = nullptr;
   delete a;
 }
 
@@ -550,62 +566,79 @@ void action_trigger(Action* a)
 
 void action_set_triggered_cb(Action* a, Void* data)
 {
-  a->cb_data = static_cast<void*>(data);
-  QObject::connect(a->q, &QAction::triggered, [a] {
-    if (a->cb_data != nullptr) {
-      yse_ui::on_action_triggered(static_cast<yse_ui::Void*>(a->cb_data));
+  QObject::disconnect(a->triggered_connection);
+  a->triggered_cb_data = static_cast<void*>(data);
+  a->triggered_connection = QObject::connect(a->q, &QAction::triggered, [a] {
+    if (a->triggered_cb_data != nullptr) {
+      yse_ui::on_action_triggered(
+        static_cast<yse_ui::Void*>(a->triggered_cb_data));
     }
   });
 }
 
 void action_set_destroyed_cb(Action* a, Void* data)
 {
-  a->cb_data = static_cast<void*>(data);
-  QObject::connect(a->q, &QObject::destroyed, [a] {
-    if (a->cb_data != nullptr) {
-      yse_ui::on_action_destroyed(static_cast<yse_ui::Void*>(a->cb_data));
-    }
+  QObject::disconnect(a->destroyed_connection);
+  a->destroyed_cb_data = static_cast<void*>(data);
+  a->destroyed_connection = QObject::connect(a->q, &QObject::destroyed, [a] {
+    auto* data = static_cast<yse_ui::Void*>(a->destroyed_cb_data);
     a->alive = false;
+    a->q = nullptr;
+    a->destroyed_cb_data = nullptr;
+    if (data != nullptr) {
+      yse_ui::on_action_destroyed(data);
+    }
   });
 }
 
 void widget_set_destroyed_cb(Widget* w, Void* data)
 {
-  w->cb_data = static_cast<void*>(data);
-  QObject::connect(w->q, &QObject::destroyed, [w] {
-    if (w->cb_data != nullptr) {
-      yse_ui::on_widget_destroyed(static_cast<yse_ui::Void*>(w->cb_data));
-    }
+  QObject::disconnect(w->destroyed_connection);
+  w->destroyed_cb_data = static_cast<void*>(data);
+  w->destroyed_connection = QObject::connect(w->q, &QObject::destroyed, [w] {
+    auto* data = static_cast<yse_ui::Void*>(w->destroyed_cb_data);
     w->alive = false;
+    w->q = nullptr;
+    w->destroyed_cb_data = nullptr;
+    if (data != nullptr) {
+      yse_ui::on_widget_destroyed(data);
+    }
   });
 }
 
 void widget_set_clicked_cb(Widget* w, Void* data)
 {
-  w->cb_data = static_cast<void*>(data);
-  QObject::connect(static_cast<QPushButton*>(w->q), &QPushButton::clicked, [w] {
-    if (w->cb_data != nullptr) {
-      yse_ui::on_widget_clicked(static_cast<yse_ui::Void*>(w->cb_data));
+  QObject::disconnect(w->clicked_connection);
+  w->clicked_cb_data = static_cast<void*>(data);
+  w->clicked_connection = QObject::connect(
+    static_cast<QPushButton*>(w->q), &QPushButton::clicked, [w] {
+    if (w->clicked_cb_data != nullptr) {
+      yse_ui::on_widget_clicked(static_cast<yse_ui::Void*>(w->clicked_cb_data));
     }
   });
 }
 
 void widget_set_text_changed_cb(Widget* w, Void* data)
 {
-  w->cb_data = static_cast<void*>(data);
-  QObject::connect(static_cast<QLineEdit*>(w->q), &QLineEdit::textChanged, [w] {
-    if (w->cb_data != nullptr) {
-      yse_ui::on_text_changed(static_cast<yse_ui::Void*>(w->cb_data));
+  QObject::disconnect(w->text_changed_connection);
+  w->text_changed_cb_data = static_cast<void*>(data);
+  w->text_changed_connection = QObject::connect(
+    static_cast<QLineEdit*>(w->q), &QLineEdit::textChanged, [w] {
+    if (w->text_changed_cb_data != nullptr) {
+      yse_ui::on_text_changed(
+        static_cast<yse_ui::Void*>(w->text_changed_cb_data));
     }
   });
 }
 
 void widget_set_toggled_cb(Widget* w, Void* data)
 {
-  w->cb_data = static_cast<void*>(data);
-  QObject::connect(static_cast<QCheckBox*>(w->q), &QCheckBox::toggled, [w] {
-    if (w->cb_data != nullptr) {
-      yse_ui::on_toggled(static_cast<yse_ui::Void*>(w->cb_data));
+  QObject::disconnect(w->toggled_connection);
+  w->toggled_cb_data = static_cast<void*>(data);
+  w->toggled_connection = QObject::connect(
+    static_cast<QCheckBox*>(w->q), &QCheckBox::toggled, [w] {
+    if (w->toggled_cb_data != nullptr) {
+      yse_ui::on_toggled(static_cast<yse_ui::Void*>(w->toggled_cb_data));
     }
   });
 }

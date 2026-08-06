@@ -1,6 +1,5 @@
 use yse_ui::{Application, StringListModel, Window};
 
-#[test]
 fn list_view_applies_incremental_changes() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -36,7 +35,6 @@ fn list_view_applies_incremental_changes() {
     assert_eq!(model.row_count(), 0);
 }
 
-#[test]
 fn list_view_selection_streams_changes() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -62,4 +60,13 @@ fn list_view_selection_streams_changes() {
     assert!(view.selected_rows().is_empty());
 
     assert_eq!(*seen.borrow(), vec![vec![1], vec![0], Vec::<usize>::new()]);
+}
+
+// Qt permits one QApplication per process and binds it to its creating
+// thread. Keeping this integration binary to one test prevents Rust's test
+// harness from running the two cases on different worker threads.
+#[test]
+fn list_view_cases_share_one_qt_thread() {
+    list_view_applies_incremental_changes();
+    list_view_selection_streams_changes();
 }

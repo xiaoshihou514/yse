@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use yse_model::*;
 
@@ -76,6 +77,32 @@ fn transaction_batches_multiple_writes() {
 
     // Observers see only the final value of the transaction.
     assert_eq!(*seen.borrow(), vec![0, 2]);
+}
+
+#[test]
+fn panicking_transaction_commits_and_leaves_graph_usable() {
+    let value = Var::new(0);
+    let doubled = value.signal().map(|value| value * 2);
+    let seen = collect();
+    let seen_rc = seen.clone();
+    let _sub = doubled.observe(move |current| seen_rc.borrow_mut().push(*current));
+
+    let panic = catch_unwind(AssertUnwindSafe(|| {
+        transaction(|| {
+            value.set(1);
+            panic!("intentional transaction panic");
+        });
+    }));
+    assert!(panic.is_err());
+    // Writes commit and derived state is settled even while the caller gets
+    // its original panic back.
+    assert_eq!(*doubled.value(), 2);
+    assert_eq!(*seen.borrow(), vec![0, 2]);
+
+    // No node remains marked as scheduled after the unwind.
+    value.set(2);
+    assert_eq!(*doubled.value(), 4);
+    assert_eq!(*seen.borrow(), vec![0, 2, 4]);
 }
 
 #[test]

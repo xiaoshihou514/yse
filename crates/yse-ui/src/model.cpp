@@ -171,15 +171,17 @@ Widget* widget_new_table_view(TableModel* m, Widget* parent)
 
 void view_set_selection_cb(Widget* view, Void* data)
 {
-  view->cb_data = static_cast<void*>(data);
+  QObject::disconnect(view->selection_connection);
+  view->selection_cb_data = static_cast<void*>(data);
   auto* item_view = static_cast<QAbstractItemView*>(view->q);
-  QObject::connect(
+  view->selection_connection = QObject::connect(
     item_view->selectionModel(),
     &QItemSelectionModel::selectionChanged,
     item_view,
     [view] {
-      if (view->cb_data != nullptr) {
-        yse_ui::on_selection_changed(static_cast<yse_ui::Void*>(view->cb_data));
+      if (view->selection_cb_data != nullptr) {
+        yse_ui::on_selection_changed(
+          static_cast<yse_ui::Void*>(view->selection_cb_data));
       }
     });
 }

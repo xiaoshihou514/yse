@@ -133,9 +133,14 @@ that proves the no-QML Qt Widgets path with a small C++ shim.
 ## Build and run
 
 ```sh
+just --list                  # list development shortcuts
+just check                   # format check, lint, tests, and docs
 cargo build
 cargo run -p yse-spike
 ```
+
+Install [`just`](https://just.systems/) to use the shortcuts; the underlying
+Cargo commands remain usable directly.
 
 For a deterministic headless smoke run:
 

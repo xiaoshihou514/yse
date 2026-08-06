@@ -221,7 +221,7 @@ fn schedule_into(tx: &TxState, node: Rc<dyn Node>) {
 /// Run `f` inside a single transaction. Nested calls join the outer transaction.
 ///
 /// Writes applied inside the block become visible immediately to readers, and
-/// are propagated once when the block ends. Writes performed during
+/// are propagated once when the block ends, including when `f` panics. Writes performed during
 /// propagation (from inside observers) are queued and applied in FIFO order
 /// after the current pass.
 pub fn transaction<R>(f: impl FnOnce() -> R) -> R {
@@ -234,7 +234,7 @@ pub fn transaction<R>(f: impl FnOnce() -> R) -> R {
     crate::diagnostics::Diagnostics::emit(DiagnosticEvent::TransactionStarted { id: tx_rc.id });
 
     let result = catch_unwind(AssertUnwindSafe(f));
-    if result.is_ok() {
+    let propagation = catch_unwind(AssertUnwindSafe(|| {
         tx_rc.propagating.set(true);
         loop {
             process_work(&tx_rc);
@@ -246,6 +246,10 @@ pub fn transaction<R>(f: impl FnOnce() -> R) -> R {
                 }
             }
         }
+    }));
+    tx_rc.propagating.set(false);
+    if propagation.is_err() {
+        abort_transaction(&tx_rc);
     }
 
     TX.with(|t| *t.borrow_mut() = None);
@@ -259,11 +263,17 @@ pub fn transaction<R>(f: impl FnOnce() -> R) -> R {
 
     match result {
         Ok(value) => {
+            if let Err(payload) = propagation {
+                resume_unwind(payload);
+            }
             if let Some(panic) = tx_rc.panic.borrow_mut().take() {
                 resume_unwind(panic);
             }
             value
         }
+        // State writes are deliberately committed before this point. This is
+        // the only useful general rule for arbitrary `T`: rolling them back
+        // would require cloning or compensating every writable node.
         Err(payload) => resume_unwind(payload),
     }
 }
@@ -401,6 +411,31 @@ fn deliver_fires(tx: &TxState) {
             *tx.panic.borrow_mut() = Some(payload);
         }
     }
+}
+
+/// Clear the bookkeeping left by a panicking propagation pass. In particular,
+/// every queued node must lose its scheduled bit or a later transaction would
+/// silently skip it forever. Stream inputs belong to the aborted pass and are
+/// discarded with that pass.
+fn abort_transaction(tx: &TxState) {
+    let mut seen = HashSet::new();
+    let mut discard = |node: Rc<dyn Node>| {
+        let address = Rc::as_ptr(&node) as *const () as usize;
+        if seen.insert(address) {
+            node.set_scheduled(false);
+            node.take_incoming();
+        }
+    };
+
+    let work = std::mem::take(&mut *tx.work.borrow_mut());
+    for (_, node) in work {
+        discard(node);
+    }
+    let deferred = std::mem::take(&mut *tx.deferred.borrow_mut());
+    for write in deferred {
+        discard(write.node);
+    }
+    tx.fires.borrow_mut().clear();
 }
 
 /// Recompute every signal ancestor of `node` in topological order, so that a

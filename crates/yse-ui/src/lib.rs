@@ -197,7 +197,7 @@ unsafe fn on_filedialog_finished(data: *mut bridge::Void) {
 use crate::action::ActionState;
 use crate::bridge as ffi;
 use crate::bridge::Void;
-use crate::component::Component;
+use crate::component::{Component, RetainedId};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use yse_model::{EventStream, ListChange, ListModel, Scheduler, Signal, Sink, Subscription, Var};
@@ -295,35 +295,45 @@ impl Window {
     /// Create a horizontal row inside this window.
     pub fn row(&self) -> Row {
         Row {
-            inner: unsafe { Component::from_raw(ffi::widget_new_row(self.inner.raw())) },
+            inner: unsafe {
+                Component::from_raw_child(ffi::widget_new_row(self.inner.raw()), &self.inner)
+            },
         }
     }
 
     /// Create a vertical column inside this window.
     pub fn column(&self) -> Column {
         Column {
-            inner: unsafe { Component::from_raw(ffi::widget_new_column(self.inner.raw())) },
+            inner: unsafe {
+                Component::from_raw_child(ffi::widget_new_column(self.inner.raw()), &self.inner)
+            },
         }
     }
 
     /// Create a grid layout inside this window.
     pub fn grid(&self) -> Grid {
         Grid {
-            inner: unsafe { Component::from_raw(ffi::widget_new_grid(self.inner.raw())) },
+            inner: unsafe {
+                Component::from_raw_child(ffi::widget_new_grid(self.inner.raw()), &self.inner)
+            },
         }
     }
 
     /// Create a menu bar for this window.
     pub fn menu_bar(&self) -> MenuBar {
         MenuBar {
-            inner: unsafe { Component::from_raw(ffi::widget_new_menubar(self.inner.raw())) },
+            inner: unsafe {
+                Component::from_raw_child(ffi::widget_new_menubar(self.inner.raw()), &self.inner)
+            },
         }
     }
 
     /// Create a toolbar for this window.
     pub fn toolbar(&self) -> ToolBar {
         ToolBar {
-            inner: unsafe { Component::from_raw(ffi::widget_new_toolbar(self.inner.raw())) },
+            inner: unsafe {
+                Component::from_raw_child(ffi::widget_new_toolbar(self.inner.raw()), &self.inner)
+            },
         }
     }
 
@@ -379,7 +389,12 @@ pub struct Row {
 
 impl Row {
     pub(crate) fn label_raw(&self, text: impl Into<String>) -> Rc<Component> {
-        unsafe { Component::from_raw(ffi::widget_new_label(&text.into(), self.inner.raw())) }
+        unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_label(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
+        }
     }
 
     /// Create a label in this row.
@@ -391,8 +406,12 @@ impl Row {
 
     /// Create a button in this row.
     pub fn button(&self, text: impl Into<String>) -> Button {
-        let inner =
-            unsafe { Component::from_raw(ffi::widget_new_button(&text.into(), self.inner.raw())) };
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_button(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         Button { inner }
     }
@@ -400,7 +419,10 @@ impl Row {
     /// Create a line edit in this row.
     pub fn line_edit(&self, text: impl Into<String>) -> LineEdit {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_line_edit(&text.into(), self.inner.raw()))
+            Component::from_raw_child(
+                ffi::widget_new_line_edit(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         LineEdit { inner }
@@ -409,7 +431,10 @@ impl Row {
     /// Create a checkbox in this row.
     pub fn checkbox(&self, text: impl Into<String>) -> CheckBox {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_checkbox(&text.into(), self.inner.raw()))
+            Component::from_raw_child(
+                ffi::widget_new_checkbox(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         CheckBox { inner }
@@ -418,16 +443,18 @@ impl Row {
     /// Create a list view bound to `model`.
     pub fn list_view(&self, model: &StringListModel) -> ListView {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_list_view(
-                model.state.model,
-                self.inner.raw(),
-            ))
+            Component::from_raw_child(
+                ffi::widget_new_list_view(model.state.model, self.inner.raw()),
+                &self.inner,
+            )
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
         });
+        inner.retain(model.state.clone());
+        inner.retain(selection.clone());
         ListView {
             inner,
             model: model.state.clone(),
@@ -438,16 +465,18 @@ impl Row {
     /// Create a table view bound to `model`.
     pub fn table_view(&self, model: &StringTableModel) -> TableView {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_table_view(
-                model.state.table,
-                self.inner.raw(),
-            ))
+            Component::from_raw_child(
+                ffi::widget_new_table_view(model.state.table, self.inner.raw()),
+                &self.inner,
+            )
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
         });
+        inner.retain(model.state.clone());
+        inner.retain(selection.clone());
         TableView {
             inner,
             table: model.state.clone(),
@@ -466,6 +495,7 @@ impl Row {
     pub fn add(&self, widget: &impl IntoWidget) {
         if self.inner.is_alive() {
             unsafe { ffi::layout_add(self.inner.raw(), widget.component().raw()) };
+            self.inner.adopt_child(widget.component());
         }
     }
 }
@@ -480,16 +510,24 @@ pub struct Column {
 impl Column {
     /// Create a label in this column.
     pub fn label(&self, text: impl Into<String>) -> Label {
-        let inner =
-            unsafe { Component::from_raw(ffi::widget_new_label(&text.into(), self.inner.raw())) };
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_label(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         Label { inner }
     }
 
     /// Create a button in this column.
     pub fn button(&self, text: impl Into<String>) -> Button {
-        let inner =
-            unsafe { Component::from_raw(ffi::widget_new_button(&text.into(), self.inner.raw())) };
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_button(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         Button { inner }
     }
@@ -497,7 +535,10 @@ impl Column {
     /// Create a line edit in this column.
     pub fn line_edit(&self, text: impl Into<String>) -> LineEdit {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_line_edit(&text.into(), self.inner.raw()))
+            Component::from_raw_child(
+                ffi::widget_new_line_edit(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         LineEdit { inner }
@@ -506,7 +547,10 @@ impl Column {
     /// Create a checkbox in this column.
     pub fn checkbox(&self, text: impl Into<String>) -> CheckBox {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_checkbox(&text.into(), self.inner.raw()))
+            Component::from_raw_child(
+                ffi::widget_new_checkbox(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         CheckBox { inner }
@@ -515,16 +559,18 @@ impl Column {
     /// Create a list view bound to `model`.
     pub fn list_view(&self, model: &StringListModel) -> ListView {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_list_view(
-                model.state.model,
-                self.inner.raw(),
-            ))
+            Component::from_raw_child(
+                ffi::widget_new_list_view(model.state.model, self.inner.raw()),
+                &self.inner,
+            )
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
         });
+        inner.retain(model.state.clone());
+        inner.retain(selection.clone());
         ListView {
             inner,
             model: model.state.clone(),
@@ -535,16 +581,18 @@ impl Column {
     /// Create a table view bound to `model`.
     pub fn table_view(&self, model: &StringTableModel) -> TableView {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_table_view(
-                model.state.table,
-                self.inner.raw(),
-            ))
+            Component::from_raw_child(
+                ffi::widget_new_table_view(model.state.table, self.inner.raw()),
+                &self.inner,
+            )
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
         });
+        inner.retain(model.state.clone());
+        inner.retain(selection.clone());
         TableView {
             inner,
             table: model.state.clone(),
@@ -563,6 +611,7 @@ impl Column {
     pub fn add(&self, widget: &impl IntoWidget) {
         if self.inner.is_alive() {
             unsafe { ffi::layout_add(self.inner.raw(), widget.component().raw()) };
+            self.inner.adopt_child(widget.component());
         }
     }
 }
@@ -577,8 +626,12 @@ pub struct Grid {
 impl Grid {
     /// Create a label at `(row, column)`.
     pub fn label(&self, text: impl Into<String>, row: u32, column: u32) -> Label {
-        let inner =
-            unsafe { Component::from_raw(ffi::widget_new_label(&text.into(), self.inner.raw())) };
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_label(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
         self.add(
             &Label {
                 inner: inner.clone(),
@@ -591,8 +644,12 @@ impl Grid {
 
     /// Create a button at `(row, column)`.
     pub fn button(&self, text: impl Into<String>, row: u32, column: u32) -> Button {
-        let inner =
-            unsafe { Component::from_raw(ffi::widget_new_button(&text.into(), self.inner.raw())) };
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_button(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
         self.add(
             &Button {
                 inner: inner.clone(),
@@ -606,7 +663,10 @@ impl Grid {
     /// Create a line edit at `(row, column)`.
     pub fn line_edit(&self, text: impl Into<String>, row: u32, column: u32) -> LineEdit {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_line_edit(&text.into(), self.inner.raw()))
+            Component::from_raw_child(
+                ffi::widget_new_line_edit(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
         };
         self.add(
             &LineEdit {
@@ -621,7 +681,10 @@ impl Grid {
     /// Create a checkbox at `(row, column)`.
     pub fn checkbox(&self, text: impl Into<String>, row: u32, column: u32) -> CheckBox {
         let inner = unsafe {
-            Component::from_raw(ffi::widget_new_checkbox(&text.into(), self.inner.raw()))
+            Component::from_raw_child(
+                ffi::widget_new_checkbox(&text.into(), self.inner.raw()),
+                &self.inner,
+            )
         };
         self.add(
             &CheckBox {
@@ -644,6 +707,7 @@ impl Grid {
                     column as i32,
                 );
             };
+            self.inner.adopt_child(widget.component());
         }
     }
 }
@@ -925,7 +989,12 @@ impl MenuBar {
     /// Create a menu in this bar.
     pub fn menu(&self, title: impl Into<String>) -> Menu {
         Menu {
-            inner: unsafe { Component::from_raw(ffi::menu_new(&title.into(), self.inner.raw())) },
+            inner: unsafe {
+                Component::from_raw_child(
+                    ffi::menu_new(&title.into(), self.inner.raw()),
+                    &self.inner,
+                )
+            },
         }
     }
 }
@@ -940,11 +1009,10 @@ pub struct Menu {
 impl Menu {
     /// Create an action in this menu.
     pub fn action(&self, text: impl Into<String>) -> Action {
-        Action {
-            inner: unsafe {
-                ActionState::from_raw(ffi::action_new(&text.into(), self.inner.raw()))
-            },
-        }
+        let inner =
+            unsafe { ActionState::from_raw(ffi::action_new(&text.into(), self.inner.raw())) };
+        self.inner.retain(inner.clone());
+        Action { inner }
     }
 
     /// Add a separator.
@@ -1385,6 +1453,9 @@ struct DialogState {
     ptr: *mut ffi::Dialog,
     result_sink: RefCell<Option<Rc<Sink<MessageBoxResult>>>>,
     finished: Cell<bool>,
+    parent: std::rc::Weak<Component>,
+    self_weak: std::rc::Weak<DialogState>,
+    retained_id: Cell<Option<RetainedId>>,
 }
 
 impl Drop for DialogState {
@@ -1398,11 +1469,16 @@ impl DialogState {
         if self.finished.get() {
             return;
         }
+        let keep_alive = self.self_weak.upgrade();
         self.finished.set(true);
         let result = map_dialog_result(unsafe { ffi::dialog_last_result(self.ptr) });
         if let Some(sink) = self.result_sink.borrow().as_ref() {
             sink.send(result);
         }
+        if let (Some(parent), Some(id)) = (self.parent.upgrade(), self.retained_id.take()) {
+            parent.release(id);
+        }
+        drop(keep_alive);
     }
 }
 
@@ -1435,11 +1511,17 @@ impl MessageBox {
         let ptr = unsafe {
             ffi::dialog_message_new(window.inner.raw(), &title.into(), &text.into(), buttons)
         };
-        let state = Rc::new(DialogState {
+        let state = Rc::new_cyclic(|self_weak| DialogState {
             ptr,
             result_sink: RefCell::new(None),
             finished: Cell::new(false),
+            parent: Rc::downgrade(&window.inner),
+            self_weak: self_weak.clone(),
+            retained_id: Cell::new(None),
         });
+        state
+            .retained_id
+            .set(Some(window.inner.retain(state.clone())));
         unsafe {
             ffi::dialog_set_finished_cb(ptr, &*state as *const DialogState as *mut Void);
         }
@@ -1474,6 +1556,9 @@ struct FileDialogState {
     ptr: *mut ffi::FileDialog,
     result_sink: RefCell<Option<Rc<Sink<Option<String>>>>>,
     finished: Cell<bool>,
+    parent: std::rc::Weak<Component>,
+    self_weak: std::rc::Weak<FileDialogState>,
+    retained_id: Cell<Option<RetainedId>>,
 }
 
 impl Drop for FileDialogState {
@@ -1487,12 +1572,17 @@ impl FileDialogState {
         if self.finished.get() {
             return;
         }
+        let keep_alive = self.self_weak.upgrade();
         self.finished.set(true);
         let path = unsafe { ffi::filedialog_selected_file(self.ptr) };
         let selected = if path.is_empty() { None } else { Some(path) };
         if let Some(sink) = self.result_sink.borrow().as_ref() {
             sink.send(selected);
         }
+        if let (Some(parent), Some(id)) = (self.parent.upgrade(), self.retained_id.take()) {
+            parent.release(id);
+        }
+        drop(keep_alive);
     }
 }
 
@@ -1513,11 +1603,17 @@ impl FileDialog {
     /// Create an open-file dialog parented to `window`.
     pub fn open(window: &Window, title: impl Into<String>) -> Self {
         let ptr = unsafe { ffi::filedialog_open_new(window.inner.raw(), &title.into()) };
-        let state = Rc::new(FileDialogState {
+        let state = Rc::new_cyclic(|self_weak| FileDialogState {
             ptr,
             result_sink: RefCell::new(None),
             finished: Cell::new(false),
+            parent: Rc::downgrade(&window.inner),
+            self_weak: self_weak.clone(),
+            retained_id: Cell::new(None),
         });
+        state
+            .retained_id
+            .set(Some(window.inner.retain(state.clone())));
         unsafe {
             ffi::filedialog_set_finished_cb(ptr, &*state as *const FileDialogState as *mut Void);
         }

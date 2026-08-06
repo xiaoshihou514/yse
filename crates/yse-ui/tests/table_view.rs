@@ -1,6 +1,5 @@
 use yse_ui::{Application, StringTableModel, Window};
 
-#[test]
 fn table_view_applies_incremental_row_changes() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -42,7 +41,6 @@ fn table_view_applies_incremental_row_changes() {
     assert_eq!(model.row_count(), 0);
 }
 
-#[test]
 fn table_view_selection_streams_changes() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -67,4 +65,13 @@ fn table_view_selection_streams_changes() {
     view.clear_selection();
     assert!(view.selected_rows().is_empty());
     assert_eq!(*seen.borrow(), vec![vec![1], vec![0], Vec::<usize>::new()]);
+}
+
+// Qt permits one QApplication per process and binds it to its creating
+// thread. Keeping this integration binary to one test prevents Rust's test
+// harness from running the two cases on different worker threads.
+#[test]
+fn table_view_cases_share_one_qt_thread() {
+    table_view_applies_incremental_row_changes();
+    table_view_selection_streams_changes();
 }

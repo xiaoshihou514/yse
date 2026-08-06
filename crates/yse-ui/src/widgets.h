@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <QMetaObject>
 #include "rust/cxx.h"
 
 class QWidget;
@@ -27,17 +28,34 @@ struct Row;
 /// Opaque wrapper around a QWidget. `owned` means the wrapper deletes the
 /// widget when dropped (windows); child widgets are owned by their Qt parent.
 struct Widget {
-  QWidget* q;
-  bool owned;
-  bool alive;
-  void* cb_data;
+  QWidget* q = nullptr;
+  bool owned = false;
+  bool alive = false;
+  void* destroyed_cb_data = nullptr;
+  void* clicked_cb_data = nullptr;
+  void* text_changed_cb_data = nullptr;
+  void* toggled_cb_data = nullptr;
+  void* selection_cb_data = nullptr;
+  QMetaObject::Connection destroyed_connection;
+  QMetaObject::Connection clicked_connection;
+  QMetaObject::Connection text_changed_connection;
+  QMetaObject::Connection toggled_connection;
+  QMetaObject::Connection selection_connection;
+
+  Widget(QWidget* q_, bool owned_, bool alive_, void*)
+      : q(q_), owned(owned_), alive(alive_) {}
 };
 
 /// Opaque wrapper around a QAction.
 struct Action {
-  QAction* q;
-  bool alive;
-  void* cb_data;
+  QAction* q = nullptr;
+  bool alive = false;
+  void* triggered_cb_data = nullptr;
+  void* destroyed_cb_data = nullptr;
+  QMetaObject::Connection triggered_connection;
+  QMetaObject::Connection destroyed_connection;
+
+  Action(QAction* q_, bool alive_, void*) : q(q_), alive(alive_) {}
 };
 
 /// Opaque wrapper around a RustListModel (QAbstractListModel mirror).
@@ -56,17 +74,26 @@ struct TableModel {
 
 /// Opaque wrapper around a QMessageBox.
 struct Dialog {
-  QMessageBox* q;
-  bool alive;
-  int last_result;
-  void* cb_data;
+  QMessageBox* q = nullptr;
+  bool alive = false;
+  int last_result = 0;
+  void* cb_data = nullptr;
+  QMetaObject::Connection finished_connection;
+  QMetaObject::Connection destroyed_connection;
+
+  Dialog(QMessageBox* q_, bool alive_, int last_result_, void*)
+      : q(q_), alive(alive_), last_result(last_result_) {}
 };
 
 /// Opaque wrapper around a QFileDialog.
 struct FileDialog {
-  QFileDialog* q;
-  bool alive;
-  void* cb_data;
+  QFileDialog* q = nullptr;
+  bool alive = false;
+  void* cb_data = nullptr;
+  QMetaObject::Connection finished_connection;
+  QMetaObject::Connection destroyed_connection;
+
+  FileDialog(QFileDialog* q_, bool alive_, void*) : q(q_), alive(alive_) {}
 };
 
 /// Opaque wrapper around a QSettings store.
