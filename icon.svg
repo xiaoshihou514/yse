@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="2048"
+     height="2048"
+     viewBox="0 0 2048 2048"
+     role="img"
+     aria-labelledby="title desc">
+  <title id="title">White goose on a black background</title>
+  <desc id="desc">A clean, high-contrast white goose profile with a black eye.</desc>
+
+  <rect width="2048" height="2048" fill="#000"/>
+
+  <path fill="#fff" d="
+    M0 2048V1220
+    C268 1172 518 1184 730 1250
+    C780 1266 810 1238 798 1185
+    C739 975 708 790 735 620
+    C760 457 894 338 1045 338
+    C1179 338 1277 414 1300 520
+    C1363 580 1470 629 1544 660
+    C1580 676 1598 698 1590 718
+    C1581 744 1553 754 1513 754
+    C1422 754 1330 742 1248 732
+    C1210 750 1162 765 1102 772
+    C1047 786 1025 818 1036 894
+    C1057 1040 1120 1178 1190 1328
+    C1268 1495 1318 1688 1261 1878
+    C1240 1950 1198 2010 1150 2048
+    Z"/>
+
+  <circle cx="1114" cy="539" r="44" fill="#000"/>
+</svg>
