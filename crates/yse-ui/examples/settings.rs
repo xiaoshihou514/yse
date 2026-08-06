@@ -1,11 +1,14 @@
-//! Phase 2 demonstration: a validated settings form built from yse-model
-//! state and yse-ui widgets, with automatic cleanup when the window closes.
+//! Phase 2/3 demonstration: a validated settings form with a declarative UI
+//! tree, undo/redo, a standard dialog, and async work on the GUI thread.
 
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use yse_model::{Command, UndoStack, Var, spawn_task};
-use yse_ui::{Application, MessageBox, MessageBoxButtons, QtGuiScheduler, Window};
+use yse_ui::{
+    Application, MessageBox, MessageBoxButtons, QtGuiScheduler, Window, button, checkbox, clone,
+    column, label, line_edit, row,
+};
 
 /// A reversible name edit, demonstrating undo/redo integration.
 struct SetName {
@@ -33,105 +36,99 @@ fn main() {
     let window = Window::new();
     window.set_title("Yse settings");
     window.set_size(360, 220);
-    let column = window.column();
 
-    // Menus and toolbars.
+    // Menus and toolbar: each menu builds inline, returning its action handles.
     let menubar = window.menu_bar();
-    let file_menu = menubar.menu("File");
-    let about = file_menu.action("About");
-    file_menu.separator();
-    let quit = file_menu.action("Quit");
-    quit.set_shortcut("Ctrl+Q");
-    let edit_menu = menubar.menu("Edit");
-    let undo_action = edit_menu.action("Undo");
-    let redo_action = edit_menu.action("Redo");
-    let help_menu = menubar.menu("Help");
-    let about_box_action = help_menu.action("About Yse");
-    let toolbar = window.toolbar();
-    toolbar.add(&about);
+    let (about, quit) = menubar.menu_with("File", |m| {
+        (
+            m.action("About"),
+            m.separator().action("Quit").shortcut("Ctrl+Q"),
+        )
+    });
+    let (undo_action, redo_action) = menubar.menu_with("Edit", |m| {
+        (
+            m.action("Undo").shortcut("Ctrl+Z"),
+            m.action("Redo").shortcut("Ctrl+Y"),
+        )
+    });
+    let about_box_action = menubar.menu_with("Help", |m| m.action("About Yse"));
+    window.toolbar().add(&about);
 
-    // Form state.
+    // State and derived signals.
     let name_var = Var::new(String::from("Ada"));
-
-    // Derived state: a greeting and submit enablement.
-    let greeting = name_var.signal().map(|n| format!("Hello, {n}!"));
-    let can_submit = name_var.signal().map(|n| !n.is_empty());
-
-    let greeting_label = column.label("");
-    greeting_label.bind_text(&greeting);
-
-    let name = column.line_edit("Name");
-    name.bind_text_two_way(&name_var);
-
-    let remember = column.checkbox("Remember me");
     let remember_var = Var::new(false);
-    remember.bind_checked(&remember_var.signal());
-
-    let status_label = column.label("idle");
     let status_var = Var::new(String::from("idle"));
-    status_label.bind_text(&status_var.signal());
-
-    let submit = column.button("Submit");
-    submit.bind_enabled(&can_submit);
-    let status_var_rc = status_var.clone();
-    let _sub = submit
-        .clicked()
-        .observe(move |_| status_var_rc.set(String::from("submitted")));
-
-    let about_var = status_var.clone();
-    let _about_sub = about
-        .triggered()
-        .observe(move |_| about_var.set(String::from("about")));
-    let quit_var = status_var.clone();
-    let _quit_sub = quit
-        .triggered()
-        .observe(move |_| quit_var.set(String::from("quit")));
-
-    // Undo/redo integration: menu actions bound to the stack's signals.
+    let load_var = Var::new(String::from("loading…"));
     let undo_stack = Rc::new(UndoStack::new());
+
+    // Declarative widget tree: reads top-down; handlers and bindings are
+    // registered on the widgets and die with the tree.
+    let (greeting_label, status_label, load_label, submit, remember) = window.ui(|| {
+        column(|| {
+            let greeting_label = label("");
+            greeting_label.bind_text(&name_var.signal().map(|n| format!("Hello, {n}!")));
+
+            line_edit("Name").bind_text_two_way(&name_var);
+
+            let remember = checkbox("Remember me");
+            remember.bind_checked(&remember_var.signal());
+
+            let status_label = label("idle");
+            status_label.bind_text(&status_var.signal());
+
+            let load_label = label("loading…");
+            load_label.bind_text(&load_var.signal());
+
+            let submit = row(|| {
+                let submit = button("Submit");
+                submit.bind_enabled(&name_var.signal().map(|n| !n.is_empty()));
+                submit.on_click(clone!(status_var => move |_| {
+                    status_var.set(String::from("submitted"));
+                }));
+                submit
+            });
+
+            (greeting_label, status_label, load_label, submit, remember)
+        })
+    });
+
+    // Menu wiring.
+    about.on_trigger(clone!(status_var => move |_| status_var.set(String::from("about"))));
+    quit.on_trigger(clone!(status_var => move |_| status_var.set(String::from("quit"))));
+    undo_action.on_trigger(clone!(undo_stack => move |_| {
+        undo_stack.undo();
+    }));
+    redo_action.on_trigger(clone!(undo_stack => move |_| {
+        undo_stack.redo();
+    }));
     undo_action.bind_enabled(&undo_stack.can_undo());
     redo_action.bind_enabled(&undo_stack.can_redo());
-    let undo_stack_rc = undo_stack.clone();
-    let _undo_sub = undo_action.triggered().observe(move |_| {
-        undo_stack_rc.undo();
-    });
-    let undo_stack_rc = undo_stack.clone();
-    let _redo_sub = redo_action.triggered().observe(move |_| {
-        undo_stack_rc.redo();
-    });
 
-    // Standard dialog: a Help > About message box.
+    // Standard dialog: Help > About Yse.
     let about_box = MessageBox::new(
         &window,
         "About Yse",
         "Yse Phase 3 demo",
         MessageBoxButtons::Ok,
     );
-    let about_box_rc = about_box.clone();
-    let _about_box_trigger = about_box_action
-        .triggered()
-        .observe(move |_| about_box_rc.show());
-    let help_var = status_var.clone();
-    let _about_box_result = about_box
-        .result()
-        .observe(move |_| help_var.set(String::from("help")));
+    about_box_action.on_trigger(clone!(about_box => move |_| about_box.show()));
+    let _about_box_result = about_box.result().observe(clone!(status_var => move |_| {
+        status_var.set(String::from("help"));
+    }));
 
-    // Async work delivered onto the GUI thread through the Qt scheduler.
-    let load_label = column.label("loading…");
-    let load_var = Var::new(String::from("loading…"));
-    load_label.bind_text(&load_var.signal());
+    // Async work delivered onto the GUI thread.
     let load_task = spawn_task(Arc::new(QtGuiScheduler), |_token| {
         std::thread::sleep(Duration::from_millis(200));
         String::from("loaded")
     });
-    let load_var_rc = load_var.clone();
     let _load_sub = load_task
         .results()
-        .observe(move |status| load_var_rc.set(status.clone()));
+        .observe(clone!(load_var => move |status| {
+            load_var.set(status.clone());
+        }));
 
     // Headless smoke run: drive the form, then quit.
     if std::env::var("YSE_SMOKE").is_ok() {
-        // A command-driven edit: executes, then can be undone via the menu.
         undo_stack.push(Box::new(SetName {
             var: name_var.clone(),
             old: String::from("Ada"),

@@ -1,4 +1,4 @@
-//! Phase 3 demonstration: a small data browser.
+//! Phase 3 demonstration: a small data browser with a declarative UI tree.
 //!
 //! Asynchronously loads records into an incremental table, filters and sorts
 //! them, edits a row through a form with undo/redo, shows progress/error
@@ -11,6 +11,7 @@ use std::time::Duration;
 use yse_model::{CancellationToken, Command, ListModel, Task, UndoStack, Var, spawn_task};
 use yse_ui::{
     Application, MessageBox, MessageBoxButtons, QtGuiScheduler, Settings, StringTableModel, Window,
+    button, clone, column, label, line_edit, table_view,
 };
 
 type LoadResult = Result<Vec<Vec<String>>, String>;
@@ -49,18 +50,20 @@ fn attach_result(
     records: &Rc<ListModel<Vec<String>>>,
     subs: &Rc<RefCell<Vec<yse_model::Subscription>>>,
 ) {
-    let status_rc = status.clone();
-    let records_rc = records.clone();
-    let subscription = task.results().observe(move |result| match result {
-        Ok(rows) => {
-            let count = rows.len();
-            records_rc.replace_all(rows.to_vec());
-            status_rc.set(format!("loaded {count} rows"));
-        }
-        Err(error) => {
-            status_rc.set(format!("error: {error}"));
-        }
-    });
+    let subscription = task
+        .results()
+        .observe(clone!(status, records => move |result| {
+            match result {
+                Ok(rows) => {
+                    let count = rows.len();
+                    records.replace_all(rows.to_vec());
+                    status.set(format!("loaded {count} rows"));
+                }
+                Err(error) => {
+                    status.set(format!("error: {error}"));
+                }
+            }
+        }));
     subs.borrow_mut().push(subscription);
 }
 
@@ -115,28 +118,28 @@ fn main() {
     let window = Window::new();
     window.set_title("Yse data browser");
     window.set_size(680, 460);
-    let column = window.column();
 
-    // Menus and shortcuts.
+    // Menus and shortcuts: each menu builds inline, returning its action
+    // handles.
     let menubar = window.menu_bar();
-    let file_menu = menubar.menu("File");
-    let load_action = file_menu.action("Load records");
-    load_action.set_shortcut("Ctrl+O");
-    let cancel_action = file_menu.action("Cancel load");
-    let fail_action = file_menu.action("Simulate failure");
-    file_menu.separator();
-    let quit_action = file_menu.action("Quit");
-    quit_action.set_shortcut("Ctrl+Q");
-    let edit_menu = menubar.menu("Edit");
-    let undo_action = edit_menu.action("Undo");
-    undo_action.set_shortcut("Ctrl+Z");
-    let redo_action = edit_menu.action("Redo");
-    redo_action.set_shortcut("Ctrl+Y");
-    let view_menu = menubar.menu("View");
-    let sort_name = view_menu.action("Sort by name");
-    let sort_score = view_menu.action("Sort by score");
-    let help_menu = menubar.menu("Help");
-    let about_action = help_menu.action("About");
+    let (load_action, cancel_action, fail_action, quit_action) = menubar.menu_with("File", |m| {
+        (
+            m.action("Load records").shortcut("Ctrl+O"),
+            m.action("Cancel load"),
+            m.action("Simulate failure"),
+            m.separator().action("Quit").shortcut("Ctrl+Q"),
+        )
+    });
+    let (undo_action, redo_action) = menubar.menu_with("Edit", |m| {
+        (
+            m.action("Undo").shortcut("Ctrl+Z"),
+            m.action("Redo").shortcut("Ctrl+Y"),
+        )
+    });
+    let (sort_name, sort_score) = menubar.menu_with("View", |m| {
+        (m.action("Sort by name"), m.action("Sort by score"))
+    });
+    let about_action = menubar.menu_with("Help", |m| m.action("About"));
 
     // State and persistence.
     let settings = Settings::new("Yse", "DataBrowser");
@@ -146,185 +149,133 @@ fn main() {
     let status_var = Var::new(String::from("idle"));
     let visible_indices: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::new()));
     let undo_stack = Rc::new(UndoStack::new());
-
-    // Table + filter + form + status.
     let table = StringTableModel::new(2, vec![String::from("Name"), String::from("Score")]);
-    let view = column.table_view(&table);
-    let filter_edit = column.line_edit("Filter");
-    filter_edit.bind_text_two_way(&filter_var);
-    let name_edit = column.line_edit("Name");
-    let score_edit = column.line_edit("Score");
-    let apply = column.button("Apply edit");
-    let status_label = column.label("idle");
-    status_label.bind_text(&status_var.signal());
+
+    // Declarative widget tree: selection and apply handlers are registered on
+    // the widgets themselves and are released with the tree.
+    let (view, name_edit, apply, status_label) = window.ui(|| {
+        column(|| {
+            let view = table_view(&table);
+
+            let filter_edit = line_edit("Filter");
+            filter_edit.bind_text_two_way(&filter_var);
+
+            let name_edit = line_edit("Name");
+            let score_edit = line_edit("Score");
+
+            view.on_selection(clone!(records, visible_indices, name_edit, score_edit => move |rows| {
+                if let Some(&row) = rows.first()
+                    && let Some(&index) = visible_indices.borrow().get(row)
+                    && let Some(record) = records.get(index)
+                {
+                    name_edit.set_text(record[0].clone());
+                    score_edit.set_text(record[1].clone());
+                }
+            }));
+
+            let apply = button("Apply edit");
+            apply.on_click(clone!(records, visible_indices, view, name_edit, score_edit, undo_stack => move |_| {
+                if let Some(&row) = view.selected_rows().first()
+                    && let Some(&index) = visible_indices.borrow().get(row)
+                    && let Some(old) = records.get(index)
+                {
+                    let new = vec![name_edit.text(), score_edit.text()];
+                    if new != old {
+                        undo_stack.push(Box::new(SetRow {
+                            records: records.clone(),
+                            index,
+                            old,
+                            new,
+                        }));
+                    }
+                }
+            }));
+
+            let status_label = label("idle");
+            status_label.bind_text(&status_var.signal());
+
+            (view, name_edit, apply, status_label)
+        })
+    });
 
     // Reactive refresh of the visible (filtered + sorted) rows.
-    let records_rc = records.clone();
-    let filter_rc = filter_var.clone();
-    let sort_rc = sort_col.clone();
-    let table_rc = table.clone();
-    let visible_rc = visible_indices.clone();
-    let _records_sub = records.changes().observe(move |_| {
-        refresh_view(
-            &records_rc,
-            &filter_rc.value(),
-            *sort_rc.value(),
-            &table_rc,
-            &visible_rc,
-        );
-    });
-    let records_rc = records.clone();
-    let filter_rc = filter_var.clone();
-    let sort_rc = sort_col.clone();
-    let table_rc = table.clone();
-    let visible_rc = visible_indices.clone();
-    let settings_rc = settings.clone();
-    let _filter_sub = filter_var.signal().changes().observe(move |_| {
-        settings_rc.set("filter", &filter_rc.value());
-        refresh_view(
-            &records_rc,
-            &filter_rc.value(),
-            *sort_rc.value(),
-            &table_rc,
-            &visible_rc,
-        );
-    });
-
-    // Selection -> form.
-    let records_rc = records.clone();
-    let visible_rc = visible_indices.clone();
-    let name_edit_rc = name_edit.clone();
-    let score_edit_rc = score_edit.clone();
-    let _selection_sub = view.selection_changed().observe(move |rows| {
-        if let Some(&row) = rows.first()
-            && let Some(&index) = visible_rc.borrow().get(row)
-            && let Some(record) = records_rc.get(index)
-        {
-            name_edit_rc.set_text(record[0].clone());
-            score_edit_rc.set_text(record[1].clone());
-        }
-    });
+    let _records_sub = records.changes().observe(clone!(records, filter_var, sort_col, table, visible_indices => move |_| {
+        refresh_view(&records, &filter_var.value(), *sort_col.value(), &table, &visible_indices);
+    }));
+    let _filter_sub = filter_var.signal().changes().observe(clone!(records, filter_var, sort_col, table, visible_indices, settings => move |_| {
+        settings.set("filter", &filter_var.value());
+        refresh_view(&records, &filter_var.value(), *sort_col.value(), &table, &visible_indices);
+    }));
 
     // Undo/redo actions.
+    undo_action.on_trigger(clone!(undo_stack => move |_| {
+        undo_stack.undo();
+    }));
+    redo_action.on_trigger(clone!(undo_stack => move |_| {
+        undo_stack.redo();
+    }));
     undo_action.bind_enabled(&undo_stack.can_undo());
     redo_action.bind_enabled(&undo_stack.can_redo());
-    let undo_rc = undo_stack.clone();
-    let _undo_sub = undo_action.triggered().observe(move |_| {
-        undo_rc.undo();
-    });
-    let redo_rc = undo_stack.clone();
-    let _redo_sub = redo_action.triggered().observe(move |_| {
-        redo_rc.redo();
-    });
-
-    // Apply edit: push an undoable SetRow command.
-    let records_rc = records.clone();
-    let visible_rc = visible_indices.clone();
-    let view_rc = view.clone();
-    let name_edit_rc = name_edit.clone();
-    let score_edit_rc = score_edit.clone();
-    let undo_rc = undo_stack.clone();
-    let _apply_sub = apply.clicked().observe(move |_| {
-        if let Some(&row) = view_rc.selected_rows().first()
-            && let Some(&index) = visible_rc.borrow().get(row)
-            && let Some(old) = records_rc.get(index)
-        {
-            let new = vec![name_edit_rc.text(), score_edit_rc.text()];
-            if new != old {
-                undo_rc.push(Box::new(SetRow {
-                    records: records_rc.clone(),
-                    index,
-                    old,
-                    new,
-                }));
-            }
-        }
-    });
 
     // Sorting actions.
-    let records_rc = records.clone();
-    let filter_rc = filter_var.clone();
-    let sort_rc = sort_col.clone();
-    let table_rc = table.clone();
-    let visible_rc = visible_indices.clone();
-    let settings_rc = settings.clone();
-    let _sort_name_sub = sort_name.triggered().observe(move |_| {
-        sort_rc.set(0);
-        settings_rc.set("sort", "0");
-        refresh_view(&records_rc, &filter_rc.value(), 0, &table_rc, &visible_rc);
-    });
-    let records_rc = records.clone();
-    let filter_rc = filter_var.clone();
-    let sort_rc = sort_col.clone();
-    let table_rc = table.clone();
-    let visible_rc = visible_indices.clone();
-    let settings_rc = settings.clone();
-    let _sort_score_sub = sort_score.triggered().observe(move |_| {
-        sort_rc.set(1);
-        settings_rc.set("sort", "1");
-        refresh_view(&records_rc, &filter_rc.value(), 1, &table_rc, &visible_rc);
-    });
+    sort_name.on_trigger(
+        clone!(sort_col, settings, records, filter_var, table, visible_indices => move |_| {
+            sort_col.set(0);
+            settings.set("sort", "0");
+            refresh_view(&records, &filter_var.value(), 0, &table, &visible_indices);
+        }),
+    );
+    sort_score.on_trigger(
+        clone!(sort_col, settings, records, filter_var, table, visible_indices => move |_| {
+            sort_col.set(1);
+            settings.set("sort", "1");
+            refresh_view(&records, &filter_var.value(), 1, &table, &visible_indices);
+        }),
+    );
 
-    // About dialog.
+    // About dialog and quit (flush settings).
     let about_box = MessageBox::new(
         &window,
         "About",
         "Yse data browser (Phase 3)",
         MessageBoxButtons::Ok,
     );
-    let about_box_rc = about_box.clone();
-    let _about_trigger = about_action.triggered().observe(move |_| {
-        about_box_rc.show();
-    });
-
-    // Quit: flush settings to disk.
-    let settings_rc = settings.clone();
-    let _quit_sub = quit_action.triggered().observe(move |_| settings_rc.sync());
+    about_action.on_trigger(clone!(about_box => move |_| about_box.show()));
+    quit_action.on_trigger(clone!(settings => move |_| settings.sync()));
 
     // Async loading with cancellation and error states.
     let load_cell: Rc<RefCell<Option<LoadTask>>> = Rc::new(RefCell::new(None));
     let result_subs: Rc<RefCell<Vec<yse_model::Subscription>>> = Rc::new(RefCell::new(Vec::new()));
-    let status_rc = status_var.clone();
-    let records_rc = records.clone();
-    let cell_rc = load_cell.clone();
-    let subs_rc = result_subs.clone();
-    let start_load = move || {
-        status_rc.set(String::from("loading…"));
-        let task = spawn_task(Arc::new(QtGuiScheduler), load_records);
-        attach_result(&task, &status_rc, &records_rc, &subs_rc);
-        *cell_rc.borrow_mut() = Some(task);
-    };
-    let start_load = Rc::new(start_load);
+    let start_load = Rc::new(
+        clone!(status_var, records, load_cell, result_subs => move || {
+            status_var.set(String::from("loading…"));
+            let task = spawn_task(Arc::new(QtGuiScheduler), load_records);
+            attach_result(&task, &status_var, &records, &result_subs);
+            *load_cell.borrow_mut() = Some(task);
+        }),
+    );
+    let start_fail = Rc::new(
+        clone!(status_var, records, load_cell, result_subs => move || {
+            status_var.set(String::from("loading…"));
+            let task = spawn_task(Arc::new(QtGuiScheduler), fail_load);
+            attach_result(&task, &status_var, &records, &result_subs);
+            // Keep the task alive: dropping it would cancel it and remove its
+            // delivery slot.
+            *load_cell.borrow_mut() = Some(task);
+        }),
+    );
 
-    let status_rc = status_var.clone();
-    let records_rc = records.clone();
-    let subs_rc = result_subs.clone();
-    let cell_rc = load_cell.clone();
-    let start_fail = move || {
-        status_rc.set(String::from("loading…"));
-        let task = spawn_task(Arc::new(QtGuiScheduler), fail_load);
-        attach_result(&task, &status_rc, &records_rc, &subs_rc);
-        // Keep the task alive: dropping it would cancel it and remove its
-        // delivery slot.
-        *cell_rc.borrow_mut() = Some(task);
-    };
-    let start_fail = Rc::new(start_fail);
-
-    let start_rc = start_load.clone();
-    let _load_sub = load_action.triggered().observe(move |_| start_rc());
-    let fail_rc = start_fail.clone();
-    let _fail_sub = fail_action.triggered().observe(move |_| fail_rc());
-    let cell_rc = load_cell.clone();
-    let status_rc = status_var.clone();
-    let _cancel_sub = cancel_action.triggered().observe(move |_| {
+    load_action.on_trigger(clone!(start_load => move |_| start_load()));
+    fail_action.on_trigger(clone!(start_fail => move |_| start_fail()));
+    cancel_action.on_trigger(clone!(status_var, load_cell => move |_| {
         // Cancellation suppresses the (never-delivered) result by design.
-        status_rc.set(String::from("load cancelled"));
-        if let Some(task) = cell_rc.borrow().as_ref() {
+        status_var.set(String::from("load cancelled"));
+        if let Some(task) = load_cell.borrow().as_ref() {
             task.cancel();
         }
-    });
+    }));
 
-    // Restore persisted settings.
+    // Restore persisted settings and start the first load.
     filter_var.set(settings.value("filter").unwrap_or_default());
     sort_col.set(
         settings
@@ -332,55 +283,42 @@ fn main() {
             .and_then(|value| value.parse().ok())
             .unwrap_or(0),
     );
-
-    // Start the first load.
     start_load();
 
     // Headless smoke run: drive the whole flow, then quit.
     if std::env::var("YSE_SMOKE").is_ok() {
         app.quit_after(2500);
-        let filter_rc = filter_var.clone();
-        let sort_rc = sort_col.clone();
-        let records_rc = records.clone();
-        let table_rc = table.clone();
-        let visible_rc = visible_indices.clone();
-        let view_rc = view.clone();
-        let name_edit_rc = name_edit.clone();
-        let apply_rc = apply.clone();
-        let undo_rc = undo_action.clone();
-        let load_rc = load_action.clone();
-        let cancel_rc = cancel_action.clone();
-        let fail_rc = fail_action.clone();
-        let about_rc = about_action.clone();
-        let about_box_rc = about_box.clone();
-        app.after(450, move || {
-            filter_rc.set(String::from("grace"));
-            sort_rc.set(1);
-            refresh_view(&records_rc, &filter_rc.value(), 1, &table_rc, &visible_rc);
-            app.after(100, move || {
-                view_rc.select(0);
-                app.after(80, move || {
-                    name_edit_rc.set_text(String::from("Grace Hopper X"));
-                    apply_rc.click();
-                    app.after(80, move || {
-                        undo_rc.trigger();
-                        app.after(80, move || {
-                            load_rc.trigger();
-                            app.after(40, move || {
-                                cancel_rc.trigger();
-                                app.after(100, move || {
-                                    fail_rc.trigger();
-                                    app.after(150, move || {
-                                        about_rc.trigger();
-                                        about_box_rc.accept();
-                                    });
-                                });
-                            });
-                        });
-                    });
-                });
-            });
-        });
+        app.after(
+            450,
+            clone!(filter_var, sort_col, records, table, visible_indices => move || {
+                filter_var.set(String::from("grace"));
+                sort_col.set(1);
+                refresh_view(&records, &filter_var.value(), 1, &table, &visible_indices);
+                app.after(100, clone!(view => move || {
+                    view.select(0);
+                    app.after(80, clone!(name_edit, apply => move || {
+                        name_edit.set_text(String::from("Grace Hopper X"));
+                        apply.click();
+                        app.after(80, clone!(undo_action => move || {
+                            undo_action.trigger();
+                            app.after(80, clone!(load_action => move || {
+                                load_action.trigger();
+                                app.after(40, clone!(cancel_action => move || {
+                                    cancel_action.trigger();
+                                    app.after(100, clone!(fail_action => move || {
+                                        fail_action.trigger();
+                                        app.after(150, clone!(about_action, about_box => move || {
+                                            about_action.trigger();
+                                            about_box.accept();
+                                        }));
+                                    }));
+                                }));
+                            }));
+                        }));
+                    }));
+                }));
+            }),
+        );
     }
 
     window.show();

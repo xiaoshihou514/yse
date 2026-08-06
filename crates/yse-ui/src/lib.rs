@@ -8,6 +8,7 @@
 mod action;
 mod callback;
 mod component;
+mod dsl;
 
 #[cxx::bridge(namespace = "yse_ui")]
 mod bridge {
@@ -201,6 +202,20 @@ use crate::component::{Component, RetainedId};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use yse_model::{EventStream, ListChange, ListModel, Scheduler, Signal, Sink, Subscription, Var};
+
+pub use dsl::{button, checkbox, column, label, line_edit, list_view, row, spacer, table_view};
+
+/// Clone each named binding and move the clones into `body` (typically a
+/// `move` closure), avoiding `let x = x.clone();` boilerplate.
+#[macro_export]
+macro_rules! clone {
+    ($($name:ident),+ => $body:expr) => {
+        {
+            $(let $name = $name.clone();)+
+            $body
+        }
+    };
+}
 
 /// The Qt application object. Must be created before any window.
 #[derive(Clone, Copy)]
@@ -767,6 +782,16 @@ impl Button {
         self.inner.clicked_sink.borrow().as_ref().unwrap().stream()
     }
 
+    /// Register a click handler. The subscription lives in the button's
+    /// `Owner` and is released with the widget tree.
+    pub fn on_click<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&()) + 'static,
+    {
+        self.inner.owner.borrow_mut().add(self.clicked().observe(f));
+        self
+    }
+
     /// Enable or disable the button.
     pub fn set_enabled(&self, enabled: bool) {
         if self.inner.is_alive() {
@@ -826,6 +851,19 @@ impl LineEdit {
             *self.inner.text_sink.borrow_mut() = Some(Rc::new(Sink::new()));
         }
         self.inner.text_sink.borrow().as_ref().unwrap().stream()
+    }
+
+    /// Register a text-change handler (user edits; programmatic writes made
+    /// through controlled bindings are suppressed).
+    pub fn on_text_change<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&String) + 'static,
+    {
+        self.inner
+            .owner
+            .borrow_mut()
+            .add(self.text_changed().observe(f));
+        self
     }
 
     /// Controlled binding: the widget text follows the signal.
@@ -894,6 +932,15 @@ impl CheckBox {
         self.inner.toggled_sink.borrow().as_ref().unwrap().stream()
     }
 
+    /// Register a toggle handler carrying the new checked state.
+    pub fn on_toggle<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&bool) + 'static,
+    {
+        self.inner.owner.borrow_mut().add(self.toggled().observe(f));
+        self
+    }
+
     /// Bind the checked state to a signal.
     pub fn bind_checked(&self, signal: &Signal<bool>) {
         let weak = Rc::downgrade(&self.inner);
@@ -942,6 +989,18 @@ impl Action {
             .stream()
     }
 
+    /// Register a trigger handler.
+    pub fn on_trigger<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&()) + 'static,
+    {
+        self.inner
+            .owner
+            .borrow_mut()
+            .add(self.triggered().observe(f));
+        self
+    }
+
     /// Enable or disable the action.
     pub fn set_enabled(&self, enabled: bool) {
         self.inner.set_enabled(enabled);
@@ -972,6 +1031,12 @@ impl Action {
         }
     }
 
+    /// Set a keyboard shortcut and return the action, for chaining.
+    pub fn shortcut(self, shortcut: impl Into<String>) -> Self {
+        self.set_shortcut(shortcut);
+        self
+    }
+
     /// Trigger the action programmatically (used by tests and smoke runs).
     pub fn trigger(&self) {
         if self.inner.is_alive() {
@@ -997,6 +1062,13 @@ impl MenuBar {
             },
         }
     }
+
+    /// Create a menu and hand it to `f`; `f`'s value (typically action
+    /// handles) is passed through so menus build inline.
+    pub fn menu_with<R, F: FnOnce(&Menu) -> R>(&self, title: impl Into<String>, f: F) -> R {
+        let menu = self.menu(title);
+        f(&menu)
+    }
 }
 
 widget_wrapper!(MenuBar);
@@ -1016,10 +1088,11 @@ impl Menu {
     }
 
     /// Add a separator.
-    pub fn separator(&self) {
+    pub fn separator(&self) -> &Self {
         if self.inner.is_alive() {
             unsafe { ffi::menu_add_separator(self.inner.raw()) };
         }
+        self
     }
 }
 
@@ -1071,6 +1144,18 @@ impl ListView {
             *self.selection.sink.borrow_mut() = Some(Rc::new(Sink::new()));
         }
         self.selection.sink.borrow().as_ref().unwrap().stream()
+    }
+
+    /// Register a selection handler carrying the selected row indices.
+    pub fn on_selection<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&Vec<usize>) + 'static,
+    {
+        self.inner
+            .owner
+            .borrow_mut()
+            .add(self.selection_changed().observe(f));
+        self
     }
 
     /// Select `row`, replacing the current selection.
@@ -1379,6 +1464,18 @@ impl TableView {
             *self.selection.sink.borrow_mut() = Some(Rc::new(Sink::new()));
         }
         self.selection.sink.borrow().as_ref().unwrap().stream()
+    }
+
+    /// Register a selection handler carrying the selected row indices.
+    pub fn on_selection<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&Vec<usize>) + 'static,
+    {
+        self.inner
+            .owner
+            .borrow_mut()
+            .add(self.selection_changed().observe(f));
+        self
     }
 
     /// Select `row`, replacing the current selection.
