@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2024"
 description = "Reactive Qt Widgets layer for Yse"
 license = "MIT OR Apache-2.0"
+links = "yse_ui"
 
 [dependencies]
 cxx = "1.0.198"
+cxx-qt = "0.9.1"
+cxx-qt-lib = "0.9.1"
 yse-model = { version = "0.1.0", path = "../yse-model" }
 
 [build-dependencies]

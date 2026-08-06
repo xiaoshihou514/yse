@@ -1,0 +1,13 @@
+[package]
+name = "yse-media-converter"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+cxx = "1.0.198"
+yse-model = { path = "../../crates/yse-model" }
+yse-ui = { path = "../../crates/yse-ui" }
+
+[build-dependencies]
+cxx-qt-build = "0.9.1"

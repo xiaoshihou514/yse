@@ -14,8 +14,8 @@ crates/yse-tool   Developer toolchain (`cargo yse new/dev/test/bundle`)
 spike             Phase 0 feasibility spike (CXX-Qt Widgets without QML)
 ```
 
-Dependency direction: `yse -> yse-ui -> yse-model`, with `yse-tool` and the
-spike standing apart. `yse-model` is independent of Qt and deterministic;
+Dependency direction: `yse -> yse-ui -> yse-model`. `yse-tool`, examples, and
+the spike stand apart. `yse-model` is independent of Qt and deterministic;
 `yse-ui` is a retained object tree (no virtual DOM).
 
 ## Reactive model (`yse-model`)
@@ -49,9 +49,12 @@ The graph is synchronous, single-threaded, and reference-counted
 
 ## Widget layer (`yse-ui`)
 
-Each widget family is a Rust wrapper around a hand-written C++ shim
-(`src/widgets.cpp` + `src/model.cpp`), bridged with cxx. The shim owns raw
-Qt objects; Rust owns state and lifecycle.
+Widget composition is a small hand-written C++ Widgets shim
+(`src/widgets.cpp` + `src/model.cpp`) bridged with cxx. Qt-facing reactive
+state is implemented as generated CXX-Qt `QObject`s under `src/qt_object.rs`;
+the generated properties and signals are the boundary between Rust state and
+Qt notification. The shim owns widget construction, while Rust owns state and
+lifecycle.
 
 - The Rust component tree mirrors Qt parentage (strong parent-to-child,
   weak child-to-parent). It retains callback state, models, selections,
@@ -63,12 +66,25 @@ Qt objects; Rust owns state and lifecycle.
 - Bindings: signal-to-property (`bind_text`, `bind_enabled`, ...), widget
   signals to `EventStream` (`clicked()`, `text_changed()`, `toggled()`,
   `selection_changed()`, `triggered()`), and two-way line-edit bindings with a
-  feedback-loop guard.
+  feedback-loop guard. Labels use the generated `TextState` QObject, so a
+  normal Qt property signals update the widgets rather than one-off
+  Rust-to-C++ callbacks. `TextState` backs labels and line edits, and
+  `ToggleState` keeps a checkbox's `checked` property synchronized in both
+  directions. `ActionState` owns QAction text and enabled state used by menus
+  and toolbars. Every QWidget wrapper has a generated `WidgetState` for its
+  shared enabled, visibility, and title properties.
 - `StringListModel`/`StringTableModel` drive `QListView`/`QTableView` through
   C++ `QAbstractItemModel` mirrors using `beginInsertRows`/`beginRemoveRows`/
   `dataChanged`, so views update incrementally.
 - Actions/menus/toolbars, `MessageBox`/`FileDialog`, and `Settings`
   (QSettings-backed persistence) complete the desktop primitives.
+
+## Example-local native code
+
+Optional native integrations used by one demonstration stay with that example.
+For instance, `examples/media-converter/` owns its FFmpeg Rust facade, C++ bridge
+sources in `cpp/`, and build script; Qt Widgets and FFmpeg linkage do not leak
+into `yse-ui`.
 
 ## Toolchain (`yse-tool`)
 

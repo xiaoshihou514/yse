@@ -9,7 +9,24 @@ mod action;
 mod callback;
 mod component;
 mod dsl;
-mod media;
+mod qt_object;
+
+// CXX-Qt emits generated C++ code as static archives. Build-script link flags
+// are not retained when this crate is re-exported through `yse`, so retain the
+// initializer entry points in the rlib metadata and call them from app setup.
+// Each initializer is idempotent on the C++ side.
+#[link(name = "yse-ui-cxxqt-generated", kind = "static")]
+unsafe extern "C" {
+    fn cxx_qt_init_crate_yse_ui() -> bool;
+}
+#[link(name = "cxx-qt-lib-cxxqt-generated", kind = "static")]
+unsafe extern "C" {
+    fn cxx_qt_init_crate_cxx_qt_lib() -> bool;
+}
+#[link(name = "cxx-qt-cxxqt-generated", kind = "static")]
+unsafe extern "C" {
+    fn cxx_qt_init_crate_cxx_qt() -> bool;
+}
 
 #[cxx::bridge(namespace = "yse_ui")]
 mod bridge {
@@ -18,22 +35,8 @@ mod bridge {
         cells: Vec<String>,
     }
 
-    struct MediaProbeResult {
-        ok: bool,
-        summary: String,
-        duration_ms: i64,
-        has_video: bool,
-        has_audio: bool,
-    }
-
-    struct MediaConvertResult {
-        ok: bool,
-        message: String,
-    }
-
     unsafe extern "C++" {
         include!("yse-ui/src/widgets.h");
-        include!("yse-ui/src/media.h");
 
         type Widget;
         type Void;
@@ -54,6 +57,7 @@ mod bridge {
         unsafe fn widget_new_label(text: &str, parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_button(text: &str, parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_line_edit(text: &str, parent: *mut Widget) -> *mut Widget;
+        unsafe fn widget_new_datetime_edit(iso_datetime: &str, parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_checkbox(text: &str, parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_row(parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_column(parent: *mut Widget) -> *mut Widget;
@@ -76,12 +80,15 @@ mod bridge {
         unsafe fn label_text(w: *mut Widget) -> String;
         unsafe fn line_edit_set_text(w: *mut Widget, text: &str);
         unsafe fn line_edit_text(w: *mut Widget) -> String;
+        unsafe fn datetime_edit_set_value(w: *mut Widget, iso_datetime: &str);
+        unsafe fn datetime_edit_value(w: *mut Widget) -> String;
         unsafe fn checkbox_set_checked(w: *mut Widget, checked: bool);
         unsafe fn checkbox_checked(w: *mut Widget) -> bool;
         unsafe fn button_click(w: *mut Widget);
         unsafe fn action_new(text: &str, parent: *mut Widget) -> *mut Action;
         unsafe fn action_drop(a: *mut Action);
         unsafe fn action_set_text(a: *mut Action, text: &str);
+        unsafe fn action_set_icon(a: *mut Action, theme_name: &str);
         unsafe fn action_set_enabled(a: *mut Action, enabled: bool);
         unsafe fn action_set_shortcut(a: *mut Action, shortcut: &str);
         unsafe fn action_trigger(a: *mut Action);
@@ -143,8 +150,6 @@ mod bridge {
         unsafe fn widget_set_text_changed_cb(w: *mut Widget, data: *mut Void);
         unsafe fn widget_set_toggled_cb(w: *mut Widget, data: *mut Void);
 
-        fn media_probe(path: &str) -> MediaProbeResult;
-        fn media_convert(input: &str, output: &str, preset: i32) -> MediaConvertResult;
     }
 
     extern "Rust" {
@@ -226,7 +231,6 @@ pub use dsl::{
     LineEditView, MountContext, SpacerView, TextValue, Ui, View, button, checkbox, column, label,
     line_edit, row, spacer,
 };
-pub use media::{MediaInfo, MediaPreset, convert_media, probe_media};
 
 /// Clone each named binding and move the clones into `body` (typically a
 /// `move` closure), avoiding `let x = x.clone();` boilerplate.
@@ -247,6 +251,15 @@ pub struct Application;
 impl Application {
     /// Initialise the Qt application (idempotent).
     pub fn init() -> Self {
+        // SAFETY: CXX-Qt generates these C ABI initialization functions for
+        // exactly these linked static archives. They are internally guarded
+        // with `std::once_flag`, so repeated application initialization is
+        // safe and does not duplicate registration.
+        unsafe {
+            cxx_qt_init_crate_cxx_qt();
+            cxx_qt_init_crate_cxx_qt_lib();
+            cxx_qt_init_crate_yse_ui();
+        }
         ffi::app_init();
         Self
     }
@@ -292,6 +305,14 @@ impl Scheduler for QtGuiScheduler {
 /// A top-level window.
 pub struct Window {
     inner: Rc<Component>,
+}
+
+impl Clone for Window {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl Window {
@@ -923,6 +944,27 @@ impl LineEdit {
 
 widget_wrapper!(LineEdit);
 
+/// A Qt date/time editor with the platform calendar popup.
+pub struct DateTimeEdit {
+    inner: Rc<Component>,
+}
+
+impl DateTimeEdit {
+    /// Return the selected local date and time in ISO 8601 form.
+    pub fn value(&self) -> String {
+        unsafe { ffi::datetime_edit_value(self.inner.raw()) }
+    }
+
+    /// Set an ISO 8601 date/time value.
+    pub fn set_value(&self, value: impl Into<String>) {
+        if self.inner.is_alive() {
+            unsafe { ffi::datetime_edit_set_value(self.inner.raw(), &value.into()) };
+        }
+    }
+}
+
+widget_wrapper!(DateTimeEdit);
+
 /// A checkbox.
 pub struct CheckBox {
     inner: Rc<Component>,
@@ -1045,6 +1087,19 @@ impl Action {
         if self.inner.is_alive() {
             unsafe { ffi::action_set_text(self.inner.raw(), &text.into()) };
         }
+    }
+
+    /// Use a platform icon-theme name, e.g. `"document-open"` from Breeze.
+    pub fn set_icon(&self, theme_name: impl Into<String>) {
+        if self.inner.is_alive() {
+            unsafe { ffi::action_set_icon(self.inner.raw(), &theme_name.into()) };
+        }
+    }
+
+    /// Set an icon-theme name and return the action for chaining.
+    pub fn icon(self, theme_name: impl Into<String>) -> Self {
+        self.set_icon(theme_name);
+        self
     }
 
     /// Set a keyboard shortcut, e.g. `"Ctrl+Q"`.

@@ -1,6 +1,29 @@
 //! A native Qt/FFmpeg media converter. No command-line programs are invoked:
 //! probing, decoding, filtering, encoding, and muxing use the FFmpeg C API.
 
+mod media;
+
+#[cxx::bridge(namespace = "media_converter")]
+mod bridge {
+    struct MediaProbeResult {
+        ok: bool,
+        summary: String,
+        duration_ms: i64,
+        has_video: bool,
+        has_audio: bool,
+    }
+    struct MediaConvertResult {
+        ok: bool,
+        message: String,
+    }
+    unsafe extern "C++" {
+        include!("yse-media-converter/cpp/media.h");
+        fn media_probe(path: &str) -> MediaProbeResult;
+        fn media_convert(input: &str, output: &str, preset: i32) -> MediaConvertResult;
+    }
+}
+
+use media::{MediaInfo, MediaPreset, convert_media, probe_media};
 use std::cell::{Cell, RefCell};
 use std::f32::consts::TAU;
 use std::io::Write;
@@ -8,11 +31,37 @@ use std::rc::Rc;
 use std::sync::Arc;
 use yse_model::{Subscription, Task, Var, spawn_task};
 use yse_ui::{
-    Application, FileDialog, MediaInfo, MediaPreset, QtGuiScheduler, Window, button, clone, column,
-    convert_media, label, line_edit, probe_media, row, spacer,
+    Application, FileDialog, QtGuiScheduler, Window, button, clone, column, label, line_edit, row,
+    spacer,
 };
 
 type TaskSlot<T> = Rc<RefCell<Option<Task<Result<T, String>>>>>;
+
+fn show_browse_dialog(
+    window: &Window,
+    input: Var<String>,
+    output: Var<String>,
+    details: Var<String>,
+    probe_task: TaskSlot<MediaInfo>,
+    subscriptions: Rc<RefCell<Vec<Subscription>>>,
+) {
+    let dialog = FileDialog::open(window, "Choose media file");
+    let task_subscriptions = subscriptions.clone();
+    let result = dialog.result().observe(move |selection| {
+        if let Some(path) = selection {
+            input.set(path.clone());
+            output.set(format!("{path}.converted.mp4"));
+            start_probe(
+                path.clone(),
+                details.clone(),
+                probe_task.clone(),
+                task_subscriptions.clone(),
+            );
+        }
+    });
+    subscriptions.borrow_mut().push(result);
+    dialog.show();
+}
 
 fn start_probe(
     path: String,
@@ -71,29 +120,6 @@ fn main() {
     let convert_task = Rc::new(RefCell::new(None));
     let subscriptions = Rc::new(RefCell::new(Vec::<Subscription>::new()));
 
-    let browse_dialog = FileDialog::open(&window, "Choose media file");
-    subscriptions
-        .borrow_mut()
-        .push(browse_dialog.result().observe({
-            let input = input.clone();
-            let output = output.clone();
-            let details = details.clone();
-            let probe_task = probe_task.clone();
-            let subscriptions = subscriptions.clone();
-            move |selection| {
-                if let Some(path) = selection {
-                    input.set(path.clone());
-                    output.set(format!("{path}.converted.mp4"));
-                    start_probe(
-                        path.clone(),
-                        details.clone(),
-                        probe_task.clone(),
-                        subscriptions.clone(),
-                    );
-                }
-            }
-        }));
-
     let (_, (_, browse), _, _, _, (mp4, webm, mp3, flac), (_, convert), _) =
         window.mount(column((
             label("Input"),
@@ -111,7 +137,24 @@ fn main() {
             label(status.signal()),
         )));
 
-    browse.on_click(clone!(browse_dialog => move |_| browse_dialog.show()));
+    browse.on_click({
+        let window = window.clone();
+        let input = input.clone();
+        let output = output.clone();
+        let details = details.clone();
+        let probe_task = probe_task.clone();
+        let subscriptions = subscriptions.clone();
+        move |_| {
+            show_browse_dialog(
+                &window,
+                input.clone(),
+                output.clone(),
+                details.clone(),
+                probe_task.clone(),
+                subscriptions.clone(),
+            );
+        }
+    });
     for (button, preset, extension, name) in [
         (mp4, MediaPreset::Mp4, "mp4", "MP4 · H.264/AAC"),
         (webm, MediaPreset::WebM, "webm", "WebM · VP9/Opus"),

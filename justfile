@@ -33,24 +33,20 @@ check:
 build:
     cargo build --workspace
 
+example name:
+    cargo run -p yse-ui --example {{name}}
+
 # --- Windows (host) recipes, PowerShell --------------------------------------
 
+# setup
 # Set up Qt 6.8.3 on Windows via aqt (install through `uv tool install aqtinstall`).
-windows-setup:
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 setup
-
+# diag
 # Print the Windows environment and repo reachability.
-windows-diag:
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 diag
-
+# build
 # Build the workspace on Windows (MSVC + Qt).
-windows-build:
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 build
-
+# example <name>
 # Run a yse-ui example as a real window on Windows (e.g. `just windows-example settings`).
-windows-example name:
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 example {{name}}
-
+# check
 # Run the full local gate on Windows.
-windows-check:
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 check
+windows action:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 {{action}}

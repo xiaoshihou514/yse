@@ -57,6 +57,8 @@ fn laminar_style_views_mount_with_reactive_modifiers() {
     assert_eq!(label.text(), "Count: 1");
     button.click();
     assert_eq!(label.text(), "Count: 2");
+    button.click();
+    assert_eq!(label.text(), "Count: 2");
 }
 
 #[test]
@@ -71,6 +73,23 @@ fn controlled_input_uses_var_as_two_way_state() {
     assert_eq!(input.text(), "Ada");
     name.set(String::from("Grace"));
     assert_eq!(input.text(), "Grace");
+}
+
+#[test]
+fn checkbox_binding_uses_the_generated_checked_property() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let enabled = Var::new(false);
+    let (checkbox,) = window.mount(column((checkbox("Enable notifications"),)));
+
+    checkbox.bind_checked(&enabled.signal());
+    assert!(!checkbox.checked());
+    enabled.set(true);
+    assert!(checkbox.checked());
+    checkbox.set_checked(false);
+    assert!(!checkbox.checked());
 }
 
 #[test]
@@ -124,9 +143,14 @@ fn menus_chain_fluently() {
 
     let seen = Rc::new(RefCell::new(0usize));
     let seen_rc = seen.clone();
+    let action_enabled = Var::new(false);
     let _sub = quit
         .triggered()
         .observe(move |_| *seen_rc.borrow_mut() += 1);
+    quit.bind_enabled(&action_enabled.signal());
+    quit.trigger();
+    assert_eq!(*seen.borrow(), 0);
+    action_enabled.set(true);
     quit.trigger();
     assert_eq!(*seen.borrow(), 1);
 

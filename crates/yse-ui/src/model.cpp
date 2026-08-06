@@ -91,7 +91,7 @@ Widget* widget_new_list_view(Model* m, Widget* parent)
 {
   auto* q = new QListView(parent->q);
   q->setModel(m->q);
-  return new Widget{ q, false, true, nullptr };
+  return widget_wrap_child(q, parent);
 }
 
 TableModel* table_model_new(int columns)
@@ -166,7 +166,7 @@ Widget* widget_new_table_view(TableModel* m, Widget* parent)
   if (q->selectionModel() == nullptr) {
     q->setSelectionModel(new QItemSelectionModel(m->q));
   }
-  return new Widget{ q, false, true, nullptr };
+  return widget_wrap_child(q, parent);
 }
 
 void view_set_selection_cb(Widget* view, Void* data)

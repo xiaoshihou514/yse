@@ -24,7 +24,7 @@
 
 use crate::component::Component;
 use crate::{
-    Button, CheckBox, Label, LineEdit, ListView, SelectionBridge, StringListModel,
+    Button, CheckBox, DateTimeEdit, Label, LineEdit, ListView, SelectionBridge, StringListModel,
     StringTableModel, TableView, Window, ffi,
 };
 use std::cell::RefCell;
@@ -462,6 +462,14 @@ impl Ui {
         let parent = self.layout_parent();
         let inner = self.leaf(unsafe { ffi::widget_new_line_edit(&text.into(), parent.raw()) });
         LineEdit { inner }
+    }
+
+    /// Create a native Qt date/time editor with a calendar popup.
+    pub fn date_time_edit(&self, iso_datetime: impl Into<String>) -> DateTimeEdit {
+        let parent = self.layout_parent();
+        let inner =
+            self.leaf(unsafe { ffi::widget_new_datetime_edit(&iso_datetime.into(), parent.raw()) });
+        DateTimeEdit { inner }
     }
 
     /// Create a checkbox in this layout.

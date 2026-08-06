@@ -1,4 +1,4 @@
-#include "yse-ui/src/media.h"
+#include "yse-media-converter/cpp/media.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -20,9 +20,9 @@ extern "C" {
 #include <libavutil/samplefmt.h>
 }
 
-#include "yse-ui/src/lib.cxx.h"
+#include "yse-media-converter/src/main.cxx.h"
 
-namespace yse_ui {
+namespace media_converter {
 namespace {
 
 std::string from_str(rust::Str value)
@@ -485,4 +485,4 @@ MediaConvertResult media_convert(rust::Str input_value, rust::Str output_value, 
   return MediaConvertResult{true, rust::String("Conversion complete")};
 }
 
-}  // namespace yse_ui
+}  // namespace media_converter
