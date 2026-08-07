@@ -63,6 +63,25 @@ mod bridge {
         unsafe fn widget_new_time_edit(iso_time: &str, parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_disk_map(parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_checkbox(text: &str, parent: *mut Widget) -> *mut Widget;
+        unsafe fn widget_new_combo(items: Vec<String>, parent: *mut Widget) -> *mut Widget;
+        unsafe fn widget_new_spin_box(
+            min: i32,
+            max: i32,
+            value: i32,
+            parent: *mut Widget,
+        ) -> *mut Widget;
+        unsafe fn widget_new_slider(
+            min: i32,
+            max: i32,
+            value: i32,
+            parent: *mut Widget,
+        ) -> *mut Widget;
+        unsafe fn widget_new_progress_bar(
+            min: i32,
+            max: i32,
+            value: i32,
+            parent: *mut Widget,
+        ) -> *mut Widget;
         unsafe fn widget_new_row(parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_column(parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_grid(parent: *mut Widget) -> *mut Widget;
@@ -95,6 +114,15 @@ mod bridge {
         unsafe fn button_set_icon(w: *mut Widget, theme_name: &str);
         unsafe fn checkbox_set_checked(w: *mut Widget, checked: bool);
         unsafe fn checkbox_checked(w: *mut Widget) -> bool;
+        unsafe fn combo_set_items(w: *mut Widget, items: Vec<String>);
+        unsafe fn combo_current_text(w: *mut Widget) -> String;
+        unsafe fn combo_set_current_text(w: *mut Widget, text: &str);
+        unsafe fn widget_value(w: *mut Widget) -> i32;
+        unsafe fn widget_set_value(w: *mut Widget, value: i32);
+        unsafe fn widget_set_value_changed_cb(w: *mut Widget, data: *mut Void);
+        unsafe fn spin_box_set_range(w: *mut Widget, min: i32, max: i32);
+        unsafe fn slider_set_range(w: *mut Widget, min: i32, max: i32);
+        unsafe fn progress_set_range(w: *mut Widget, min: i32, max: i32);
         unsafe fn button_click(w: *mut Widget);
         unsafe fn action_new(text: &str, parent: *mut Widget) -> *mut Action;
         unsafe fn action_drop(a: *mut Action);
@@ -170,6 +198,7 @@ mod bridge {
         unsafe fn on_text_changed(data: *mut Void);
         unsafe fn on_toggled(data: *mut Void);
         unsafe fn on_widget_destroyed(data: *mut Void);
+        unsafe fn on_value_changed(data: *mut Void);
         unsafe fn on_gui_scheduled(task: *mut Void);
         unsafe fn on_app_timer(task: *mut Void);
         unsafe fn on_action_triggered(data: *mut Void);
@@ -181,54 +210,92 @@ mod bridge {
 }
 
 unsafe fn on_widget_clicked(data: *mut bridge::Void) {
-    unsafe { callback::clicked(data) };
+    catch_callback("widget clicked", || unsafe { callback::clicked(data) });
 }
 
 unsafe fn on_text_changed(data: *mut bridge::Void) {
-    unsafe { callback::text_changed(data) };
+    catch_callback("text changed", || unsafe { callback::text_changed(data) });
 }
 
 unsafe fn on_toggled(data: *mut bridge::Void) {
-    unsafe { callback::toggled(data) };
+    catch_callback("toggled", || unsafe { callback::toggled(data) });
 }
 
 unsafe fn on_widget_destroyed(data: *mut bridge::Void) {
-    unsafe { callback::destroyed(data) };
+    catch_callback("widget destroyed", || unsafe { callback::destroyed(data) });
+}
+
+unsafe fn on_value_changed(data: *mut bridge::Void) {
+    catch_callback("value changed", || unsafe { callback::value_changed(data) });
 }
 
 unsafe fn on_gui_scheduled(task: *mut bridge::Void) {
-    unsafe {
+    catch_callback("GUI-scheduled task", || unsafe {
         let task: Box<Box<dyn FnOnce() + Send>> =
             Box::from_raw(task as *mut Box<dyn FnOnce() + Send>);
         task();
-    }
+    });
 }
 
 unsafe fn on_app_timer(task: *mut bridge::Void) {
-    unsafe {
+    catch_callback("app timer", || unsafe {
         let task: Box<Box<dyn FnOnce()>> = Box::from_raw(task as *mut Box<dyn FnOnce()>);
         task();
-    }
+    });
 }
 
 unsafe fn on_action_triggered(data: *mut bridge::Void) {
-    unsafe { callback::action_triggered(data) };
+    catch_callback("action triggered", || unsafe {
+        callback::action_triggered(data)
+    });
 }
 
 unsafe fn on_action_destroyed(data: *mut bridge::Void) {
-    unsafe { callback::action_destroyed(data) };
+    catch_callback("action destroyed", || unsafe {
+        callback::action_destroyed(data)
+    });
 }
 
 unsafe fn on_selection_changed(data: *mut bridge::Void) {
-    unsafe { callback::selection_changed(data) };
+    catch_callback("selection changed", || unsafe {
+        callback::selection_changed(data)
+    });
 }
 
 unsafe fn on_dialog_finished(data: *mut bridge::Void) {
-    unsafe { callback::dialog_finished(data) };
+    catch_callback("dialog finished", || unsafe {
+        callback::dialog_finished(data)
+    });
 }
 
 unsafe fn on_filedialog_finished(data: *mut bridge::Void) {
-    unsafe { callback::filedialog_finished(data) };
+    catch_callback("file dialog finished", || unsafe {
+        callback::filedialog_finished(data)
+    });
+}
+
+/// Run a callback that C++ invoked across the FFI boundary, containing any
+/// panic so it never unwinds through the C ABI. An uncontained panic would be
+/// converted by CXX into a `rust::Error` C++ exception; uncaught in the Qt
+/// event loop, that terminates the application. We log the panic instead.
+fn catch_callback<F>(name: &'static str, f: F)
+where
+    F: FnOnce(),
+{
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    if let Err(payload) = result {
+        let message = if let Some(message) = payload.downcast_ref::<&str>() {
+            (*message).to_string()
+        } else if let Some(message) = payload.downcast_ref::<String>() {
+            message.clone()
+        } else {
+            String::from("<non-string panic payload>")
+        };
+        yse_model::log_error(format!("panic in {name} callback: {message}"));
+        // Always surface the panic, even when no logger is installed: silently
+        // swallowing it would hide bugs during development.
+        eprintln!("yse: panic contained in {name} callback: {message}");
+    }
 }
 
 use crate::action::ActionState;
@@ -237,12 +304,14 @@ use crate::bridge::Void;
 use crate::component::{Component, RetainedId};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 use yse_model::{EventStream, ListChange, ListModel, Scheduler, Signal, Sink, Subscription, Var};
 
 pub use dsl::{
-    BoolValue, ButtonView, CheckBoxView, IntoBoolValue, IntoTextValue, LabelView, LayoutView,
-    LineEditView, MountContext, SpacerView, TextValue, Ui, View, button, checkbox, column, label,
-    line_edit, row, spacer,
+    BoolValue, ButtonView, CheckBoxView, ComboBoxView, IntoBoolValue, IntoIntValue, IntoTextValue,
+    LabelView, LayoutView, LineEditView, MountContext, ProgressBarView, SliderView, SpacerView,
+    SpinBoxView, TextValue, Ui, View, button, checkbox, column, combo_box, label, line_edit,
+    progress_bar, row, slider, spacer, spin_box,
 };
 
 /// Clone each named binding and move the clones into `body` (typically a
@@ -326,6 +395,24 @@ impl Scheduler for QtGuiScheduler {
         let outer: Box<Box<dyn FnOnce() + Send>> = Box::new(task);
         let ptr = Box::into_raw(outer) as *mut Void;
         unsafe { ffi::app_schedule_gui(ptr) };
+    }
+}
+
+/// A [`yse_model::Timer`] backed by Qt's event loop, so delayed tasks run on
+/// the GUI thread. Use it to drive `debounce`/`throttle`/`delay` operators in
+/// a live application; [`yse_model::ManualTimer`] is the deterministic
+/// equivalent for tests.
+pub struct QtTimer;
+
+impl yse_model::Timer for QtTimer {
+    fn schedule_after(&self, delay: Duration, task: Box<dyn FnOnce()>) {
+        // Same delivery path as `Application::after`: the closure is leaked to
+        // a thin pointer that Qt hands back on the GUI thread, where
+        // `on_app_timer` reconstructs and runs it. If the app quits first, the
+        // closure leaks; acceptable for one-shot timer deliveries.
+        let outer: Box<Box<dyn FnOnce()>> = Box::new(task);
+        let ptr = Box::into_raw(outer) as *mut Void;
+        unsafe { ffi::app_invoke_after(delay.as_millis() as i32, ptr) };
     }
 }
 
@@ -536,6 +623,61 @@ impl Row {
         CheckBox { inner }
     }
 
+    /// Create a combo box with `items` in this column.
+    pub fn combo_box<I, S>(&self, items: I) -> ComboBox
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_combo(
+                    items.into_iter().map(Into::into).collect(),
+                    self.inner.raw(),
+                ),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        ComboBox { inner }
+    }
+
+    /// Create a numeric spinner (default range `0..=100`) in this column.
+    pub fn spin_box(&self, value: i32) -> SpinBox {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_spin_box(0, 100, value, self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        SpinBox { inner }
+    }
+
+    /// Create a horizontal slider (default range `0..=100`) in this column.
+    pub fn slider(&self, value: i32) -> Slider {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_slider(0, 100, value, self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        Slider { inner }
+    }
+
+    /// Create a progress bar (default range `0..=100`) in this column.
+    pub fn progress_bar(&self, value: i32) -> ProgressBar {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_progress_bar(0, 100, value, self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        ProgressBar { inner }
+    }
+
     /// Create a list view bound to `model`.
     pub fn list_view(&self, model: &StringListModel) -> ListView {
         let inner = unsafe {
@@ -650,6 +792,61 @@ impl Column {
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         CheckBox { inner }
+    }
+
+    /// Create a combo box with `items` in this row.
+    pub fn combo_box<I, S>(&self, items: I) -> ComboBox
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_combo(
+                    items.into_iter().map(Into::into).collect(),
+                    self.inner.raw(),
+                ),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        ComboBox { inner }
+    }
+
+    /// Create a numeric spinner (default range `0..=100`) in this row.
+    pub fn spin_box(&self, value: i32) -> SpinBox {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_spin_box(0, 100, value, self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        SpinBox { inner }
+    }
+
+    /// Create a horizontal slider (default range `0..=100`) in this row.
+    pub fn slider(&self, value: i32) -> Slider {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_slider(0, 100, value, self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        Slider { inner }
+    }
+
+    /// Create a progress bar (default range `0..=100`) in this row.
+    pub fn progress_bar(&self, value: i32) -> ProgressBar {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_progress_bar(0, 100, value, self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        ProgressBar { inner }
     }
 
     /// Create a list view bound to `model`.
@@ -1138,6 +1335,262 @@ impl CheckBox {
 }
 
 widget_wrapper!(CheckBox);
+
+/// A combo box with a fixed item list.
+pub struct ComboBox {
+    inner: Rc<Component>,
+}
+
+impl ComboBox {
+    /// Replace the item list; the current index resets to the first item.
+    pub fn set_items<I, S>(&self, items: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        if self.inner.is_alive() {
+            unsafe {
+                ffi::combo_set_items(
+                    self.inner.raw(),
+                    items.into_iter().map(Into::into).collect(),
+                )
+            };
+        }
+    }
+
+    /// The text of the currently selected item, or an empty string when the
+    /// box has no selection.
+    pub fn current_text(&self) -> String {
+        unsafe { ffi::combo_current_text(self.inner.raw()) }
+    }
+
+    /// The index of the currently selected item, or `-1` when empty.
+    pub fn current_index(&self) -> i32 {
+        unsafe { ffi::widget_value(self.inner.raw()) }
+    }
+
+    /// Select the item at `index`. Out-of-range indices clear the selection.
+    pub fn set_current_index(&self, index: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::widget_set_value(self.inner.raw(), index) };
+        }
+    }
+
+    /// Select the item whose text matches `text`; no-op when absent.
+    pub fn set_current_text(&self, text: impl AsRef<str>) {
+        if self.inner.is_alive() {
+            unsafe { ffi::combo_set_current_text(self.inner.raw(), text.as_ref()) };
+        }
+    }
+
+    /// A stream of selection changes carrying the new item index.
+    pub fn value_changed(&self) -> EventStream<i32> {
+        if self.inner.value_sink.borrow().is_none() {
+            unsafe {
+                ffi::widget_set_value_changed_cb(
+                    self.inner.raw(),
+                    &*self.inner as *const Component as *mut Void,
+                );
+            }
+            *self.inner.value_sink.borrow_mut() = Some(Rc::new(Sink::new()));
+        }
+        self.inner.value_sink.borrow().as_ref().unwrap().stream()
+    }
+
+    /// Register a selection-change handler carrying the new item index.
+    pub fn on_value_change<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&i32) + 'static,
+    {
+        self.inner
+            .owner
+            .borrow_mut()
+            .add(self.value_changed().observe(f));
+        self
+    }
+
+    /// Bind the selected index to a signal.
+    pub fn bind_value(&self, signal: &Signal<i32>) {
+        let weak = Rc::downgrade(&self.inner);
+        let subscription = signal.observe(move |index| {
+            if let Some(this) = weak.upgrade() {
+                this.set_widget_value(*index);
+            }
+        });
+        self.inner.owner.borrow_mut().add(subscription);
+    }
+}
+
+widget_wrapper!(ComboBox);
+
+/// A numeric spinner.
+pub struct SpinBox {
+    inner: Rc<Component>,
+}
+
+impl SpinBox {
+    /// The current value.
+    pub fn value(&self) -> i32 {
+        unsafe { ffi::widget_value(self.inner.raw()) }
+    }
+
+    /// Set the value (clamped to the current range).
+    pub fn set_value(&self, value: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::widget_set_value(self.inner.raw(), value) };
+        }
+    }
+
+    /// Set the accepted value range.
+    pub fn set_range(&self, min: i32, max: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::spin_box_set_range(self.inner.raw(), min, max) };
+        }
+    }
+
+    /// A stream of value changes carrying the new value.
+    pub fn value_changed(&self) -> EventStream<i32> {
+        if self.inner.value_sink.borrow().is_none() {
+            unsafe {
+                ffi::widget_set_value_changed_cb(
+                    self.inner.raw(),
+                    &*self.inner as *const Component as *mut Void,
+                );
+            }
+            *self.inner.value_sink.borrow_mut() = Some(Rc::new(Sink::new()));
+        }
+        self.inner.value_sink.borrow().as_ref().unwrap().stream()
+    }
+
+    /// Register a value-change handler carrying the new value.
+    pub fn on_value_change<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&i32) + 'static,
+    {
+        self.inner
+            .owner
+            .borrow_mut()
+            .add(self.value_changed().observe(f));
+        self
+    }
+
+    /// Bind the value to a signal.
+    pub fn bind_value(&self, signal: &Signal<i32>) {
+        let weak = Rc::downgrade(&self.inner);
+        let subscription = signal.observe(move |value| {
+            if let Some(this) = weak.upgrade() {
+                this.set_widget_value(*value);
+            }
+        });
+        self.inner.owner.borrow_mut().add(subscription);
+    }
+}
+
+widget_wrapper!(SpinBox);
+
+/// A horizontal slider.
+pub struct Slider {
+    inner: Rc<Component>,
+}
+
+impl Slider {
+    /// The current value.
+    pub fn value(&self) -> i32 {
+        unsafe { ffi::widget_value(self.inner.raw()) }
+    }
+
+    /// Set the value (clamped to the current range).
+    pub fn set_value(&self, value: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::widget_set_value(self.inner.raw(), value) };
+        }
+    }
+
+    /// Set the accepted value range.
+    pub fn set_range(&self, min: i32, max: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::slider_set_range(self.inner.raw(), min, max) };
+        }
+    }
+
+    /// A stream of value changes carrying the new value.
+    pub fn value_changed(&self) -> EventStream<i32> {
+        if self.inner.value_sink.borrow().is_none() {
+            unsafe {
+                ffi::widget_set_value_changed_cb(
+                    self.inner.raw(),
+                    &*self.inner as *const Component as *mut Void,
+                );
+            }
+            *self.inner.value_sink.borrow_mut() = Some(Rc::new(Sink::new()));
+        }
+        self.inner.value_sink.borrow().as_ref().unwrap().stream()
+    }
+
+    /// Register a value-change handler carrying the new value.
+    pub fn on_value_change<F>(&self, f: F) -> &Self
+    where
+        F: FnMut(&i32) + 'static,
+    {
+        self.inner
+            .owner
+            .borrow_mut()
+            .add(self.value_changed().observe(f));
+        self
+    }
+
+    /// Bind the value to a signal.
+    pub fn bind_value(&self, signal: &Signal<i32>) {
+        let weak = Rc::downgrade(&self.inner);
+        let subscription = signal.observe(move |value| {
+            if let Some(this) = weak.upgrade() {
+                this.set_widget_value(*value);
+            }
+        });
+        self.inner.owner.borrow_mut().add(subscription);
+    }
+}
+
+widget_wrapper!(Slider);
+
+/// A progress bar.
+pub struct ProgressBar {
+    inner: Rc<Component>,
+}
+
+impl ProgressBar {
+    /// The current value.
+    pub fn value(&self) -> i32 {
+        unsafe { ffi::widget_value(self.inner.raw()) }
+    }
+
+    /// Set the value (clamped to the current range).
+    pub fn set_value(&self, value: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::widget_set_value(self.inner.raw(), value) };
+        }
+    }
+
+    /// Set the accepted value range.
+    pub fn set_range(&self, min: i32, max: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::progress_set_range(self.inner.raw(), min, max) };
+        }
+    }
+
+    /// Bind the value to a signal.
+    pub fn bind_value(&self, signal: &Signal<i32>) {
+        let weak = Rc::downgrade(&self.inner);
+        let subscription = signal.observe(move |value| {
+            if let Some(this) = weak.upgrade() {
+                this.set_widget_value(*value);
+            }
+        });
+        self.inner.owner.borrow_mut().add(subscription);
+    }
+}
+
+widget_wrapper!(ProgressBar);
 
 /// A QAction: a command that can be triggered from a menu, a toolbar, or a
 /// shortcut.

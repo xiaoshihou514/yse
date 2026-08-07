@@ -581,16 +581,6 @@ name = "yse-model"
 version = "0.1.0"
 
 [[package]]
-name = "yse-spike"
-version = "0.1.0"
-dependencies = [
- "cxx",
- "cxx-qt",
- "cxx-qt-build",
- "cxx-qt-lib",
-]
-
-[[package]]
 name = "yse-tool"
 version = "0.1.0"
 

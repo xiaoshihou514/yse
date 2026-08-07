@@ -38,6 +38,15 @@ pub(crate) unsafe fn toggled(data: *mut Void) {
 
 /// # Safety
 ///
+/// Same contract as [`clicked`].
+pub(crate) unsafe fn value_changed(data: *mut Void) {
+    unsafe {
+        (*(data as *const Component)).on_value_changed();
+    }
+}
+
+/// # Safety
+///
 /// `data` must be a pointer to a live `Component`; it stays valid because the
 /// Rust wrapper outlives the widget destruction that triggers this callback.
 pub(crate) unsafe fn destroyed(data: *mut Void) {

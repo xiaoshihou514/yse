@@ -42,16 +42,9 @@ pub mod qobject {
 }
 
 /// Rust-owned state for [`qobject::TextState`].
+#[derive(Default)]
 pub struct TextStateRust {
     pub text: QString,
-}
-
-impl Default for TextStateRust {
-    fn default() -> Self {
-        Self {
-            text: QString::default(),
-        }
-    }
 }
 
 /// Rust-owned state for [`qobject::ToggleState`].

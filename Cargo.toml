@@ -6,5 +6,4 @@ members = [
     "crates/yse-model",
     "crates/yse-tool",
     "crates/yse-ui",
-    "spike",
 ]

@@ -178,14 +178,12 @@ fn main() {
     ] {
         key.on_click(clone!(display => move |_| append(&display, token)));
     }
-    for key in [&equals] {
-        key.on_click(
-            clone!(display, status => move |_| match evaluate(&display.value()) {
-                Ok(value) => { display.set(value.to_string()); status.set(String::new()); }
-                Err(error) => status.set(error),
-            }),
-        );
-    }
+    equals.on_click(
+        clone!(display, status => move |_| match evaluate(&display.value()) {
+            Ok(value) => { display.set(value.to_string()); status.set(String::new()); }
+            Err(error) => status.set(error),
+        }),
+    );
     history_action.on_trigger(
         clone!(status => move |_| status.set(String::from("No calculations in this session yet."))),
     );

@@ -24,6 +24,7 @@ mod diagnostics;
 mod graph;
 mod list;
 mod nodes;
+mod timing;
 mod undo;
 
 pub use diagnostics::{DiagnosticEvent, Diagnostics, LogLevel, LogRecord, Logger};
@@ -44,6 +45,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+pub use timing::{ManualTimer, Timer};
 pub use undo::{Command, UndoStack};
 
 /// Executes deferred work. Yse's reactive graph is synchronous and

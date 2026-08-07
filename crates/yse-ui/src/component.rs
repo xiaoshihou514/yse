@@ -25,6 +25,7 @@ pub struct Component {
     pub clicked_sink: RefCell<Option<Rc<Sink<()>>>>,
     pub text_sink: RefCell<Option<Rc<Sink<String>>>>,
     pub toggled_sink: RefCell<Option<Rc<Sink<bool>>>>,
+    pub value_sink: RefCell<Option<Rc<Sink<i32>>>>,
 }
 
 impl Component {
@@ -58,6 +59,7 @@ impl Component {
             clicked_sink: RefCell::new(None),
             text_sink: RefCell::new(None),
             toggled_sink: RefCell::new(None),
+            value_sink: RefCell::new(None),
         });
         unsafe { ffi::widget_set_destroyed_cb(ptr, &*this as *const Self as *mut Void) };
         if let Some(parent) = parent {
@@ -148,6 +150,16 @@ impl Component {
         }
     }
 
+    pub fn on_value_changed(&self) {
+        if !self.is_alive() {
+            return;
+        }
+        let value = unsafe { ffi::widget_value(self.ptr) };
+        if let Some(sink) = self.value_sink.borrow().as_ref() {
+            sink.send(value);
+        }
+    }
+
     pub fn on_destroyed(&self) {
         if self.destroyed.replace(true) {
             return;
@@ -199,6 +211,13 @@ impl Component {
             return;
         }
         unsafe { ffi::checkbox_set_checked(self.ptr, checked) };
+    }
+
+    pub fn set_widget_value(&self, value: i32) {
+        if !self.is_alive() {
+            return;
+        }
+        unsafe { ffi::widget_set_value(self.ptr, value) };
     }
 }
 

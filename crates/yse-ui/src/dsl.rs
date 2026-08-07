@@ -24,8 +24,9 @@
 
 use crate::component::Component;
 use crate::{
-    Button, CheckBox, DateEdit, DateTimeEdit, DiskMap, Label, LineEdit, ListView, SelectionBridge,
-    StringListModel, StringTableModel, TableView, TimeEdit, Window, ffi,
+    Button, CheckBox, ComboBox, DateEdit, DateTimeEdit, DiskMap, Label, LineEdit, ListView,
+    ProgressBar, SelectionBridge, Slider, SpinBox, StringListModel, StringTableModel, TableView,
+    TimeEdit, Window, ffi,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -119,6 +120,31 @@ impl IntoBoolValue for Signal<bool> {
     }
 }
 
+/// A static or reactive integer property.
+#[doc(hidden)]
+pub enum IntValue {
+    Static(i32),
+    Reactive(Signal<i32>),
+}
+
+/// Convert an `i32` or `Signal<i32>` into a reactive property.
+pub trait IntoIntValue {
+    /// Perform the conversion.
+    fn into_int_value(self) -> IntValue;
+}
+
+impl IntoIntValue for i32 {
+    fn into_int_value(self) -> IntValue {
+        IntValue::Static(self)
+    }
+}
+
+impl IntoIntValue for Signal<i32> {
+    fn into_int_value(self) -> IntValue {
+        IntValue::Reactive(self)
+    }
+}
+
 enum LayoutAxis {
     Row,
     Column,
@@ -192,6 +218,7 @@ impl View for LabelView {
 }
 
 type ClickObserver = Box<dyn FnMut(&())>;
+type ValueObserver = Box<dyn FnMut(&i32)>;
 
 /// A push-button description.
 pub struct ButtonView {
@@ -333,6 +360,205 @@ impl View for CheckBoxView {
             }
         }
         checkbox
+    }
+}
+
+/// A combo-box description.
+pub struct ComboBoxView {
+    items: Vec<String>,
+    selected: Option<IntValue>,
+    changes: Vec<ValueObserver>,
+}
+
+/// Describe a combo box with the given item labels.
+pub fn combo_box<I, S>(items: I) -> ComboBoxView
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    ComboBoxView {
+        items: items.into_iter().map(Into::into).collect(),
+        selected: None,
+        changes: Vec::new(),
+    }
+}
+
+impl ComboBoxView {
+    /// Set or reactively bind the selected index.
+    pub fn value(mut self, value: impl IntoIntValue) -> Self {
+        self.selected = Some(value.into_int_value());
+        self
+    }
+
+    /// Attach a selection-change observer owned by the mounted combo box.
+    pub fn on_value_change(mut self, observer: impl FnMut(&i32) + 'static) -> Self {
+        self.changes.push(Box::new(observer));
+        self
+    }
+}
+
+impl View for ComboBoxView {
+    type Output = ComboBox;
+
+    fn mount_in(self, context: &MountContext) -> ComboBox {
+        let inner =
+            context.child(unsafe { ffi::widget_new_combo(self.items, context.parent.raw()) });
+        let combo = ComboBox { inner };
+        if let Some(selected) = self.selected {
+            match selected {
+                IntValue::Static(index) => combo.set_current_index(index),
+                IntValue::Reactive(signal) => combo.bind_value(&signal),
+            }
+        }
+        for observer in self.changes {
+            combo.on_value_change(observer);
+        }
+        combo
+    }
+}
+
+/// A numeric spinner description.
+pub struct SpinBoxView {
+    value: IntValue,
+    range: (i32, i32),
+    changes: Vec<ValueObserver>,
+}
+
+/// Describe a numeric spinner (default range `0..=100`).
+pub fn spin_box(value: impl IntoIntValue) -> SpinBoxView {
+    SpinBoxView {
+        value: value.into_int_value(),
+        range: (0, 100),
+        changes: Vec::new(),
+    }
+}
+
+impl SpinBoxView {
+    /// Constrain the accepted value range.
+    pub fn range(mut self, min: i32, max: i32) -> Self {
+        self.range = (min, max);
+        self
+    }
+
+    /// Attach a value-change observer owned by the mounted spinner.
+    pub fn on_value_change(mut self, observer: impl FnMut(&i32) + 'static) -> Self {
+        self.changes.push(Box::new(observer));
+        self
+    }
+}
+
+impl View for SpinBoxView {
+    type Output = SpinBox;
+
+    fn mount_in(self, context: &MountContext) -> SpinBox {
+        let initial = match &self.value {
+            IntValue::Static(value) => *value,
+            IntValue::Reactive(signal) => *signal.value(),
+        };
+        let inner = context.child(unsafe {
+            ffi::widget_new_spin_box(self.range.0, self.range.1, initial, context.parent.raw())
+        });
+        let spin = SpinBox { inner };
+        if let IntValue::Reactive(signal) = self.value {
+            spin.bind_value(&signal);
+        }
+        for observer in self.changes {
+            spin.on_value_change(observer);
+        }
+        spin
+    }
+}
+
+/// A horizontal slider description.
+pub struct SliderView {
+    value: IntValue,
+    range: (i32, i32),
+    changes: Vec<ValueObserver>,
+}
+
+/// Describe a horizontal slider (default range `0..=100`).
+pub fn slider(value: impl IntoIntValue) -> SliderView {
+    SliderView {
+        value: value.into_int_value(),
+        range: (0, 100),
+        changes: Vec::new(),
+    }
+}
+
+impl SliderView {
+    /// Constrain the accepted value range.
+    pub fn range(mut self, min: i32, max: i32) -> Self {
+        self.range = (min, max);
+        self
+    }
+
+    /// Attach a value-change observer owned by the mounted slider.
+    pub fn on_value_change(mut self, observer: impl FnMut(&i32) + 'static) -> Self {
+        self.changes.push(Box::new(observer));
+        self
+    }
+}
+
+impl View for SliderView {
+    type Output = Slider;
+
+    fn mount_in(self, context: &MountContext) -> Slider {
+        let initial = match &self.value {
+            IntValue::Static(value) => *value,
+            IntValue::Reactive(signal) => *signal.value(),
+        };
+        let inner = context.child(unsafe {
+            ffi::widget_new_slider(self.range.0, self.range.1, initial, context.parent.raw())
+        });
+        let slider = Slider { inner };
+        if let IntValue::Reactive(signal) = self.value {
+            slider.bind_value(&signal);
+        }
+        for observer in self.changes {
+            slider.on_value_change(observer);
+        }
+        slider
+    }
+}
+
+/// A progress-bar description.
+pub struct ProgressBarView {
+    value: IntValue,
+    range: (i32, i32),
+}
+
+/// Describe a progress bar (default range `0..=100`).
+pub fn progress_bar(value: impl IntoIntValue) -> ProgressBarView {
+    ProgressBarView {
+        value: value.into_int_value(),
+        range: (0, 100),
+    }
+}
+
+impl ProgressBarView {
+    /// Constrain the accepted value range.
+    pub fn range(mut self, min: i32, max: i32) -> Self {
+        self.range = (min, max);
+        self
+    }
+}
+
+impl View for ProgressBarView {
+    type Output = ProgressBar;
+
+    fn mount_in(self, context: &MountContext) -> ProgressBar {
+        let initial = match &self.value {
+            IntValue::Static(value) => *value,
+            IntValue::Reactive(signal) => *signal.value(),
+        };
+        let inner = context.child(unsafe {
+            ffi::widget_new_progress_bar(self.range.0, self.range.1, initial, context.parent.raw())
+        });
+        let bar = ProgressBar { inner };
+        if let IntValue::Reactive(signal) = self.value {
+            bar.bind_value(&signal);
+        }
+        bar
     }
 }
 
@@ -498,6 +724,40 @@ impl Ui {
         let parent = self.layout_parent();
         let inner = self.leaf(unsafe { ffi::widget_new_checkbox(&text.into(), parent.raw()) });
         CheckBox { inner }
+    }
+
+    /// Create a combo box with `items` in this layout.
+    pub fn combo_box<I, S>(&self, items: I) -> ComboBox
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe {
+            ffi::widget_new_combo(items.into_iter().map(Into::into).collect(), parent.raw())
+        });
+        ComboBox { inner }
+    }
+
+    /// Create a numeric spinner (default range `0..=100`) in this layout.
+    pub fn spin_box(&self, value: i32) -> SpinBox {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_spin_box(0, 100, value, parent.raw()) });
+        SpinBox { inner }
+    }
+
+    /// Create a horizontal slider (default range `0..=100`) in this layout.
+    pub fn slider(&self, value: i32) -> Slider {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_slider(0, 100, value, parent.raw()) });
+        Slider { inner }
+    }
+
+    /// Create a progress bar (default range `0..=100`) in this layout.
+    pub fn progress_bar(&self, value: i32) -> ProgressBar {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_progress_bar(0, 100, value, parent.raw()) });
+        ProgressBar { inner }
     }
 
     /// Add a stretch spacer to this layout.

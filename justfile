@@ -44,9 +44,10 @@ example name:
 # Print the Windows environment and repo reachability.
 # build
 # Build the workspace on Windows (MSVC + Qt).
-# example <name>
-# Run a yse-ui example as a real window on Windows (e.g. `just windows-example settings`).
-# check
-# Run the full local gate on Windows.
+# Run a Windows helper action: setup | diag | build | check.
 windows action:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 {{action}}
+
+# Run a yse-ui example as a real window on Windows (e.g. `just windows-example settings`).
+windows-example name:
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 example {{name}}

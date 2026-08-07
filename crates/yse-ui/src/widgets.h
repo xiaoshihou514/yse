@@ -48,11 +48,16 @@ struct Widget {
   void* clicked_cb_data = nullptr;
   void* text_changed_cb_data = nullptr;
   void* toggled_cb_data = nullptr;
+  void* value_cb_data = nullptr;
   void* selection_cb_data = nullptr;
+  // 0 = none, 1 = QComboBox, 2 = QSpinBox, 3 = QSlider, 4 = QProgressBar.
+  // `widget_value` / `widget_set_value` dispatch on this tag.
+  int value_kind = 0;
   QMetaObject::Connection destroyed_connection;
   QMetaObject::Connection clicked_connection;
   QMetaObject::Connection text_changed_connection;
   QMetaObject::Connection toggled_connection;
+  QMetaObject::Connection value_connection;
   QMetaObject::Connection selection_connection;
 
   Widget(QWidget* q_, bool owned_, bool alive_, void*)
@@ -139,6 +144,10 @@ Widget* widget_new_date_edit(rust::Str iso_date, Widget* parent);
 Widget* widget_new_time_edit(rust::Str iso_time, Widget* parent);
 Widget* widget_new_disk_map(Widget* parent);
 Widget* widget_new_checkbox(rust::Str text, Widget* parent);
+Widget* widget_new_combo(rust::Vec<rust::String> items, Widget* parent);
+Widget* widget_new_spin_box(int min, int max, int value, Widget* parent);
+Widget* widget_new_slider(int min, int max, int value, Widget* parent);
+Widget* widget_new_progress_bar(int min, int max, int value, Widget* parent);
 Widget* widget_new_row(Widget* parent);
 Widget* widget_new_column(Widget* parent);
 Widget* widget_new_grid(Widget* parent);
@@ -220,6 +229,15 @@ void disk_map_set_segments(Widget* w, rust::Vec<rust::String> labels, rust::Vec<
 void button_set_icon(Widget* w, rust::Str theme_name);
 void checkbox_set_checked(Widget* w, bool checked);
 bool checkbox_checked(Widget* w);
+void combo_set_items(Widget* w, rust::Vec<rust::String> items);
+rust::String combo_current_text(Widget* w);
+void combo_set_current_text(Widget* w, rust::Str text);
+int widget_value(Widget* w);
+void widget_set_value(Widget* w, int value);
+void widget_set_value_changed_cb(Widget* w, Void* data);
+void spin_box_set_range(Widget* w, int min, int max);
+void slider_set_range(Widget* w, int min, int max);
+void progress_set_range(Widget* w, int min, int max);
 void button_click(Widget* w);
 
 // Actions --------------------------------------------------------------------

@@ -11,12 +11,11 @@ crates/yse        Convenience facade: re-exports yse-model + yse-ui
 crates/yse-model  Pure-Rust reactive runtime (no Qt, no unsafe)
 crates/yse-ui     Reactive Qt Widgets layer (CXX bridge + C++ shim)
 crates/yse-tool   Developer toolchain (`cargo yse new/dev/test/bundle`)
-spike             Phase 0 feasibility spike (CXX-Qt Widgets without QML)
 ```
 
 Dependency direction: `yse -> yse-ui -> yse-model`. `yse-tool`, examples, and
-the spike stand apart. `yse-model` is independent of Qt and deterministic;
-`yse-ui` is a retained object tree (no virtual DOM).
+the example crates stand apart. `yse-model` is independent of Qt and
+deterministic; `yse-ui` is a retained object tree (no virtual DOM).
 
 ## Reactive model (`yse-model`)
 

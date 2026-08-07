@@ -35,11 +35,14 @@ cargo test -p yse-model
 
 [`yse-ui`](crates/yse-ui) binds `yse-model` to a retained Qt Widgets tree
 through a small C++ shim: window, row/column layouts, label, button, line
-edit, checkbox, and grid layouts (with generic `add` for nesting), plus
-actions, menus, menu bars, and toolbars with shortcuts. It has
-signal-to-property bindings, two-way line-edit bindings, and per-component
-owners released automatically when the Qt object is destroyed. A
-`QtGuiScheduler` runs `yse_model::spawn_task` results on the Qt event loop.
+edit, checkbox, combo box, spin box, slider, progress bar, date/time edits,
+and grid layouts (with generic `add` for nesting), plus actions, menus, menu
+bars, and toolbars with shortcuts. It has signal-to-property bindings, two-way
+line-edit bindings, and per-component owners released automatically when the
+Qt object is destroyed. A `QtGuiScheduler` runs `yse_model::spawn_task`
+results on the Qt event loop, and `yse_model`'s time operators (`debounce`,
+`throttle`, `delay`) are driven by a `QtTimer` in applications and a
+`ManualTimer` in tests.
 `StringListModel` drives a `QListView` through a C++ `QAbstractListModel`
 adapter, applying changes incrementally with `beginInsertRows`/`beginRemoveRows`
 so the view never resets for ordinary edits; `ListView::selection_changed()`
@@ -112,16 +115,13 @@ state from a background task delivered on the GUI thread, and triggers a File
 menu action, printing the resulting greeting, status, and load state before
 quitting.
 
-The Phase 0 spike lives in [`spike/`](spike): a Cargo-only CXX-Qt application
-that proves the no-QML Qt Widgets path with a small C++ shim.
-
-- Rust owns the reactive state (`spike/src/bridge.rs`): a `Counter` QObject with
-  `count`/`result` properties, invokables, and `cxx_qt::Threading` for
-  dispatching background results onto the GUI thread.
-- C++ owns the raw Qt surface (`spike/src/spike.cpp`): `QApplication`, a `QWidget`
-  window with `QVBoxLayout`, two `QLabel`s, and two `QPushButton`s, wired to
-  the Rust invokables and to the generated property-change signals.
-- `spike/src/spike.h` is the entire hand-written C++ API surface Rust sees.
+The [`controls`](crates/yse-ui/examples/controls.rs) demo shows the value
+widgets in a declarative tree: a combo box, spin box, slider, and progress
+bar wired together with signal bindings and value-change handlers. Run it
+headless with `QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 cargo run -p yse-ui
+--example controls`. FFI safety invariants — pointer lifetimes, the destroyed
+hook, panic containment at the C++ boundary, and the widget-extension pattern
+— are documented in [docs/safety.md](docs/safety.md).
 
 ## Development environment
 
@@ -136,23 +136,10 @@ that proves the no-QML Qt Widgets path with a small C++ shim.
 just --list                  # list development shortcuts
 just check                   # format check, lint, tests, and docs
 cargo build
-cargo run -p yse-spike
 ```
 
 Install [`just`](https://just.systems/) to use the shortcuts; the underlying
 Cargo commands remain usable directly.
-
-For a deterministic headless smoke run:
-
-```sh
-QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 cargo run -p yse-spike
-```
-
-The smoke run clicks "Increment" twice, starts one background task, then
-closes the window. It should print, in order: the two increments, the
-background result delivered on the GUI thread, the event-loop exit, and the
-destruction cleanup (`CounterRust` dropped, `QObject::destroyed` for the
-window and the counter).
 
 ## CI
 

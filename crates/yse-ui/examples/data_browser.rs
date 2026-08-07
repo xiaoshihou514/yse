@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use yse_model::{CancellationToken, Command, ListModel, Task, UndoStack, Var, spawn_task};
 use yse_ui::{
-    Application, MessageBox, MessageBoxButtons, QtGuiScheduler, Settings, StringTableModel, Window,
-    clone,
+    Application, MessageBox, MessageBoxButtons, QtGuiScheduler, QtTimer, Settings,
+    StringTableModel, Window, clone,
 };
 
 type LoadResult = Result<Vec<Vec<String>>, String>;
@@ -204,10 +204,16 @@ fn main() {
     let _records_sub = records.changes().observe(clone!(records, filter_var, sort_col, table, visible_indices => move |_| {
         refresh_view(&records, &filter_var.value(), *sort_col.value(), &table, &visible_indices);
     }));
-    let _filter_sub = filter_var.signal().changes().observe(clone!(records, filter_var, sort_col, table, visible_indices, settings => move |_| {
-        settings.set("filter", &filter_var.value());
-        refresh_view(&records, &filter_var.value(), *sort_col.value(), &table, &visible_indices);
-    }));
+    // Debounce the filter: refresh and persist only ~150 ms after the user
+    // stops typing, instead of on every keystroke.
+    let _filter_sub = filter_var
+        .signal()
+        .changes()
+        .debounce(Rc::new(QtTimer), Duration::from_millis(150))
+        .observe(clone!(records, filter_var, sort_col, table, visible_indices, settings => move |_| {
+            settings.set("filter", &filter_var.value());
+            refresh_view(&records, &filter_var.value(), *sort_col.value(), &table, &visible_indices);
+        }));
 
     // Undo/redo actions.
     undo_action.on_trigger(clone!(undo_stack => move |_| {

@@ -26,6 +26,7 @@ using Vec = ::rust::Vec<T>;
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QBoxLayout>
 #include <QtWidgets/QCheckBox>
+#include <QtWidgets/QComboBox>
 #include <QtWidgets/QDateTimeEdit>
 #include <QtWidgets/QDateEdit>
 #include <QtWidgets/QFileDialog>
@@ -40,6 +41,9 @@ using Vec = ::rust::Vec<T>;
 #include <QtWidgets/QMenuBar>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QProgressBar>
+#include <QtWidgets/QSlider>
+#include <QtWidgets/QSpinBox>
 #include <QtWidgets/QSizePolicy>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QToolBar>
@@ -320,6 +324,47 @@ Widget* widget_new_checkbox(rust::Str text, Widget* parent)
   return widget;
 }
 
+Widget* widget_new_combo(rust::Vec<rust::String> items, Widget* parent)
+{
+  auto* combo = new QComboBox(parent != nullptr ? parent->q : nullptr);
+  auto* widget = new_child(combo, parent);
+  widget->value_kind = 1;
+  for (const auto& item : items) {
+    combo->addItem(QString::fromUtf8(item.data(), item.size()));
+  }
+  return widget;
+}
+
+Widget* widget_new_spin_box(int min, int max, int value, Widget* parent)
+{
+  auto* spin = new QSpinBox(parent != nullptr ? parent->q : nullptr);
+  spin->setRange(min, max);
+  spin->setValue(value);
+  auto* widget = new_child(spin, parent);
+  widget->value_kind = 2;
+  return widget;
+}
+
+Widget* widget_new_slider(int min, int max, int value, Widget* parent)
+{
+  auto* slider = new QSlider(Qt::Horizontal, parent != nullptr ? parent->q : nullptr);
+  slider->setRange(min, max);
+  slider->setValue(value);
+  auto* widget = new_child(slider, parent);
+  widget->value_kind = 3;
+  return widget;
+}
+
+Widget* widget_new_progress_bar(int min, int max, int value, Widget* parent)
+{
+  auto* bar = new QProgressBar(parent != nullptr ? parent->q : nullptr);
+  bar->setRange(min, max);
+  bar->setValue(value);
+  auto* widget = new_child(bar, parent);
+  widget->value_kind = 4;
+  return widget;
+}
+
 Widget* widget_new_row(Widget* parent)
 {
   auto* q = new QWidget();
@@ -408,11 +453,13 @@ void widget_drop(Widget* w)
   QObject::disconnect(w->clicked_connection);
   QObject::disconnect(w->text_changed_connection);
   QObject::disconnect(w->toggled_connection);
+  QObject::disconnect(w->value_connection);
   QObject::disconnect(w->selection_connection);
   w->destroyed_cb_data = nullptr;
   w->clicked_cb_data = nullptr;
   w->text_changed_cb_data = nullptr;
   w->toggled_cb_data = nullptr;
+  w->value_cb_data = nullptr;
   w->selection_cb_data = nullptr;
   if (w->owned && w->alive) {
     // Windows own their QWidget; children are deleted by their Qt parent.
@@ -597,6 +644,135 @@ void checkbox_set_checked(Widget* w, bool checked)
 bool checkbox_checked(Widget* w)
 {
   return w->alive && w->toggle_state != nullptr && w->toggle_state->getChecked();
+}
+
+void combo_set_items(Widget* w, rust::Vec<rust::String> items)
+{
+  if (w->alive && w->q != nullptr && w->value_kind == 1) {
+    auto* combo = static_cast<QComboBox*>(w->q);
+    combo->clear();
+    for (const auto& item : items) {
+      combo->addItem(QString::fromUtf8(item.data(), item.size()));
+    }
+  }
+}
+
+rust::String combo_current_text(Widget* w)
+{
+  if (w->alive && w->q != nullptr && w->value_kind == 1) {
+    return rust::String(static_cast<QComboBox*>(w->q)->currentText().toUtf8().constData());
+  }
+  return rust::String();
+}
+
+void combo_set_current_text(Widget* w, rust::Str text)
+{
+  if (w->alive && w->q != nullptr && w->value_kind == 1) {
+    auto* combo = static_cast<QComboBox*>(w->q);
+    const int index = combo->findText(QString::fromUtf8(text.data(), text.size()));
+    if (index >= 0) {
+      combo->setCurrentIndex(index);
+    }
+  }
+}
+
+int widget_value(Widget* w)
+{
+  if (w == nullptr || !w->alive || w->q == nullptr) {
+    return 0;
+  }
+  switch (w->value_kind) {
+    case 1:
+      return static_cast<QComboBox*>(w->q)->currentIndex();
+    case 2:
+      return static_cast<QSpinBox*>(w->q)->value();
+    case 3:
+      return static_cast<QSlider*>(w->q)->value();
+    case 4:
+      return static_cast<QProgressBar*>(w->q)->value();
+    default:
+      return 0;
+  }
+}
+
+void widget_set_value(Widget* w, int value)
+{
+  if (w == nullptr || !w->alive || w->q == nullptr) {
+    return;
+  }
+  switch (w->value_kind) {
+    case 1:
+      static_cast<QComboBox*>(w->q)->setCurrentIndex(value);
+      break;
+    case 2:
+      static_cast<QSpinBox*>(w->q)->setValue(value);
+      break;
+    case 3:
+      static_cast<QSlider*>(w->q)->setValue(value);
+      break;
+    case 4:
+      static_cast<QProgressBar*>(w->q)->setValue(value);
+      break;
+    default:
+      break;
+  }
+}
+
+void widget_set_value_changed_cb(Widget* w, Void* data)
+{
+  QObject::disconnect(w->value_connection);
+  w->value_cb_data = static_cast<void*>(data);
+  const auto fire = [w] {
+    if (w->value_cb_data != nullptr) {
+      yse_ui::on_value_changed(static_cast<yse_ui::Void*>(w->value_cb_data));
+    }
+  };
+  switch (w->value_kind) {
+    case 1:
+      w->value_connection = QObject::connect(
+        static_cast<QComboBox*>(w->q),
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        w->q,
+        fire);
+      break;
+    case 2:
+      w->value_connection = QObject::connect(
+        static_cast<QSpinBox*>(w->q),
+        QOverload<int>::of(&QSpinBox::valueChanged),
+        w->q,
+        fire);
+      break;
+    case 3:
+      w->value_connection = QObject::connect(
+        static_cast<QSlider*>(w->q),
+        &QSlider::valueChanged,
+        w->q,
+        fire);
+      break;
+    default:
+      break;
+  }
+}
+
+void spin_box_set_range(Widget* w, int min, int max)
+{
+  if (w->alive && w->q != nullptr && w->value_kind == 2) {
+    static_cast<QSpinBox*>(w->q)->setRange(min, max);
+  }
+}
+
+void slider_set_range(Widget* w, int min, int max)
+{
+  if (w->alive && w->q != nullptr && w->value_kind == 3) {
+    static_cast<QSlider*>(w->q)->setRange(min, max);
+  }
+}
+
+void progress_set_range(Widget* w, int min, int max)
+{
+  if (w->alive && w->q != nullptr && w->value_kind == 4) {
+    static_cast<QProgressBar*>(w->q)->setRange(min, max);
+  }
 }
 
 void button_click(Widget* w)
