@@ -1,0 +1,10 @@
+# Gansi project configuration. The Qt version, compiler
+# family, and target architecture are pinned here for reproducible builds.
+[project]
+name = "{{name}}"
+qt_version = "6.8"
+compiler_family = "gcc"   # gcc | msvc | clang
+target_arch = "x86_64"
+
+[deployment]
+bundle_name = "{{title}}"

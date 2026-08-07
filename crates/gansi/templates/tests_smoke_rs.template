@@ -1,0 +1,4 @@
+#[test]
+fn smoke_counter_starts_at_zero() {
+    assert_eq!(0, 0);
+}

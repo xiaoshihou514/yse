@@ -1,6 +1,6 @@
 # gansi（干丝）开发计划
 
-`yse-tool` 的下一步演进。目标三步走：
+`gansi` 的下一步演进。目标三步走：
 
 1. crate 更名为 `gansi`（干丝），从 cargo 子命令变为独立 CLI（对齐 `flutter`）。
 2. 去除对 `aqt`（Python 工具）的依赖，用 Rust 实现 Qt SDK 的检测 / 下载 / 安装。
@@ -14,17 +14,17 @@
 
 | 文件                              | 内容                                                                                                                        |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `crates/yse-tool/src/main.rs`     | 手写 `env::args` 命令分发：`new/dev/test/bundle/version/help`，含 `check_qt()` 预检                                         |
-| `crates/yse-tool/src/project.rs`  | `Project` 模型、名称校验、`write_project` / `write_project_local`、`bundle()`（macOS plist、`windeployqt` / `macdeployqt`） |
-| `crates/yse-tool/src/template.rs` | 模板渲染（`{{name}}` / `{{name_snake}}` / `{{title}}` / `{{yse_path}}`），本地与 facade 两套模板                            |
-| `scripts/windows.ps1`             | Windows 宿主辅助脚本；aqt 的唯一真实调用点（`setup` 分支第 85 行），另有 MSVC 环境导入、`CARGO_TARGET_DIR` 隔离         |
+| `crates/gansi/src/main.rs`     | `clap` 命令分发：`create/new`、`run/dev`、`test`、`build/bundle`、`doctor`、`setup` 等，含 `check_qt()` 的替代实现 |
+| `crates/gansi/src/project.rs`  | `Project` 模型、名称校验、`write_project` / `write_project_local`、`bundle()`（macOS plist、`windeployqt` / `macdeployqt`） |
+| `crates/gansi/src/template.rs` | 模板渲染（`{{name}}` / `{{name_snake}}` / `{{title}}` / `{{yse_path}}`），本地与 facade 两套模板                            |
+| `scripts/windows.ps1`             | Windows 宿主辅助脚本；MSVC 环境导入、`CARGO_TARGET_DIR` 隔离、`setup` 分发到 `gansi setup` |
 
 要点：
 
-- `yse-tool` 目前零 Cargo 依赖，测试是 `project.rs` 内嵌的 4 个 `#[test]`。
+- `gansi` 目前零 Cargo 依赖，测试是 `project.rs` 内嵌的 4 个 `#[test]`。
 - aqt 不是 Cargo 依赖，只是 windows.ps1 里调的外部 Python 工具。其余出现处：`justfile:46` 注释、`main.rs:153` 报错文案。
-- 生成项目当前文件清单：`Cargo.toml`、`build.rs`、`yse.toml`、`.gitignore`、`icon.svg`、`RELEASE.md`、`src/{main.rs,bridge.rs}`、`src/spike.{h,cpp}`。没有 `tests/`、没有 `README.md`、没有 IDE 配置、没有脚手架版本号。
-- 模板、README、RELEASE.md、PLAN.md 里散布 `cargo yse` 文案，改名时全部要跟着改。
+- 生成项目清单已补齐 `tests/`、`README.md`、`.github` 与脚手架版本号。
+- 模板、README、RELEASE.md、PLAN.md 里需要保持与 `gansi` 命名一致。
 - aqt源码：https://github.com/miurahr/aqtinstall，已在../../scratch/aqtinstall
 
 ---
@@ -40,12 +40,12 @@
 
 ### 2.2 波及面（必须同步，否则文档与产物不一致）
 
-- `README.md`：`cargo install --path crates/yse-tool`、全部 `cargo yse` 示例。
+- `README.md`：`cargo install --path crates/gansi`、全部 `gansi` 示例。
 - `RELEASE.md`：发布顺序第 4 项 `crates/yse-tool` → `crates/gansi`。
 - `agent_docs/PLAN.md`：Phase 4 命令块（第 204-211 行）。
-- `AGENTS.md`：`crates/yse-tool` 一行。
-- `crates/yse-tool/src/template.rs`：`CARGO_TOML_LOCAL`、`MAIN_RS_LOCAL`、`SPIKE_CPP`、`RELEASE_MD`、`BRIDGE_RS` 内的 `cargo yse ...` 文案与注释。
-- `crates/yse-tool/src/main.rs`：模块文档、help 文案、错误文案（`Run \`cargo yse --help\``）。
+- `AGENTS.md`：`crates/gansi` 一行。
+- `crates/gansi/src/template.rs`：`CARGO_TOML_LOCAL`、`MAIN_RS_LOCAL`、`SPIKE_CPP`、`RELEASE_MD`、`BRIDGE_RS` 内的 `gansi ...` 文案与注释。
+- `crates/gansi/src/main.rs`：模块文档、help 文案、错误文案（`Run \`gansi --help\``）。
 - `Cargo.lock`：cargo 重新解析后自动更新。
 - D2 项目清单更名：建议同步 `yse.toml` → `gansi.toml`
 

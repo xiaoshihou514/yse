@@ -7,11 +7,28 @@ use std::process::Command;
 
 use crate::template;
 
+pub const MANIFEST_FILE_NAME: &str = "gansi.toml";
+
 pub struct Project {
     pub name: String,
     pub name_snake: String,
     pub title: String,
     pub local_yse: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BundleProfile {
+    Debug,
+    Release,
+}
+
+impl BundleProfile {
+    fn target_dir(&self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::Release => "release",
+        }
+    }
 }
 
 impl Project {
@@ -59,10 +76,10 @@ impl Project {
         Ok(project)
     }
 
-    /// Read the pinned project configuration from `yse.toml`.
+    /// Read the pinned project configuration from `gansi.toml`.
     pub fn from_manifest(path: &str) -> Result<Self, String> {
         let content = fs::read_to_string(path).map_err(|error| {
-            format!("cannot read `{path}` (run `cargo yse new` first): {error}")
+            format!("cannot read `{path}` (run `gansi create` first): {error}")
         })?;
         let name = content
             .lines()
@@ -94,13 +111,13 @@ pub fn write_project(project: &Project, target: &Path) -> Result<(), String> {
             template::render(template::CARGO_TOML, project),
         ),
         ("build.rs", template::render(template::BUILD_RS, project)),
-        ("yse.toml", template::render(template::YSE_TOML, project)),
+        ("gansi.toml", template::render(template::GANSI_TOML, project)),
         (".gitignore", template::render(template::GITIGNORE, project)),
-        ("icon.svg", template::render(template::ICON_SVG, project)),
         (
             "RELEASE.md",
             template::render(template::RELEASE_MD, project),
         ),
+        ("README.md", template::render(template::README_MD, project)),
         ("src/main.rs", template::render(template::MAIN_RS, project)),
         (
             "src/bridge.rs",
@@ -111,6 +128,7 @@ pub fn write_project(project: &Project, target: &Path) -> Result<(), String> {
             "src/spike.cpp",
             template::render(template::SPIKE_CPP, project),
         ),
+        ("tests/smoke.rs", template::render(template::TESTS_SMOKE_RS, project)),
     ];
     for (relative, content) in files {
         let path = target.join(relative);
@@ -133,16 +151,13 @@ pub fn write_project_local(project: &Project, target: &Path) -> Result<(), Strin
             template::render_local(template::CARGO_TOML_LOCAL, project),
         ),
         (
-            "yse.toml",
-            template::render_local(template::YSE_TOML, project),
+            "gansi.toml",
+            template::render_local(template::GANSI_TOML, project),
         ),
+        ("README.md", template::render_local(template::README_MD, project)),
         (
             ".gitignore",
             template::render_local(template::GITIGNORE, project),
-        ),
-        (
-            "icon.svg",
-            template::render_local(template::ICON_SVG, project),
         ),
         (
             "RELEASE.md",
@@ -152,6 +167,7 @@ pub fn write_project_local(project: &Project, target: &Path) -> Result<(), Strin
             "src/main.rs",
             template::render_local(template::MAIN_RS_LOCAL, project),
         ),
+        ("tests/smoke.rs", template::render_local(template::TESTS_SMOKE_RS, project)),
     ];
     for (relative, content) in files {
         let path = target.join(relative);
@@ -167,7 +183,7 @@ pub fn write_project_local(project: &Project, target: &Path) -> Result<(), Strin
 
 /// Build a release and lay out `dist/<name>/` with the platform binary.
 /// Windows and macOS invoke Qt's deployment tools to make the output portable.
-pub fn bundle(project: &Project) -> Result<(), String> {
+pub fn bundle(project: &Project, profile: BundleProfile) -> Result<(), String> {
     let dist = env::current_dir()
         .map_err(|error| format!("cannot read current directory: {error}"))?
         .join("dist")
@@ -179,7 +195,7 @@ pub fn bundle(project: &Project) -> Result<(), String> {
     let binary = env::current_dir()
         .map_err(|error| error.to_string())?
         .join("target")
-        .join("release")
+        .join(profile.target_dir())
         .join(binary_name);
     #[cfg(not(target_os = "macos"))]
     let destination = dist.join(format!("{}{}", project.name, env::consts::EXE_SUFFIX));
@@ -270,19 +286,20 @@ mod tests {
     #[test]
     fn generation_writes_all_files() {
         let project = Project::parse("smoke-app").unwrap();
-        let dir = std::env::temp_dir().join(format!("yse-tool-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("gansi-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         write_project(&project, &dir).unwrap();
         for file in [
             "Cargo.toml",
             "build.rs",
-            "yse.toml",
-            "icon.svg",
+            "gansi.toml",
             "RELEASE.md",
+            "README.md",
             "src/main.rs",
             "src/bridge.rs",
             "src/spike.h",
             "src/spike.cpp",
+            "tests/smoke.rs",
         ] {
             assert!(dir.join(file).exists(), "missing generated file {file}");
         }
@@ -301,7 +318,7 @@ mod tests {
         let project = Project::parse_local("local-app", &repo.to_string_lossy()).unwrap();
         assert!(project.local_yse.is_some());
 
-        let dir = std::env::temp_dir().join(format!("yse-tool-local-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("gansi-local-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         write_project_local(&project, &dir).unwrap();
         let cargo_toml = fs::read_to_string(dir.join("Cargo.toml")).unwrap();

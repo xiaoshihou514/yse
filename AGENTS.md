@@ -12,7 +12,7 @@ benchmarks live in each crate's `examples/` directory or under the top-level
 crates/yse        Facade: re-exports yse-model + yse-ui
 crates/yse-model  Pure-Rust reactive runtime (no Qt, no unsafe)
 crates/yse-ui     Qt Widgets layer (CXX bridge + C++ shim in src/*.cpp)
-crates/yse-tool   Developer CLI (cargo yse new/dev/test/bundle)
+crates/gansi      Developer CLI (`gansi create/run/test/build`)
 examples/taskmgr  Cross-platform task manager built on the `yse` facade
 examples/media-converter  Demo app built on yse-ui (uses CXX-Qt build deps)
 docs/             Architecture and FFI safety notes
@@ -21,7 +21,7 @@ docs/             Architecture and FFI safety notes
 `crates/yse-media/` is an empty, untracked scaffolding dir (not a workspace
 member, no `Cargo.toml`); don't expect it to build.
 
-Dependency direction: `yse -> yse-ui -> yse-model`. `yse-tool` and the
+Dependency direction: `yse -> yse-ui -> yse-model`. `gansi` and the
 examples stand apart and link the facade.
 
 ## Build, Test, and Development Commands

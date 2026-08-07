@@ -26,7 +26,7 @@ yse        Convenience facade that re-exports the public application API
 Future packages, deliberately out of scope until later:
 
 ```text
-yse-tool   Project creation, development, test, and packaging commands
+gansi      Project creation, development, test, and packaging commands
 yse-kde    Optional KDE Framework integrations
 ```
 
@@ -201,13 +201,13 @@ menu shortcuts.
 
 Make the supported path easy to create, test, package, and release.
 
-### `yse-tool` commands
+### `gansi` commands
 
 ```text
-cargo yse new <name>
-cargo yse dev
-cargo yse test
-cargo yse bundle
+gansi create <name>
+gansi run
+gansi test
+gansi build
 ```
 
 ### Responsibilities

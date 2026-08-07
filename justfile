@@ -43,7 +43,7 @@ example name:
 # --- Windows (host) recipes, PowerShell --------------------------------------
 
 # setup
-# Set up Qt 6.8.3 on Windows via aqt (install through `uv tool install aqtinstall`).
+# Set up host prerequisites; run Rust toolchain bootstrap with `gansi setup`.
 # diag
 # Print the Windows environment and repo reachability.
 # build

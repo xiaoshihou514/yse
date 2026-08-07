@@ -1,0 +1,15 @@
+# {{title}}
+
+This project was generated with `gansi create`.
+
+## Run
+
+- `gansi run`: build and run the app
+- `gansi test`: run tests
+- `gansi build`: build a release bundle
+
+## Requirements
+
+Install Qt 6 Widgets development files and a compatible C++ toolchain.
+
+For release packaging, see [`RELEASE.md`](RELEASE.md).

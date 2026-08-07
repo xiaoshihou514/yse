@@ -11,7 +11,7 @@ release process in [RELEASE.md](RELEASE.md).
 
 ## Current state
 
-Phase 0 (CXX-Qt feasibility spike) through Phase 4 (`yse-tool`) are
+Phase 0 (CXX-Qt feasibility spike) through Phase 4 (`gansi`) are
 implemented. The [`yse`](crates/yse) facade re-exports the public API of both
 layers, so applications can `use yse::*` for the whole stack.
 
@@ -77,27 +77,27 @@ QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 cargo run -p yse-ui --example data_browser
 It prints `status`, visible row count, active filter, and the first visible
 row after driving the whole flow.
 
-## Developer toolchain (`cargo yse`)
+## Developer toolchain (`gansi`)
 
-[`yse-tool`](crates/yse-tool) is the Phase 4 developer CLI. Install it with:
+[`gansi`](crates/gansi) is the Phase 4 developer CLI. Install it with:
 
 ```sh
-cargo install --path crates/yse-tool
+cargo install --path crates/gansi
 ```
 
 Then:
 
 ```sh
-cargo yse new hello        # generate a project (buildable CXX-Qt template)
-cargo yse new --local /path/to/yse hello-facade  # generate against a local Yse checkout
+gansi create hello        # generate a project (buildable CXX-Qt template)
+gansi create --local /path/to/yse hello-facade  # generate against a local Yse checkout
 cd hello
-cargo yse dev              # build and run
-cargo yse test             # run tests
-cargo yse bundle           # release build + platform bundle (windeployqt/macdeployqt when present)
+gansi run                 # build and run
+gansi test                # run tests
+gansi build               # release build + platform bundle (windeployqt/macdeployqt when present)
 ```
 
 Generated projects pin the Qt version, compiler family, and target
-architecture in `yse.toml`, include a three-platform CI workflow, an icon
+architecture in `gansi.toml`, include a three-platform CI workflow, an icon
 placeholder, and a `RELEASE.md` guide that lists what stays application-specific
 (code signing, notarization, store submissions, native dependencies).
 The `--local` variant depends on the `yse` facade crate from your checkout,

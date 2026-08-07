@@ -1,0 +1,25 @@
+# Release guide for {{title}}
+
+`gansi build` builds a release binary and lays it out in `dist/{{name}}/`.
+On Linux that is a portable binary (Qt must be present on the target or
+# deployed alongside it); on Windows `windeployqt` and on macOS `macdeployqt`
+are invoked automatically when available.
+
+## What remains application-specific
+
+These steps cannot be automated generically and are your responsibility:
+
+- **Code signing** — Windows Authenticode and macOS Developer ID signing
+  require your certificates and credentials.
+- **macOS notarization** — `xcrun notarytool` submission and stapling need
+  an App Store Connect account.
+- **Store submissions** — Microsoft Store / App Store / Sparkle packaging.
+- **Third-party native dependencies** — any libraries beyond Qt must be
+  bundled and licensed manually.
+
+## Checklist
+
+1. `gansi test`
+2. `gansi build`
+3. Inspect `dist/{{name}}/` and run the app on a clean machine.
+4. Sign and notarize per platform; trigger where applicable.
