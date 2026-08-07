@@ -212,7 +212,7 @@ gansi build
 
 ### Responsibilities
 
-- Generate a Rust workspace, metadata, icon placeholders, and CI workflow.
+- Generate a Rust workspace, metadata, and CI workflow.
 - Find or install a compatible Qt SDK through a documented, license-aware flow.
 - Pin the Qt version, compiler family, and target architecture in project
   configuration.

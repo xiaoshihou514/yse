@@ -15,7 +15,6 @@ mod template;
 
 use std::collections::HashSet;
 use std::env;
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
@@ -177,9 +176,7 @@ enum Command {
     },
 
     /// Prepare Qt SDK metadata.
-    Setup {
-        version: Option<String>,
-    },
+    Setup { version: Option<String> },
 
     /// Remove `target` and `dist`.
     Clean,
@@ -205,14 +202,9 @@ enum ConfigCommand {
     /// Print full config.
     List,
     /// Read one value.
-    Get {
-        key: String,
-    },
+    Get { key: String },
     /// Set one value (`qt_roots` accepts comma-separated paths).
-    Set {
-        key: String,
-        value: String,
-    },
+    Set { key: String, value: String },
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -301,7 +293,8 @@ fn execute(cli: Cli) -> Result<i32, String> {
 }
 
 fn command_create(name: &str, local: Option<&str>) -> Result<(), String> {
-    let project = match local {
+    let local_root = local.map(str::to_string).or_else(detect_local_yse_root);
+    let project = match local_root.as_deref() {
         Some(path) => project::Project::parse_local(name, path)?,
         None => project::Project::parse(name)?,
     };
@@ -312,7 +305,7 @@ fn command_create(name: &str, local: Option<&str>) -> Result<(), String> {
     if target.exists() {
         return Err(format!("directory `{}` already exists", target.display()));
     }
-    if local.is_some() {
+    if local_root.is_some() {
         project::write_project_local(&project, &target)?;
     } else {
         project::write_project(&project, &target)?;
@@ -330,6 +323,19 @@ fn command_create(name: &str, local: Option<&str>) -> Result<(), String> {
         project.name
     );
     Ok(())
+}
+
+fn detect_local_yse_root() -> Option<String> {
+    let mut cursor = env::current_dir().ok()?;
+    loop {
+        if cursor.join("crates").join("yse").is_dir() {
+            return Some(cursor.to_string_lossy().replace('\\', "/"));
+        }
+        if !cursor.pop() {
+            break;
+        }
+    }
+    None
 }
 
 fn command_run(release: bool, args: Vec<String>) -> Result<(), String> {
@@ -393,7 +399,7 @@ fn command_setup(version: Option<String>) -> Result<i32, String> {
         .as_ref()
         .and_then(|value| value.target_arch.clone())
         .or_else(|| config.target_arch.clone())
-        .unwrap_or_else(|| default_arch());
+        .unwrap_or_else(default_arch);
     let platform = detect_platform();
     let expected_root = gansi_home()
         .join("qt")
@@ -402,35 +408,14 @@ fn command_setup(version: Option<String>) -> Result<i32, String> {
         .join(&arch);
 
     if has_qmake(&expected_root) {
-        config.default_qt_version = Some(qt_version.clone());
-        if !config
-            .qt_roots
-            .iter()
-            .any(|value| Path::new(value) == expected_root.as_path())
-        {
-            config.qt_roots.push(expected_root.to_string_lossy().into_owned());
-        }
-        save_global_config(&config)?;
+        register_qt_root(&mut config, &qt_version, &expected_root)?;
         println!("Detected existing Qt layout at {}", expected_root.display());
-        println!("Registered {} in config.", expected_root.display());
         return Ok(0);
     }
 
-    if let Some(root) = config
-        .qt_roots
-        .iter()
-        .find_map(|value| {
-            let path = Path::new(value);
-            if has_qmake(path) {
-                Some(path.to_path_buf())
-            } else {
-                None
-            }
-        })
-    {
+    if let Some(root) = config.qt_roots.iter().find_map(has_qmake_path) {
         println!("Using existing Qt root: {}", root.display());
-        config.default_qt_version = Some(qt_version.clone());
-        save_global_config(&config)?;
+        register_qt_root(&mut config, &qt_version, &root)?;
         return Ok(0);
     }
 
@@ -441,40 +426,44 @@ fn command_setup(version: Option<String>) -> Result<i32, String> {
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf();
         println!("Found Qt via PATH: {}", root.display());
-        config.default_qt_version = Some(qt_version);
-        if !config
-            .qt_roots
-            .iter()
-            .any(|value| Path::new(value) == root.as_path())
-        {
-            config.qt_roots.push(root.to_string_lossy().into_owned());
-        }
-        save_global_config(&config)?;
-        println!("Registered {} in config.", root.display());
-        Ok(0)
-    } else if let Some(root) = install_qt_from_mirrors(&qt_version, &platform, &arch, &expected_root)? {
-        config.default_qt_version = Some(qt_version);
-        if !config
-            .qt_roots
-            .iter()
-            .any(|value| Path::new(value) == root.as_path())
-        {
-            config.qt_roots.push(root.to_string_lossy().into_owned());
-        }
-        save_global_config(&config)?;
-        println!("Installed and registered Qt: {}", root.display());
-        Ok(0)
-    } else {
-        config.default_qt_version = Some(qt_version);
-        save_global_config(&config)?;
-        println!("No Qt installation discovered for this machine.");
-        println!("Expected layout: {}", expected_root.display());
-        println!("Set `qt_roots` to an existing Qt root and run `gansi setup` again.");
-        println!(
-            "Attempted to download Qt from `download.qt.io`, `mirrors.ustc.edu.cn`, and `mirrors.tuna.tsinghua.edu.cn`."
-        );
-        Ok(1)
+        register_qt_root(&mut config, &qt_version, &root)?;
+        return Ok(0);
     }
+
+    if let Some(root) = install_qt_from_mirrors(&qt_version, platform, &arch, &expected_root)? {
+        register_qt_root(&mut config, &qt_version, &root)?;
+        println!("Installed and registered Qt: {}", root.display());
+        return Ok(0);
+    }
+
+    config.default_qt_version = Some(qt_version);
+    save_global_config(&config)?;
+    println!("No Qt installation discovered for this machine.");
+    println!("Expected layout: {}", expected_root.display());
+    println!("Set `qt_roots` to an existing Qt root and run `gansi setup` again.");
+    println!(
+        "Attempted to download Qt from `download.qt.io`, `mirrors.ustc.edu.cn`, and `mirrors.tuna.tsinghua.edu.cn`."
+    );
+    Ok(1)
+}
+
+fn has_qmake_path(value: &String) -> Option<PathBuf> {
+    let path = Path::new(value);
+    has_qmake(path).then(|| path.to_path_buf())
+}
+
+/// Record a Qt root as the default version and persist the config. Pushes the
+/// root only when not already listed, so the call is idempotent.
+fn register_qt_root(
+    config: &mut GlobalConfig,
+    qt_version: &str,
+    root: &Path,
+) -> Result<(), String> {
+    config.default_qt_version = Some(qt_version.to_string());
+    if !config.qt_roots.iter().any(|value| Path::new(value) == root) {
+        config.qt_roots.push(root.to_string_lossy().into_owned());
+    }
+    save_global_config(config)
 }
 
 fn install_qt_from_mirrors(
@@ -486,7 +475,10 @@ fn install_qt_from_mirrors(
     let requested_version = qt_version;
     if expected_root.exists() && !has_qmake(expected_root) {
         fs::remove_dir_all(expected_root).map_err(|error| {
-            format!("cannot clean stale Qt root {}: {error}", expected_root.display())
+            format!(
+                "cannot clean stale Qt root {}: {error}",
+                expected_root.display()
+            )
         })?;
     }
 
@@ -495,7 +487,10 @@ fn install_qt_from_mirrors(
     let repo_os_arch = qt_os_arch(platform);
     let qt_arch = qt_archive_arch(platform, requested_arch, &qt_version);
     let mut install_root: Option<PathBuf> = None;
-    let qt_full_version = format!("{}.{}.{}", qt_version.major, qt_version.minor, qt_version.patch);
+    let qt_full_version = format!(
+        "{}.{}.{}",
+        qt_version.major, qt_version.minor, qt_version.patch
+    );
 
     let base_folder = format!("qt{}_{}", qt_version.major, version_short);
     let use_split = qt_version.major > 6 || (qt_version.major == 6 && qt_version.minor >= 8);
@@ -524,12 +519,7 @@ fn install_qt_from_mirrors(
     for mirror in configured_qt_setup_mirrors() {
         let mirror_base = url_join(
             mirror.base_url,
-            &[
-                mirror.root_path,
-                repo_os_arch,
-                QT_TARGET,
-                &version_path,
-            ],
+            &[mirror.root_path, repo_os_arch, QT_TARGET, &version_path],
         );
         let updates_url = url_join(&mirror_base, &[&updates_path]);
         let updates_xml = match http_get_text(&updates_url) {
@@ -592,7 +582,7 @@ fn install_qt_from_mirrors(
 
             let stage = work_dir.join(format!(
                 "archive_{}",
-                archive_name.replace('/', "_").replace('\\', "_")
+                archive_name.replace(['/', '\\'], "_")
             ));
             match http_download_file(&archive_url, &stage) {
                 Ok(()) => {}
@@ -629,15 +619,14 @@ fn install_qt_from_mirrors(
                         install_root = Some(found_root);
                     }
                 }
-        } else if let Some(payload_root) = find_qt_payload_root(&extract_dir, &qt_full_version, &qt_arch) {
-                if let Some(root) = install_root.as_deref() {
-                    if root.exists() {
-                        if is_top_level_library_payload(&payload_root) {
-                            copy_dir_all(&payload_root, &root.join("lib"))?;
-                        } else {
-                            copy_dir_all(&payload_root, root)?;
-                        }
-                    }
+            } else if let Some(payload_root) =
+                find_qt_payload_root(&extract_dir, &qt_full_version, &qt_arch)
+                && let Some(root) = install_root.as_deref().filter(|root| root.exists())
+            {
+                if is_top_level_library_payload(&payload_root) {
+                    copy_dir_all(&payload_root, &root.join("lib"))?;
+                } else {
+                    copy_dir_all(&payload_root, root)?;
                 }
             }
         }
@@ -652,7 +641,10 @@ fn install_qt_from_mirrors(
     }
 
     if let Err(error) = fs::remove_dir_all(&work_dir) {
-        println!("warning: cannot remove temp dir {}: {error}", work_dir.display());
+        println!(
+            "warning: cannot remove temp dir {}: {error}",
+            work_dir.display()
+        );
     }
     if install_root.is_none() {
         if let Some(error) = last_error {
@@ -708,7 +700,8 @@ fn find_matching_qt_candidates(
         let Some(downloads) = extract_xml_text(block, "DownloadableArchives") else {
             continue;
         };
-        let location = extract_xml_text(block, "DownloadLocation").filter(|value| !value.is_empty());
+        let location =
+            extract_xml_text(block, "DownloadLocation").filter(|value| !value.is_empty());
         let is_base_package = is_qt_base_package(&name, qt_version);
         for archive in split_archives(&downloads) {
             if strict {
@@ -751,10 +744,8 @@ fn qt_package_matches(
     if !name.contains(&arch.to_lowercase()) && !name.ends_with(arch) {
         return false;
     }
-    if let Some(package_version) = package_version {
-        if qt_version_matches(package_version, qt_version) {
-            return true;
-        }
+    if package_version.is_some_and(|value| qt_version_matches(value, qt_version)) {
+        return true;
     }
     version_token_matches(&name, requested_version, qt_version)
 }
@@ -789,7 +780,7 @@ fn qt_version_matches(value: &str, qt_version: &QtVersion) -> bool {
 fn version_token_matches(name: &str, requested_version: &str, qt_version: &QtVersion) -> bool {
     let requested = requested_version.to_lowercase();
     let requested_with_underscore = requested.replace('.', "_");
-    let candidates = vec![
+    [
         requested,
         requested_with_underscore,
         qt_version.short(),
@@ -798,18 +789,15 @@ fn version_token_matches(name: &str, requested_version: &str, qt_version: &QtVer
         format!("{}.{}", qt_version.major, qt_version.minor),
         format!(
             "{}.{}.{}",
-            qt_version.major,
-            qt_version.minor,
-            qt_version.patch
+            qt_version.major, qt_version.minor, qt_version.patch
         ),
         format!(
             "{}_{}_{}",
-            qt_version.major,
-            qt_version.minor,
-            qt_version.patch
+            qt_version.major, qt_version.minor, qt_version.patch
         ),
-    ];
-    candidates.iter().any(|candidate| name.contains(candidate))
+    ]
+    .iter()
+    .any(|candidate| name.contains(candidate))
 }
 
 fn is_qtbase_archive(name: &str) -> bool {
@@ -884,9 +872,23 @@ fn http_get_text(url: &str) -> Result<String, String> {
 
 fn http_download_file(url: &str, target: &Path) -> Result<(), String> {
     if find_command("curl").is_some() {
-        run_command("curl", &["-L", "--fail", "--silent", "--show-error", "-o", &target.to_string_lossy(), url])
+        run_command(
+            "curl",
+            &[
+                "-L",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "-o",
+                &target.to_string_lossy(),
+                url,
+            ],
+        )
     } else if find_command("wget").is_some() {
-        run_command("wget", &["-q", "-O", &target.to_string_lossy(), "-t", "3", url])
+        run_command(
+            "wget",
+            &["-q", "-O", &target.to_string_lossy(), "-t", "3", url],
+        )
     } else {
         Err("curl or wget is required to download Qt archives".to_string())
     }
@@ -903,8 +905,16 @@ fn run_command_output(command: &str, args: &[&str]) -> Result<String, String> {
         return Err(format!(
             "`{command}` failed (exit {}): {} {}",
             output.status.code().unwrap_or(-1),
-            if !stdout.is_empty() { format!("stdout={stdout}") } else { String::new() },
-            if !stderr.is_empty() { format!("stderr={stderr}") } else { String::new() },
+            if !stdout.is_empty() {
+                format!("stdout={stdout}")
+            } else {
+                String::new()
+            },
+            if !stderr.is_empty() {
+                format!("stderr={stderr}")
+            } else {
+                String::new()
+            },
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -918,7 +928,10 @@ fn run_command(command: &str, args: &[&str]) -> Result<(), String> {
     if status.success() {
         Ok(())
     } else {
-        Err(format!("`{command}` failed with status {:?}", status.code()))
+        Err(format!(
+            "`{command}` failed with status {:?}",
+            status.code()
+        ))
     }
 }
 
@@ -928,9 +941,8 @@ fn extract_archive(archive: &Path, target: &Path) -> Result<(), String> {
         .and_then(|value| value.to_str())
         .unwrap_or("");
     let archive_name = archive_name.to_lowercase();
-    fs::create_dir_all(target).map_err(|error| {
-        format!("cannot create extraction dir {}: {error}", target.display())
-    })?;
+    fs::create_dir_all(target)
+        .map_err(|error| format!("cannot create extraction dir {}: {error}", target.display()))?;
 
     if archive_name.ends_with(".7z") {
         if find_command("7z").is_some() {
@@ -966,7 +978,13 @@ fn extract_archive(archive: &Path, target: &Path) -> Result<(), String> {
         if find_command("unzip").is_some() {
             run_command(
                 "unzip",
-                &["-q", "-o", &archive.to_string_lossy(), "-d", &target.to_string_lossy()],
+                &[
+                    "-q",
+                    "-o",
+                    &archive.to_string_lossy(),
+                    "-d",
+                    &target.to_string_lossy(),
+                ],
             )
         } else if find_command("tar").is_some() {
             run_command(
@@ -1011,17 +1029,17 @@ fn ensure_qt_library_soname_links(root: &Path) -> Result<(), String> {
         if !dir.exists() {
             continue;
         }
-        for entry in fs::read_dir(&dir).map_err(|error| {
-            format!("cannot list {dir}: {error}", dir = dir.display())
-        })? {
-            let entry = entry.map_err(|error| format!("cannot read {dir}: {error}", dir = dir.display()))?;
-            if !entry.file_type().map_err(|error| {
-                format!(
-                    "cannot read file type {}: {error}",
-                    entry.path().display()
-                )
-            })?
-            .is_file()
+        for entry in fs::read_dir(&dir)
+            .map_err(|error| format!("cannot list {dir}: {error}", dir = dir.display()))?
+        {
+            let entry = entry
+                .map_err(|error| format!("cannot read {dir}: {error}", dir = dir.display()))?;
+            if !entry
+                .file_type()
+                .map_err(|error| {
+                    format!("cannot read file type {}: {error}", entry.path().display())
+                })?
+                .is_file()
             {
                 continue;
             }
@@ -1049,11 +1067,7 @@ fn ensure_qt_library_soname_links(root: &Path) -> Result<(), String> {
             if link.exists() {
                 continue;
             }
-            std::os::unix::fs::symlink(
-                entry.file_name(),
-                &link,
-            )
-            .map_err(|error| {
+            std::os::unix::fs::symlink(entry.file_name(), &link).map_err(|error| {
                 format!(
                     "cannot create symlink {} -> {}: {error}",
                     link.display(),
@@ -1087,12 +1101,16 @@ fn find_qmake_root(start: &Path) -> Option<PathBuf> {
             if name == "." || name == ".." || name.starts_with('.') {
                 continue;
             }
-            if let Ok(metadata) = entry_path.symlink_metadata() {
-                if metadata.is_file() || metadata.is_symlink() {
-                    continue;
-                }
+            if let Ok(metadata) = entry_path.symlink_metadata()
+                && (metadata.is_file() || metadata.is_symlink())
+            {
+                continue;
             }
-            if entry.file_type().ok().map_or(false, |value| value.is_dir()) {
+            if entry
+                .file_type()
+                .ok()
+                .is_some_and(|file_type| file_type.is_dir())
+            {
                 stack.push(entry_path);
             }
         }
@@ -1100,17 +1118,11 @@ fn find_qmake_root(start: &Path) -> Option<PathBuf> {
     None
 }
 
-fn find_qt_payload_root(
-    extract_dir: &Path,
-    qt_version: &str,
-    qt_arch: &str,
-) -> Option<PathBuf> {
+fn find_qt_payload_root(extract_dir: &Path, qt_version: &str, qt_arch: &str) -> Option<PathBuf> {
     let version_root = extract_dir.join(qt_version);
     if version_root.exists() {
         let qt_root = version_root.join(qt_arch);
-        if qt_root.exists()
-            && (qt_root.join("bin").is_dir() || qt_root.join("lib").is_dir())
-        {
+        if qt_root.exists() && (qt_root.join("bin").is_dir() || qt_root.join("lib").is_dir()) {
             return Some(qt_root);
         }
         if version_root.join("bin").is_dir() || version_root.join("lib").is_dir() {
@@ -1137,10 +1149,10 @@ fn find_qt_payload_root(
             if !file_type.is_dir() {
                 continue;
             }
-            if let Some(name) = entry_path.file_name().and_then(|value| value.to_str()) {
-                if name.starts_with('.') {
-                    continue;
-                }
+            if let Some(name) = entry_path.file_name().and_then(|value| value.to_str())
+                && name.starts_with('.')
+            {
+                continue;
             }
             if entry_path.join("bin").is_dir() || entry_path.join("lib").is_dir() {
                 return Some(entry_path);
@@ -1199,9 +1211,8 @@ fn is_top_level_library_payload(path: &Path) -> bool {
 fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
     if src.is_file() {
         if let Some(parent) = dst.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                format!("cannot create {}: {error}", parent.display())
-            })?;
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
         }
         if dst.exists() {
             fs::remove_file(dst).map_err(|error| {
@@ -1209,7 +1220,11 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
             })?;
         }
         fs::copy(src, dst).map_err(|error| {
-            format!("cannot copy {} to {}: {error}", src.display(), dst.display())
+            format!(
+                "cannot copy {} to {}: {error}",
+                src.display(),
+                dst.display()
+            )
         })?;
         return Ok(());
     }
@@ -1217,9 +1232,9 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
         fs::create_dir_all(dst)
             .map_err(|error| format!("cannot create {}: {error}", dst.display()))?;
     }
-    for entry in fs::read_dir(src).map_err(|error| {
-        format!("cannot read source directory {}: {error}", src.display())
-    })? {
+    for entry in fs::read_dir(src)
+        .map_err(|error| format!("cannot read source directory {}: {error}", src.display()))?
+    {
         let entry = entry
             .map_err(|error| format!("cannot read source entry in {}: {error}", src.display()))?;
         let source = entry.path();
@@ -1232,17 +1247,21 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
         })?;
         if metadata.is_dir() {
             if !dest.exists() {
-                fs::create_dir_all(&dest).map_err(|error| {
-                    format!("cannot create {}: {error}", dest.display())
-                })?;
+                fs::create_dir_all(&dest)
+                    .map_err(|error| format!("cannot create {}: {error}", dest.display()))?;
             }
             copy_dir_all(&source, &dest)?;
         } else {
             if dest.exists() {
                 let _ = fs::remove_file(&dest);
             }
-            fs::copy(&source, &dest)
-                .map_err(|error| format!("cannot copy {} to {}: {error}", source.display(), dest.display()))?;
+            fs::copy(&source, &dest).map_err(|error| {
+                format!(
+                    "cannot copy {} to {}: {error}",
+                    source.display(),
+                    dest.display()
+                )
+            })?;
         }
     }
     Ok(())
@@ -1286,7 +1305,8 @@ fn qt_archive_arch(platform: &str, requested_arch: &str, qt_version: &QtVersion)
 }
 
 fn command_clean() -> Result<(), String> {
-    let cwd = env::current_dir().map_err(|error| format!("cannot read current directory: {error}"))?;
+    let cwd =
+        env::current_dir().map_err(|error| format!("cannot read current directory: {error}"))?;
     let reclaimed = reclaim_targets(&[cwd.join("target"), cwd.join("dist")])?;
     println!("Reclaimed approximately {reclaimed} bytes");
     Ok(())
@@ -1343,7 +1363,8 @@ fn command_config(command: ConfigCommand) -> Result<i32, String> {
 }
 
 fn command_init() -> Result<(), String> {
-    let cwd = env::current_dir().map_err(|error| format!("cannot read current directory: {error}"))?;
+    let cwd =
+        env::current_dir().map_err(|error| format!("cannot read current directory: {error}"))?;
     let cwd_name = cwd
         .file_name()
         .and_then(|value| value.to_str())
@@ -1405,30 +1426,30 @@ fn apply_qt_env(command: &mut ProcessCommand) -> Result<(), String> {
         .map(PathBuf::from)
         .filter(|path| has_qmake(path))
         .collect();
-        if let Some(path) = env::var_os("QMAKE").map(PathBuf::from) {
-            let root = path
-                .parent()
-                .and_then(|value| value.parent())
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf();
-            if has_qmake(&root) {
-                roots.push(root);
-            }
+    if let Some(path) = env::var_os("QMAKE").map(PathBuf::from) {
+        let root = path
+            .parent()
+            .and_then(|value| value.parent())
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        if has_qmake(&root) {
+            roots.push(root);
+        }
     }
-    if roots.is_empty() {
-        if let Some(root) = locate_qmake().and_then(|path| {
+    if roots.is_empty()
+        && let Some(root) = locate_qmake().and_then(|path| {
             path.parent()
                 .and_then(|value| value.parent())
                 .map(|value| value.to_path_buf())
                 .filter(|root| has_qmake(root))
-        }) {
-            roots.push(root);
-        }
+        })
+    {
+        roots.push(root);
     }
 
     if let Some(root) = roots.into_iter().next() {
         let qmake = root.join("bin").join(qmake_binary_name());
-        let path = env::var_os("PATH").unwrap_or_else(OsString::new);
+        let path = env::var_os("PATH").unwrap_or_default();
         let mut entries: Vec<PathBuf> = vec![root.join("bin")];
         entries.extend(env::split_paths(&path));
         let path = env::join_paths(entries).map_err(|error| format!("invalid PATH: {error}"))?;
@@ -1443,7 +1464,8 @@ fn apply_qt_env(command: &mut ProcessCommand) -> Result<(), String> {
             if root.join("lib64").exists() {
                 lib_dirs.push(root.join("lib64"));
             }
-            let mut entries = env::split_paths(&env::var_os("LD_LIBRARY_PATH").unwrap_or_default()).collect::<Vec<_>>();
+            let mut entries = env::split_paths(&env::var_os("LD_LIBRARY_PATH").unwrap_or_default())
+                .collect::<Vec<_>>();
             entries.extend(lib_dirs);
             if !entries.is_empty() {
                 let library_path = env::join_paths(entries)
@@ -1626,11 +1648,7 @@ fn has_qmake(root: &Path) -> bool {
 }
 
 fn qmake_binary_name() -> &'static str {
-    if cfg!(windows) {
-        "qmake.exe"
-    } else {
-        "qmake"
-    }
+    if cfg!(windows) { "qmake.exe" } else { "qmake" }
 }
 
 fn detect_platform() -> &'static str {
@@ -1658,9 +1676,8 @@ fn reclaim_targets(paths: &[PathBuf]) -> Result<u64, String> {
     for path in paths {
         if path.exists() {
             bytes += directory_size(path)?;
-            fs::remove_dir_all(path).map_err(|error| {
-                format!("cannot remove {}: {error}", path.display())
-            })?;
+            fs::remove_dir_all(path)
+                .map_err(|error| format!("cannot remove {}: {error}", path.display()))?;
         }
     }
     Ok(bytes)
@@ -1676,8 +1693,11 @@ fn directory_size(path: &Path) -> Result<u64, String> {
         return Ok(metadata.len());
     }
     let mut total = 0u64;
-    for entry in fs::read_dir(path).map_err(|error| format!("cannot open {}: {error}", path.display()))? {
-        let entry = entry.map_err(|error| format!("cannot read entry in {}: {error}", path.display()))?;
+    for entry in
+        fs::read_dir(path).map_err(|error| format!("cannot open {}: {error}", path.display()))?
+    {
+        let entry =
+            entry.map_err(|error| format!("cannot read entry in {}: {error}", path.display()))?;
         total += directory_size(&entry.path())?;
     }
     Ok(total)
@@ -1691,7 +1711,9 @@ fn gansi_home() -> PathBuf {
     if let Ok(home) = env::var("GANSI_HOME") {
         return PathBuf::from(home);
     }
-    dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("gansi")
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("gansi")
 }
 
 fn load_global_config() -> Result<GlobalConfig, String> {
@@ -1699,17 +1721,21 @@ fn load_global_config() -> Result<GlobalConfig, String> {
     if !path.exists() {
         return Ok(GlobalConfig::default());
     }
-    let text = fs::read_to_string(&path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
-    let config = toml::from_str(&text).map_err(|error| format!("invalid config {}: {error}", path.display()))?;
+    let text = fs::read_to_string(&path)
+        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+    let config = toml::from_str(&text)
+        .map_err(|error| format!("invalid config {}: {error}", path.display()))?;
     Ok(config)
 }
 
 fn save_global_config(config: &GlobalConfig) -> Result<(), String> {
     let path = config_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     }
-    let payload = toml::to_string_pretty(config).map_err(|error| format!("cannot serialize config: {error}"))?;
+    let payload = toml::to_string_pretty(config)
+        .map_err(|error| format!("cannot serialize config: {error}"))?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| format!("time error: {error}"))?
@@ -1722,7 +1748,8 @@ fn save_global_config(config: &GlobalConfig) -> Result<(), String> {
 fn read_manifest() -> Result<ManifestProject, String> {
     let text = fs::read_to_string(project::MANIFEST_FILE_NAME)
         .map_err(|error| format!("cannot read {}: {error}", project::MANIFEST_FILE_NAME))?;
-    let manifest: ManifestFile = toml::from_str(&text).map_err(|error| format!("invalid manifest: {error}"))?;
+    let manifest: ManifestFile =
+        toml::from_str(&text).map_err(|error| format!("invalid manifest: {error}"))?;
     Ok(manifest.project)
 }
 

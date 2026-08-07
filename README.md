@@ -88,7 +88,7 @@ cargo install --path crates/gansi
 Then:
 
 ```sh
-gansi create hello        # generate a project (buildable CXX-Qt template)
+gansi create hello        # generate a project (yse facade inside a yse checkout, otherwise CXX-Qt standalone)
 gansi create --local /path/to/yse hello-facade  # generate against a local Yse checkout
 cd hello
 gansi run                 # build and run
@@ -97,9 +97,9 @@ gansi build               # release build + platform bundle (windeployqt/macdepl
 ```
 
 Generated projects pin the Qt version, compiler family, and target
-architecture in `gansi.toml`, include a three-platform CI workflow, an icon
-placeholder, and a `RELEASE.md` guide that lists what stays application-specific
-(code signing, notarization, store submissions, native dependencies).
+architecture in `gansi.toml`, and include a `RELEASE.md` guide that lists what
+stays application-specific (code signing, notarization, store submissions,
+native dependencies).
 The `--local` variant depends on the `yse` facade crate from your checkout,
 so generated apps exercise the full framework without a C++ shim.
 Run its lifecycle tests and the headless settings-form demo with:

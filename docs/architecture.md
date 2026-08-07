@@ -95,8 +95,10 @@ into `yse-ui`.
 
 ## Toolchain (`gansi`)
 
-`gansi create` generates a buildable CXX-Qt project with pinned
-configuration (`gansi.toml`), an icon, and a release guide.
+`gansi create` generates a buildable project template and pinned
+configuration (`gansi.toml`). Inside a yse checkout it defaults to the facade
+template (`use yse::*`), and outside that context it falls back to the
+standalone CXX-Qt template.
 `run`/`test`/`build` wrap Cargo and Qt deployment tooling.
 
 ## Testing strategy
@@ -121,5 +123,6 @@ configuration (`gansi.toml`), an icon, and a release guide.
   through a scheduler.
 - Windows/macOS builds are only verified from this development machine;
   platform CI can be added later when quota allows.
-- The crates are not yet published; `gansi create` templates therefore use
-  the standalone CXX-Qt shape rather than depending on the facade.
+- The crates are not yet published; outside a local yse checkout,
+  `gansi create` falls back to the standalone CXX-Qt shape rather than
+  depending on the facade.

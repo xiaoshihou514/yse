@@ -78,9 +78,8 @@ impl Project {
 
     /// Read the pinned project configuration from `gansi.toml`.
     pub fn from_manifest(path: &str) -> Result<Self, String> {
-        let content = fs::read_to_string(path).map_err(|error| {
-            format!("cannot read `{path}` (run `gansi create` first): {error}")
-        })?;
+        let content = fs::read_to_string(path)
+            .map_err(|error| format!("cannot read `{path}` (run `gansi create` first): {error}"))?;
         let name = content
             .lines()
             .find_map(|line| line.trim().strip_prefix("name = "))
@@ -111,7 +110,10 @@ pub fn write_project(project: &Project, target: &Path) -> Result<(), String> {
             template::render(template::CARGO_TOML, project),
         ),
         ("build.rs", template::render(template::BUILD_RS, project)),
-        ("gansi.toml", template::render(template::GANSI_TOML, project)),
+        (
+            "gansi.toml",
+            template::render(template::GANSI_TOML, project),
+        ),
         (".gitignore", template::render(template::GITIGNORE, project)),
         (
             "RELEASE.md",
@@ -128,7 +130,10 @@ pub fn write_project(project: &Project, target: &Path) -> Result<(), String> {
             "src/spike.cpp",
             template::render(template::SPIKE_CPP, project),
         ),
-        ("tests/smoke.rs", template::render(template::TESTS_SMOKE_RS, project)),
+        (
+            "tests/smoke.rs",
+            template::render(template::TESTS_SMOKE_RS, project),
+        ),
     ];
     for (relative, content) in files {
         let path = target.join(relative);
@@ -154,7 +159,10 @@ pub fn write_project_local(project: &Project, target: &Path) -> Result<(), Strin
             "gansi.toml",
             template::render_local(template::GANSI_TOML, project),
         ),
-        ("README.md", template::render_local(template::README_MD, project)),
+        (
+            "README.md",
+            template::render_local(template::README_MD, project),
+        ),
         (
             ".gitignore",
             template::render_local(template::GITIGNORE, project),
@@ -167,7 +175,10 @@ pub fn write_project_local(project: &Project, target: &Path) -> Result<(), Strin
             "src/main.rs",
             template::render_local(template::MAIN_RS_LOCAL, project),
         ),
-        ("tests/smoke.rs", template::render_local(template::TESTS_SMOKE_RS, project)),
+        (
+            "tests/smoke.rs",
+            template::render_local(template::TESTS_SMOKE_RS, project),
+        ),
     ];
     for (relative, content) in files {
         let path = target.join(relative);
