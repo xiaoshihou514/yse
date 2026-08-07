@@ -69,6 +69,10 @@ mod bridge {
         unsafe fn tab_widget_add_page(tabs: *mut Widget, label: &str) -> *mut Widget;
         unsafe fn tab_widget_set_current(tabs: *mut Widget, index: i32);
         unsafe fn tab_widget_count(tabs: *mut Widget) -> i32;
+        unsafe fn widget_new_stacked_widget(parent: *mut Widget) -> *mut Widget;
+        unsafe fn stacked_add_page(stack: *mut Widget) -> *mut Widget;
+        unsafe fn stacked_set_current(stack: *mut Widget, index: i32);
+        unsafe fn stacked_count(stack: *mut Widget) -> i32;
         unsafe fn widget_new_line_chart(parent: *mut Widget) -> *mut Widget;
         unsafe fn line_chart_set_series(w: *mut Widget, points: Vec<f64>);
         unsafe fn line_chart_set_series_multi(w: *mut Widget, points: Vec<f64>, series: usize);

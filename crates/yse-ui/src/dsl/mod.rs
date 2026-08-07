@@ -26,7 +26,7 @@ use crate::bridge as ffi;
 use crate::component::Component;
 use crate::{
     Button, CheckBox, ComboBox, DateEdit, DateTimeEdit, DiskMap, Label, LineChart, LineEdit,
-    ListView, Menu, ProgressBar, SelectionBridge, Slider, SpinBox, StringListModel,
+    ListView, Menu, ProgressBar, SelectionBridge, Slider, SpinBox, StackedWidget, StringListModel,
     StringTableModel, TabWidget, TableView, TimeEdit, TreeModel, TreeView, Window,
 };
 use std::cell::RefCell;
@@ -405,6 +405,13 @@ impl Ui {
         TabWidget { inner }
     }
 
+    /// Create a stacked content widget in this layout.
+    pub fn stacked_widget(&self) -> StackedWidget {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_stacked_widget(parent.raw()) });
+        StackedWidget { inner }
+    }
+
     /// Create a painted line chart in this layout.
     pub fn line_chart(&self) -> LineChart {
         let parent = self.layout_parent();
@@ -554,5 +561,30 @@ impl TabWidget {
     /// The number of tabs.
     pub fn count(&self) -> usize {
         unsafe { ffi::tab_widget_count(self.inner.raw()) as usize }
+    }
+}
+
+impl StackedWidget {
+    /// Append a page and return a builder scoped to it.
+    pub fn add_page(&self) -> Ui {
+        let page = unsafe {
+            Component::from_raw_child(ffi::stacked_add_page(self.inner.raw()), &self.inner)
+        };
+        Ui {
+            kind: ParentKind::Layout,
+            parent: page,
+        }
+    }
+
+    /// Show the page at `index`.
+    pub fn set_current(&self, index: usize) {
+        if self.inner.is_alive() {
+            unsafe { ffi::stacked_set_current(self.inner.raw(), index as i32) };
+        }
+    }
+
+    /// The number of pages.
+    pub fn count(&self) -> usize {
+        unsafe { ffi::stacked_count(self.inner.raw()) as usize }
     }
 }

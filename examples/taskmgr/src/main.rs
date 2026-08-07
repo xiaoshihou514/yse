@@ -30,36 +30,79 @@ const PROCESS_COLUMNS: [&str; 10] = [
     "电源使用情况",
 ];
 
+// Quiet chrome, data-forward theme: no boxes around the table, tree, or
+// charts; hierarchy comes from typography and weight rather than borders.
+// The same structure drives light and dark palettes.
 const LIGHT_QSS: &str = r#"
-QTabWidget::pane { border: 1px solid #d0d0d0; border-radius: 4px; }
-QTabBar::tab { padding: 6px 14px; border: 1px solid transparent; border-top-left-radius: 4px; border-top-right-radius: 4px; background: transparent; }
-QTabBar::tab:selected { background: #ffffff; border-color: #d0d0d0; }
-QTabBar::tab:hover:!selected { background: #f0f0f0; }
-QHeaderView::section { background: #f5f5f5; border: none; border-right: 1px solid #e0e0e0; border-bottom: 1px solid #d0d0d0; padding: 5px 8px; font-weight: 600; }
-QTableView { gridline-color: #ececec; selection-background-color: #3daee9; selection-color: #ffffff; }
-QPushButton { padding: 6px 14px; border: 1px solid #c8c8c8; border-radius: 4px; background: #fafafa; }
-QPushButton:hover { background: #f0f0f0; }
-QPushButton:pressed { background: #e4e4e4; }
-QPushButton:disabled { color: #a0a0a0; }
-QPushButton[yseClass="accent"] { background: #3daee9; color: #ffffff; border-color: #2e9bd6; }
-QPushButton[yseClass="quiet"] { background: transparent; border-color: transparent; }
-QLabel[yseClass="muted"] { color: #888888; }
+* { font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 13px; }
+QMainWindow { background: #f5f6f8; }
+QHeaderView::section { background: transparent; border: none; border-bottom: 1px solid rgba(31, 35, 40, 0.08); padding: 6px 10px; font-weight: 500; color: #6b7280; }
+QTableView, QTreeView { background: transparent; border: none; gridline-color: transparent; selection-background-color: rgba(0, 120, 212, 0.10); selection-color: #1f2328; show-decoration-selected: 1; outline: none; }
+QTableView::item:hover, QTreeView::item:hover { background: rgba(0, 120, 212, 0.06); }
+QTreeView::branch { background: transparent; }
+QPushButton { padding: 6px 14px; border: none; border-radius: 6px; background: transparent; color: #1f2328; }
+QPushButton:hover { background: rgba(31, 35, 40, 0.06); }
+QPushButton:pressed { background: rgba(31, 35, 40, 0.10); }
+QPushButton:disabled { color: #a6adb5; }
+QPushButton[yseClass="accent"] { background: #0078d4; color: #ffffff; }
+QPushButton[yseClass="accent"]:hover { background: #0067b8; }
+QPushButton[yseClass="quiet"], QPushButton[yseClass="nav"] { background: transparent; text-align: left; padding: 6px 10px; border-radius: 6px; }
+QPushButton[yseClass="nav"]:hover { background: rgba(0, 120, 212, 0.06); }
+QPushButton[yseClass="navSelected"] { background: rgba(0, 120, 212, 0.12); color: #0067b8; font-weight: 600; text-align: left; border-radius: 6px; padding: 6px 10px; }
+QLabel { background: transparent; }
+QLabel[yseClass="muted"] { color: #6b7280; }
+QLabel[yseClass="title"] { font-size: 15px; font-weight: 600; color: #1f2328; }
+QLabel[yseClass="primary"] { font-size: 34px; font-weight: 600; color: #1f2328; }
+QLabel[yseClass="secondary"] { font-size: 15px; font-weight: 500; color: #1f2328; }
+QLineEdit { border: 1px solid rgba(31, 35, 40, 0.15); border-radius: 6px; padding: 5px 8px; background: #ffffff; }
+QLineEdit:focus { border-color: #0078d4; }
+QProgressBar { border: none; border-radius: 4px; background: #eceef1; text-align: center; color: transparent; }
+QProgressBar::chunk { border-radius: 4px; background: #0078d4; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
+QScrollBar::handle:vertical { background: #d7dbe0; border-radius: 5px; min-height: 30px; }
+QScrollBar::handle:vertical:hover { background: #b6bdc7; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QMenu { background: #ffffff; border: 1px solid rgba(31, 35, 40, 0.12); border-radius: 6px; padding: 4px; }
+QMenu::item { padding: 6px 22px 6px 12px; border-radius: 4px; }
+QMenu::item:selected { background: rgba(0, 120, 212, 0.10); }
+QMenu::separator { height: 1px; background: #e5e7eb; margin: 4px 8px; }
+QToolTip { background: #ffffff; color: #1f2328; border: 1px solid rgba(31, 35, 40, 0.12); }
 "#;
 
 const DARK_QSS: &str = r#"
-QTabWidget::pane { border: 1px solid #4a4a4a; border-radius: 4px; }
-QTabBar::tab { padding: 6px 14px; border: 1px solid transparent; border-top-left-radius: 4px; border-top-right-radius: 4px; background: transparent; color: #dcdcdc; }
-QTabBar::tab:selected { background: #353535; border-color: #4a4a4a; }
-QTabBar::tab:hover:!selected { background: #2f2f2f; }
-QHeaderView::section { background: #3a3a3a; border: none; border-right: 1px solid #464646; border-bottom: 1px solid #4a4a4a; padding: 5px 8px; font-weight: 600; color: #dcdcdc; }
-QTableView { gridline-color: #3a3a3a; selection-background-color: #2a82da; selection-color: #ffffff; }
-QPushButton { padding: 6px 14px; border: 1px solid #4e4e4e; border-radius: 4px; background: #3f3f3f; color: #dcdcdc; }
-QPushButton:hover { background: #4a4a4a; }
-QPushButton:pressed { background: #555555; }
-QPushButton:disabled { color: #808080; }
-QPushButton[yseClass="accent"] { background: #2a82da; color: #ffffff; border-color: #2171b8; }
-QPushButton[yseClass="quiet"] { background: transparent; border-color: transparent; }
-QLabel[yseClass="muted"] { color: #9a9a9a; }
+* { font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 13px; }
+QMainWindow { background: #1e1f22; }
+QHeaderView::section { background: transparent; border: none; border-bottom: 1px solid rgba(230, 230, 230, 0.08); padding: 6px 10px; font-weight: 500; color: #9d9d9d; }
+QTableView, QTreeView { background: transparent; border: none; gridline-color: transparent; selection-background-color: rgba(77, 163, 255, 0.16); selection-color: #e6e6e6; show-decoration-selected: 1; outline: none; }
+QTableView::item:hover, QTreeView::item:hover { background: rgba(77, 163, 255, 0.08); }
+QTreeView::branch { background: transparent; }
+QPushButton { padding: 6px 14px; border: none; border-radius: 6px; background: transparent; color: #e6e6e6; }
+QPushButton:hover { background: rgba(230, 230, 230, 0.08); }
+QPushButton:pressed { background: rgba(230, 230, 230, 0.14); }
+QPushButton:disabled { color: #6f7076; }
+QPushButton[yseClass="accent"] { background: #4da3ff; color: #101418; }
+QPushButton[yseClass="accent"]:hover { background: #6cb2ff; }
+QPushButton[yseClass="quiet"], QPushButton[yseClass="nav"] { background: transparent; text-align: left; padding: 6px 10px; border-radius: 6px; }
+QPushButton[yseClass="nav"]:hover { background: rgba(77, 163, 255, 0.08); }
+QPushButton[yseClass="navSelected"] { background: rgba(77, 163, 255, 0.16); color: #8fc1ff; font-weight: 600; text-align: left; border-radius: 6px; padding: 6px 10px; }
+QLabel { background: transparent; }
+QLabel[yseClass="muted"] { color: #9d9d9d; }
+QLabel[yseClass="title"] { font-size: 15px; font-weight: 600; color: #e6e6e6; }
+QLabel[yseClass="primary"] { font-size: 34px; font-weight: 600; color: #e6e6e6; }
+QLabel[yseClass="secondary"] { font-size: 15px; font-weight: 500; color: #e6e6e6; }
+QLineEdit { border: 1px solid rgba(230, 230, 230, 0.15); border-radius: 6px; padding: 5px 8px; background: #26272a; }
+QLineEdit:focus { border-color: #4da3ff; }
+QProgressBar { border: none; border-radius: 4px; background: #3a3c42; text-align: center; color: transparent; }
+QProgressBar::chunk { border-radius: 4px; background: #4da3ff; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
+QScrollBar::handle:vertical { background: #45464b; border-radius: 5px; min-height: 30px; }
+QScrollBar::handle:vertical:hover { background: #55565c; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QMenu { background: #26272a; border: 1px solid rgba(230, 230, 230, 0.12); border-radius: 6px; padding: 4px; }
+QMenu::item { padding: 6px 22px 6px 12px; border-radius: 4px; }
+QMenu::item:selected { background: rgba(77, 163, 255, 0.16); }
+QMenu::separator { height: 1px; background: #3f3f46; margin: 4px 8px; }
+QToolTip { background: #26272a; color: #e6e6e6; border: 1px solid rgba(230, 230, 230, 0.12); }
 "#;
 
 /// Follow the system color scheme and apply the matching stylesheet.
@@ -135,6 +178,7 @@ struct ProcessTreeRow {
     cells: Vec<String>,
     icon: String,
     pid: Option<u32>,
+    start_time: u64,
     heat: [f64; 4],
 }
 
@@ -169,6 +213,7 @@ fn build_tree(data: &[sys::ProcessSample], sort: SortState) -> Vec<ProcessTreeRo
             cells,
             icon: String::new(),
             pid: None,
+            start_time: 0,
             heat: [0.0; 4],
         });
         let mut children: Vec<&sys::ProcessSample> =
@@ -205,6 +250,7 @@ fn build_tree(data: &[sys::ProcessSample], sort: SortState) -> Vec<ProcessTreeRo
                 cells: process_cells(p),
                 icon: p.exe.clone(),
                 pid: Some(p.pid),
+                start_time: p.start_time,
                 heat: [
                     (p.cpu / 100.0).clamp(0.0, 1.0),
                     (p.mem_bytes as f64 / mem_max as f64).clamp(0.0, 1.0),
@@ -288,7 +334,7 @@ fn main() {
     let process_data = Var::new(Vec::<sys::ProcessSample>::new());
     let sort = Var::new(SortState::default());
     let visible_columns = Var::new((0..PROCESS_COLUMNS.len()).collect::<Vec<usize>>());
-    let selected_pid = Var::new(None::<u32>);
+    let selected_pid = Var::new(None::<(u32, u64)>);
     let details_open = Var::new(false);
     let resource = Var::new(0usize);
     let cpu_history = Var::new(Vec::<f64>::new());
@@ -296,7 +342,9 @@ fn main() {
     let net_history = Var::new(Vec::<f64>::new());
     let disk_history = Var::new(Vec::<f64>::new());
     let per_core_history = Var::new(Vec::<Vec<f64>>::new());
-    let metrics_text = Var::new(String::new());
+    let usage_text = Var::new(String::new());
+    let speed_text = Var::new(String::new());
+    let detail_text = Var::new(String::new());
     let status_text = Var::new(String::new());
     let stats_text = Var::new(String::new());
     let resource_texts = Var::new(vec![String::new(); 5]);
@@ -392,7 +440,8 @@ fn main() {
     // --- 声明式控件树 ---
     let ui = window.ui();
     let (
-        tabs,
+        rail,
+        stack,
         process_view,
         details_view,
         end_task,
@@ -402,92 +451,120 @@ fn main() {
         sidebar,
         perf,
     ) = ui.column(|column| {
-        let tabs = column.tab_widget();
-
-        let process_page = tabs.add_tab("进程");
-        let (view, end_task, toggle, status, detail_stats) = process_page.column(|page| {
-            let view = page.tree_view(&tree_model.clone());
-            let bottom = page.row(|bar| {
-                let toggle = bar.button("详细信息");
-                let status = bar.label("");
-                bar.spacer();
-                let end = bar.button("结束任务");
-                (toggle, status, end)
+        column.row(|row| {
+            // 左侧导航栏：与经典任务管理器一致的图标+文字导轨。
+            let rail = row.column(|side| {
+                let mut buttons = Vec::new();
+                for label in [
+                    "应用", "性能", "服务", "启动", "用户", "详细信息", "应用历史记录",
+                ] {
+                    let button = side.button(label);
+                    button.set_style_class("nav");
+                    buttons.push(button);
+                }
+                side.spacer();
+                buttons
             });
-            let stats = page.label("");
-            (view, bottom.2, bottom.0, bottom.1, stats)
-        });
+            rail.first().unwrap().set_style_class("navSelected");
 
-        let perf_page = tabs.add_tab("性能");
-        let (sidebar, perf) = perf_page.row(|row| {
-            let sidebar = row.column(|side| {
-                let cpu = side.button("CPU");
-                let memory = side.button("内存");
-                let disk = side.button("磁盘 0");
-                let net = side.button("以太网");
-                let gpu = side.button("GPU 0");
-                (cpu, memory, disk, net, gpu)
-            });
-            let perf = row.column(|area| {
-                let title = area.label("CPU");
-                let chart = area.line_chart();
-                let cores_chart = area.line_chart();
-                let metrics = area.label("");
-                let resource_label = area.label("");
-                let memory_row = area.row(|mr| {
-                    let progress = mr.progress_bar(0);
-                    let label = mr.label("");
-                    (progress, label)
+            let stack = row.stacked_widget();
+
+            let process_page = stack.add_page();
+            let (view, end_task, toggle, status, detail_stats) = process_page.column(|page| {
+                let view = page.tree_view(&tree_model.clone());
+                let bottom = page.row(|bar| {
+                    let toggle = bar.button("详细信息");
+                    let status = bar.label("");
+                    bar.spacer();
+                    let end = bar.button("结束任务");
+                    (toggle, status, end)
                 });
-                let stats = area.label("");
-                let resmon = area.button("打开资源监视器");
-                (
-                    title,
-                    chart,
-                    cores_chart,
-                    metrics,
-                    resource_label,
-                    memory_row.0,
-                    memory_row.1,
-                    stats,
-                    resmon,
-                )
+                let stats = page.label("");
+                (view, bottom.2, bottom.0, bottom.1, stats)
             });
-            (sidebar, perf)
-        });
 
-        let details_page = tabs.add_tab("详细信息");
-        let details_view = details_page.table_view(&details_model.clone());
+            let perf_page = stack.add_page();
+            let (sidebar, perf) = perf_page.row(|row| {
+                let sidebar = row.column(|side| {
+                    let cpu = side.button("CPU");
+                    let memory = side.button("内存");
+                    let disk = side.button("磁盘 0");
+                    let net = side.button("以太网");
+                    let gpu = side.button("GPU 0");
+                    (cpu, memory, disk, net, gpu)
+                });
+                let perf = row.column(|area| {
+                    let title = area.label("CPU");
+                    title.set_style_class("title");
+                    let chart = area.line_chart();
+                    let cores_chart = area.line_chart();
+                    let usage = area.label("");
+                    usage.set_style_class("primary");
+                    let speed = area.label("");
+                    speed.set_style_class("secondary");
+                    let detail = area.label("");
+                    detail.set_style_class("muted");
+                    let resource_label = area.label("");
+                    let memory_row = area.row(|mr| {
+                        let progress = mr.progress_bar(0);
+                        let label = mr.label("");
+                        (progress, label)
+                    });
+                    let stats = area.label("");
+                    let resmon = area.button("打开资源监视器");
+                    (
+                        title,
+                        chart,
+                        cores_chart,
+                        usage,
+                        speed,
+                        detail,
+                        resource_label,
+                        memory_row.0,
+                        memory_row.1,
+                        stats,
+                        resmon,
+                    )
+                });
+                (sidebar, perf)
+            });
 
-        let services_page = tabs.add_tab("服务");
-        services_page.table_view(&services_model.clone());
+            let details_page = stack.add_page();
+            let details_view = details_page.table_view(&details_model.clone());
 
-        let startup_page = tabs.add_tab("启动");
-        startup_page.table_view(&startup_model.clone());
+            let services_page = stack.add_page();
+            services_page.table_view(&services_model.clone());
 
-        let users_page = tabs.add_tab("用户");
-        users_page.table_view(&users_model.clone());
+            let startup_page = stack.add_page();
+            startup_page.table_view(&startup_model.clone());
 
-        let history_page = tabs.add_tab("应用历史记录");
-        history_page.label("该视图需要平台资源使用记录：Windows 上需启用“应用历史记录”数据源，Linux 上无对应数据。");
+            let users_page = stack.add_page();
+            users_page.table_view(&users_model.clone());
 
-        (
-            tabs,
-            view,
-            details_view,
-            end_task,
-            toggle,
-            status,
-            detail_stats,
-            sidebar,
-            perf,
-        )
+            let history_page = stack.add_page();
+            history_page.label("该视图需要平台资源使用记录：Windows 上需启用“应用历史记录”数据源，Linux 上无对应数据。");
+
+            (
+                rail,
+                stack,
+                view,
+                details_view,
+                end_task,
+                toggle,
+                status,
+                detail_stats,
+                sidebar,
+                perf,
+            )
+        })
     });
     let (
         title_label,
         chart,
         cores_chart,
-        metrics,
+        usage,
+        speed,
+        detail,
         resource_label,
         mem_progress,
         mem_label,
@@ -500,12 +577,19 @@ fn main() {
     end_task.set_style_class("accent");
     resmon.set_style_class("quiet");
     toggle.set_style_class("quiet");
-    for button in [&cpu_btn, &mem_btn, &disk_btn, &net_btn, &gpu_btn] {
-        button.set_style_class("quiet");
-    }
     status_label.set_style_class("muted");
     detail_stats_label.set_style_class("muted");
     perf_stats_label.set_style_class("muted");
+
+    // 左侧导航：切换页面并高亮当前项。
+    for (index, button) in rail.iter().enumerate() {
+        button.on_click(clone!(rail, stack => move |_| {
+            stack.set_current(index);
+            for (i, nav) in rail.iter().enumerate() {
+                nav.set_style_class(if i == index { "navSelected" } else { "nav" });
+            }
+        }));
+    }
 
     // --- 派生信号与绑定（不直接操作控件） ---
     details_model.bind_table(&details_rows_var.signal());
@@ -543,7 +627,9 @@ fn main() {
     detail_stats_label.bind_text(&stats_text.signal());
     detail_stats_label.bind_visible(&details_open.signal());
     perf_stats_label.bind_text(&stats_text.signal());
-    metrics.bind_text(&metrics_text.signal());
+    usage.bind_text(&usage_text.signal());
+    speed.bind_text(&speed_text.signal());
+    detail.bind_text(&detail_text.signal());
     title_label.bind_text(&resource.signal().map(|r| TITLES[*r].to_string()));
     resource_label.bind_text(
         &resource
@@ -570,7 +656,9 @@ fn main() {
     chart.bind_series(&chart_series);
     cores_chart.bind_series_multi(&per_core_history.signal());
     cores_chart.bind_visible(&resource.signal().map(|r| *r == 0));
-    metrics.bind_visible(&resource.signal().map(|r| *r == 0));
+    usage.bind_visible(&resource.signal().map(|r| *r == 0));
+    speed.bind_visible(&resource.signal().map(|r| *r == 0));
+    detail.bind_visible(&resource.signal().map(|r| *r == 0));
     mem_progress.bind_visible(&resource.signal().map(|r| *r == 1));
     mem_progress.bind_value(&mem_percent.signal());
     mem_label.bind_visible(&resource.signal().map(|r| *r == 1));
@@ -604,7 +692,7 @@ fn main() {
             && let Some(entry) = tree.value().get(row)
             && let Some(pid) = entry.pid
         {
-            selected_pid.set(Some(pid));
+            selected_pid.set(Some((pid, entry.start_time)));
         }
     }));
 
@@ -612,36 +700,44 @@ fn main() {
         details_open.set(!*details_open.value());
     }));
 
-    for (index, button) in [cpu_btn, mem_btn, disk_btn, net_btn, gpu_btn]
-        .into_iter()
-        .enumerate()
-    {
+    let resource_buttons = [cpu_btn, mem_btn, disk_btn, net_btn, gpu_btn];
+    for (index, button) in resource_buttons.iter().enumerate() {
         button.on_click(clone!(resource => move |_| resource.set(index)));
     }
+    // 资源导航按钮同样用“选中”样式，随 resource 状态切换。
+    let _resource_nav = resource
+        .signal()
+        .observe(clone!(resource_buttons => move |selected| {
+            for (index, button) in resource_buttons.iter().enumerate() {
+                button.set_style_class(if index == *selected { "navSelected" } else { "nav" });
+            }
+        }));
 
     let kill_subs: Rc<RefCell<Vec<Subscription>>> = Rc::new(RefCell::new(Vec::new()));
     // 结束进程（或整棵进程树）并给出明确反馈。
-    let confirm_kill: Rc<dyn Fn(u32, bool)> = Rc::new(
-        clone!(process_data, status_text, window, kill_subs => move |pid, tree| {
+    let confirm_kill: Rc<dyn Fn(u32, u64, bool)> = Rc::new(
+        clone!(process_data, status_text, window, kill_subs => move |pid, start_time, tree| {
             let name = process_data
                 .value()
                 .iter()
                 .find(|p| p.pid == pid)
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
-            let pids: Vec<u32> = if tree {
-                let mut queue = vec![pid];
-                let mut seen = std::collections::HashSet::from([pid]);
-                while let Some(current) = queue.pop() {
+            let pids: Vec<(u32, u64)> = if tree {
+                let mut queue = vec![(pid, start_time)];
+                let mut seen = std::collections::HashSet::from([(pid, start_time)]);
+                while let Some((current, _current_start)) = queue.pop() {
                     for process in process_data.value().iter() {
-                        if process.parent_pid == current && seen.insert(process.pid) {
-                            queue.push(process.pid);
+                        if process.parent_pid == current
+                            && seen.insert((process.pid, process.start_time))
+                        {
+                            queue.push((process.pid, process.start_time));
                         }
                     }
                 }
                 seen.into_iter().collect()
             } else {
-                vec![pid]
+                vec![(pid, start_time)]
             };
             let confirm = MessageBox::new(
                 &window,
@@ -657,8 +753,8 @@ fn main() {
                 if *result == MessageBoxResult::Ok {
                     let mut failed = 0;
                     let mut ok = 0;
-                    for pid in &pids {
-                        if sys::kill_process(*pid) {
+                    for (pid, start_time) in &pids {
+                        if sys::kill_process(*pid, *start_time) {
                             ok += 1;
                         } else {
                             failed += 1;
@@ -676,8 +772,8 @@ fn main() {
         }),
     );
     end_task.on_click(clone!(selected_pid, confirm_kill => move |_| {
-        if let Some(pid) = *selected_pid.value() {
-            confirm_kill(pid, false);
+        if let Some((pid, start_time)) = *selected_pid.value() {
+            confirm_kill(pid, start_time, false);
         }
     }));
 
@@ -718,12 +814,13 @@ fn main() {
         if let Some(entry) = tree.value().get(*row)
             && let Some(pid) = entry.pid
         {
-            selected_pid.set(Some(pid));
+            let start_time = entry.start_time;
+            selected_pid.set(Some((pid, start_time)));
             let menu = window.menu("");
             let end = menu.action("结束任务");
-            end.on_trigger(clone!(confirm_kill => move |_| confirm_kill(pid, false)));
+            end.on_trigger(clone!(confirm_kill => move |_| confirm_kill(pid, start_time, false)));
             let tree = menu.action("结束进程树");
-            tree.on_trigger(clone!(confirm_kill => move |_| confirm_kill(pid, true)));
+            tree.on_trigger(clone!(confirm_kill => move |_| confirm_kill(pid, start_time, true)));
             menu.separator();
             let location = menu.action("打开文件位置");
             location.on_trigger(clone!(open_location => move |_| open_location(pid)));
@@ -761,7 +858,9 @@ fn main() {
         services_rows,
         startup_rows,
         users_rows,
-        metrics_text,
+        usage_text,
+        speed_text,
+        detail_text,
         status_text,
         stats_text,
         resource_texts,
@@ -801,15 +900,17 @@ fn main() {
 
             let cpu = &stats.cpu;
             let virtualized = if cpu.virtualization { "已启用" } else { "未启用" };
-            metrics_text.set(format!(
-                "当前利用率：{:.0}%\n当前速度：{:.2} GHz\n基准速度：{:.2} GHz\n插槽：{}\n内核数：{}\n逻辑处理器：{}\n虚拟化：{}\nL1 缓存：{}\nL2 缓存：{}\nL3 缓存：{}",
-                cpu.usage_pct,
+            usage_text.set(format!("{:.0}%", cpu.usage_pct));
+            speed_text.set(format!(
+                "当前速度 {:.2} GHz    基准速度 {:.2} GHz",
                 cpu.current_mhz / 1000.0,
                 cpu.base_mhz / 1000.0,
+            ));
+            detail_text.set(format!(
+                "插槽 {} · 内核 {} · 逻辑处理器 {} · 虚拟化 {virtualized} · L1 {} · L2 {} · L3 {}",
                 cpu.sockets,
                 cpu.cores,
                 cpu.logical,
-                virtualized,
                 format_kb(cpu.l1_kb),
                 format_kb(cpu.l2_kb),
                 format_kb(cpu.l3_kb),
@@ -1009,13 +1110,13 @@ fn main() {
         app.quit_after(4500);
         app.after(
             700,
-            clone!(process_view, toggle, tabs => move || {
+            clone!(process_view, toggle, stack => move || {
                 process_view.click_header(3); // sort by CPU
                 process_view.click_header(3); // toggle direction
                 process_view.select(0);
                 toggle.click();
-                tabs.set_current(1);
-                tabs.set_current(0);
+                stack.set_current(1);
+                stack.set_current(0);
             }),
         );
     }
@@ -1031,13 +1132,13 @@ fn main() {
         rows.first().map(|p| (p.name.clone(), p.cpu)),
     );
     println!(
-        "[diag] tabs={} tab_visible={} tab_size={}x{} \
+        "[diag] pages={} stack_visible={} stack_size={}x{} \
          table_rows={} table_visible={} table_size={}x{} \
          details_rows={} services={} startup={} users={} icons={} first_entries={:?}",
-        tabs.count(),
-        tabs.is_visible(),
-        tabs.width(),
-        tabs.height(),
+        stack.count(),
+        stack.is_visible(),
+        stack.width(),
+        stack.height(),
         tree_model.row_count(),
         process_view.is_visible(),
         process_view.width(),

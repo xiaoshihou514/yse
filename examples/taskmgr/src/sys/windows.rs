@@ -152,12 +152,13 @@ fn priority_class(priority: i32) -> String {
     }
 }
 
-/// Returns `(working set bytes, io bytes, kernel+user ticks, exe path)`.
-fn process_details(pid: u32) -> (u64, u64, u64, String) {
+/// Returns `(working set bytes, io bytes, kernel+user ticks, exe path,
+/// creation time)`.
+fn process_details(pid: u32) -> (u64, u64, u64, String, u64) {
     // SAFETY: OpenProcess with a valid access mask and pid.
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
-        return (0, 0, 0, String::new());
+        return (0, 0, 0, String::new(), 0);
     }
     let mut counters = PROCESS_MEMORY_COUNTERS::default();
     let mut io = IO_COUNTERS::default();
@@ -185,7 +186,7 @@ fn process_details(pid: u32) -> (u64, u64, u64, String) {
     let exe = process_exe_path(handle);
     // SAFETY: `handle` was returned by OpenProcess and is still open.
     unsafe { CloseHandle(handle) };
-    (mem, io_bytes, ticks, exe)
+    (mem, io_bytes, ticks, exe, filetime_to_u64(&creation))
 }
 
 fn process_table(
@@ -206,7 +207,7 @@ fn process_table(
     while ok {
         let pid = entry.th32ProcessID;
         let name = wide_to_string(&entry.szExeFile);
-        let (mem, io_bytes, ticks, exe) = process_details(pid);
+        let (mem, io_bytes, ticks, exe, start_time) = process_details(pid);
         let cpu = match prev.get(&pid) {
             Some(p) if total_delta > 0 => {
                 ticks.saturating_sub(p.ticks) as f64 / total_delta as f64 * 100.0
@@ -231,6 +232,7 @@ fn process_table(
             parent_pid: entry.th32ParentProcessID,
             threads: entry.cntThreads,
             cpu_ticks: ticks,
+            start_time,
             priority: priority_class(entry.pcPriClassBase),
             group,
         });
@@ -564,10 +566,26 @@ impl WindowsSampler {
     }
 }
 
-pub fn kill(pid: u32) -> bool {
-    // SAFETY: PROCESS_TERMINATE is the required access for TerminateProcess.
-    let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
+pub fn kill(pid: u32, expected_start_time: u64) -> bool {
+    // SAFETY: PROCESS_QUERY_LIMITED_INFORMATION is required to read the
+    // creation time; PROCESS_TERMINATE for TerminateProcess.
+    let handle = unsafe {
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, 0, pid)
+    };
     if handle.is_null() {
+        return false;
+    }
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    // SAFETY: all pointers point to writable FILETIME values.
+    let creation_ok = unsafe {
+        GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user)
+    } != 0;
+    if !creation_ok || filetime_to_u64(&creation) != expected_start_time {
+        // The pid now refers to a different process (or is gone).
+        unsafe { CloseHandle(handle) };
         return false;
     }
     let ok = unsafe { TerminateProcess(handle, 1) } != 0;

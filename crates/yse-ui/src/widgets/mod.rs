@@ -36,6 +36,8 @@ mod table_view;
 pub use table_view::{StringTableModel, TableView};
 mod tree_view;
 pub use tree_view::{TreeModel, TreeView};
+mod stacked_widget;
+pub use stacked_widget::StackedWidget;
 pub(crate) mod dialogs;
 pub use dialogs::{FileDialog, MessageBox, MessageBoxButtons, MessageBoxResult};
 mod settings;

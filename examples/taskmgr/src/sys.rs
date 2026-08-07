@@ -72,6 +72,9 @@ pub struct ProcessSample {
     pub threads: u32,
     /// Accumulated CPU time in clock ticks (process-specific granularity).
     pub cpu_ticks: u64,
+    /// Process start identity (creation time) used to guard async actions
+    /// such as terminating a process after a confirmation dialog.
+    pub start_time: u64,
     /// Human-readable priority class (高/普通/低/…).
     pub priority: String,
     pub group: ProcessGroup,
@@ -167,22 +170,37 @@ impl Default for Sampler {
     }
 }
 
-/// Terminate `pid`. Refuses to kill the current process.
-pub fn kill_process(pid: u32) -> bool {
+/// Terminate `pid`, but only if its start identity still matches
+/// `expected_start_time` — protecting against PID reuse between the moment a
+/// row was selected and the confirmation dialog is answered. Refuses to kill
+/// the current process.
+pub fn kill_process(pid: u32, expected_start_time: u64) -> bool {
     if pid == std::process::id() {
         return false;
     }
-    kill_impl(pid)
+    kill_impl(pid, expected_start_time)
 }
 
 #[cfg(target_os = "linux")]
-fn kill_impl(pid: u32) -> bool {
+fn kill_impl(pid: u32, expected_start_time: u64) -> bool {
+    let current = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| {
+            let close = stat.rfind(')')?;
+            let rest: Vec<&str> = stat[close + 1..].split_whitespace().collect();
+            // Field 22 (starttime) is rest[19].
+            rest.get(19)?.parse().ok()
+        })
+        .unwrap_or(0);
+    if current != expected_start_time {
+        return false; // the pid now refers to a different process
+    }
     // SAFETY: `kill` with an absolute pid sends the signal to exactly that
     // process; the pid came from /proc and is revalidated by the kernel.
     unsafe { libc::kill(pid as i32, libc::SIGKILL) == 0 }
 }
 
 #[cfg(target_os = "windows")]
-fn kill_impl(pid: u32) -> bool {
-    windows::kill(pid)
+fn kill_impl(pid: u32, expected_start_time: u64) -> bool {
+    windows::kill(pid, expected_start_time)
 }

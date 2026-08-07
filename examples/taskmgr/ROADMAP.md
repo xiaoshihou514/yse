@@ -20,8 +20,8 @@ graphs, and the process-management actions.
 |---|---|---|
 | 0 | Parity baseline, capability matrix, keyboard/menu inventory | In progress |
 | 1 | Provider/snapshot separation, background sampling, update speed, settings, benchmarks | Partially done (worker-thread sampling via `spawn_interval`, High/Normal/Low/Paused, coalescing) |
-| 2 | Theme tokens, responsive shell, shared table/graph widgets, DPI | Partially done (theme + shell live) |
-| 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Done (expandable App/Background/System tree, friendly names, icons, heat maps, column chooser, end task/tree, open location) |
+| 2 | Theme tokens, responsive shell, shared table/graph widgets, DPI | Done (left icon+label rail + stacked pages, quiet data-forward theme, shared heat delegate) |
+| 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Done (expandable tree, friendly names, icons, heat maps, column chooser, end task/tree guarded by PID+start-time pairing, open location) |
 | 4 | Performance parity: CPU/memory/disk/network/GPU detail pages | CPU/memory/network/disk (Linux) done; GPU explicitly unavailable |
 | 5 | Details + Services | Details partial (PID/PPID/threads/CPU time/priority); Services implemented (systemd / `sc`) |
 | 6 | Startup + Users | Startup implemented (XDG autostart / registry Run); Users implemented (who / query user) |
@@ -48,8 +48,8 @@ graphs, and the process-management actions.
 - Expandable app groups (tree view) and column chooser.
 - Heat-map resource cells.
 - Performance detail pages for disk/network/GPU.
-- Disk/GPU performance detail pages, keyboard/accessibility audit, 24-hour
-  soak, release hardening.
+- GPU usage (vendor APIs), Windows per-disk counters (PDH), elevation
+  helper, 24-hour soak on real machines, signing/installer.
 - Keyboard parity, accessibility, 24-hour soak, release hardening.
 
 ## Data-correctness rules (from the original roadmap)
@@ -90,3 +90,12 @@ Explicitly documented instead of fabricating values, per the roadmap rules:
 - Light/dark both intentional: palette + per-scheme stylesheets. Done.
 - Inaccessible metrics show "不可用", not misleading zeroes. Done.
 - Provider errors never modal-spam: sampling failures degrade to empty/unavailable states. Done.
+
++## Visual direction (working note)
++
++The UI follows "quiet chrome, data-forward" principles: no boxes around the
++table, tree, or charts; grouping comes from alignment, whitespace, and a
++single accent color. Hierarchy is typographic (primary metric → secondary →
++metadata → labels). Navigation is a left icon+label rail with a stacked
++content area, matching the original roadmap's responsive-shell guidance.
++

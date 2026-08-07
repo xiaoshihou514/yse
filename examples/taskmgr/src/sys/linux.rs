@@ -68,6 +68,7 @@ struct ProcStat {
     parent_pid: u32,
     ticks: u64,
     nice: i64,
+    start_time: u64,
 }
 
 fn parse_proc_stat(stat: &str) -> Option<ProcStat> {
@@ -76,16 +77,18 @@ fn parse_proc_stat(stat: &str) -> Option<ProcStat> {
     let name = stat[open + 1..close].to_string();
     let rest: Vec<&str> = stat[close + 1..].split_whitespace().collect();
     // rest[0] is field 3 (state); field 4 = ppid, field 14 = utime,
-    // field 15 = stime, field 19 = nice.
+    // field 15 = stime, field 19 = nice, field 22 = starttime.
     let parent_pid: u32 = rest.get(1)?.parse().ok()?;
     let utime: u64 = rest.get(11)?.parse().ok()?;
     let stime: u64 = rest.get(12)?.parse().ok()?;
     let nice: i64 = rest.get(16)?.parse().ok()?;
+    let start_time: u64 = rest.get(19)?.parse().ok()?;
     Some(ProcStat {
         name,
         parent_pid,
         ticks: utime + stime,
         nice,
+        start_time,
     })
 }
 
@@ -200,6 +203,7 @@ struct ProcFields {
     rss_bytes: u64,
     threads: u32,
     ticks: u64,
+    start_time: u64,
     priority: String,
 }
 
@@ -228,6 +232,7 @@ fn process_fields(pid: u32) -> Option<ProcFields> {
         rss_bytes,
         threads,
         ticks: parsed.ticks,
+        start_time: parsed.start_time,
         priority,
     })
 }
@@ -589,6 +594,7 @@ impl LinuxSampler {
                     name,
                     threads: fields.threads,
                     cpu_ticks: stat_ticks,
+                    start_time: fields.start_time,
                     priority: fields.priority,
                     group,
                     cpu,

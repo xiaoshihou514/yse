@@ -52,6 +52,7 @@ using Vec = ::rust::Vec<T>;
 #include <QtWidgets/QTabWidget>
 #include <QtWidgets/QToolBar>
 #include <QtWidgets/QTreeView>
+#include <QtWidgets/QStackedWidget>
 #include <QtWidgets/QTimeEdit>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
@@ -207,8 +208,6 @@ protected:
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     const QRectF bounds = rect().adjusted(6, 6, -6, -6);
-    painter.setPen(palette().color(QPalette::Mid));
-    painter.drawRect(bounds);
 
     double minValue = 0.0;
     double maxValue = 100.0;
@@ -220,6 +219,15 @@ protected:
     }
     if (maxValue - minValue < 1.0) {
       maxValue = minValue + 1.0;
+    }
+
+    // Quiet horizontal gridlines + a baseline; no enclosing box.
+    QColor grid = palette().color(QPalette::Mid);
+    grid.setAlphaF(0.35);
+    painter.setPen(QPen(grid, 1));
+    for (int line = 0; line < 4; ++line) {
+      const double y = bounds.top() + bounds.height() * line / 3.0;
+      painter.drawLine(QPointF(bounds.left(), y), QPointF(bounds.right(), y));
     }
 
     const QColor palette_[8] = {
@@ -245,6 +253,15 @@ protected:
           path.lineTo(x, y);
         }
       }
+      // A whisper of fill under the line keeps the chart intentional without
+      // calling attention to itself.
+      QColor fill = palette_[index % 8];
+      fill.setAlphaF(0.07);
+      QPainterPath fillPath = path;
+      fillPath.lineTo(bounds.right(), bounds.bottom());
+      fillPath.lineTo(bounds.left(), bounds.bottom());
+      fillPath.closeSubpath();
+      painter.fillPath(fillPath, fill);
       painter.drawPath(path);
     }
   }
@@ -541,6 +558,37 @@ int tab_widget_count(Widget* tabs)
 {
   if (tabs->alive && tabs->q != nullptr) {
     return static_cast<QTabWidget*>(tabs->q)->count();
+  }
+  return 0;
+}
+
+Widget* widget_new_stacked_widget(Widget* parent)
+{
+  return new_child(new QStackedWidget(parent != nullptr ? parent->q : nullptr), parent);
+}
+
+Widget* stacked_add_page(Widget* stack)
+{
+  // `addWidget` reparents the page into the stack; wrap it without calling
+  // setParent again (same pitfall as QTabWidget pages).
+  auto* page = new QWidget();
+  auto* layout = new QVBoxLayout(page);
+  layout->setContentsMargins(0, 0, 0, 0);
+  static_cast<QStackedWidget*>(stack->q)->addWidget(page);
+  return new_widget(page, false);
+}
+
+void stacked_set_current(Widget* stack, int index)
+{
+  if (stack->alive && stack->q != nullptr) {
+    static_cast<QStackedWidget*>(stack->q)->setCurrentIndex(index);
+  }
+}
+
+int stacked_count(Widget* stack)
+{
+  if (stack->alive && stack->q != nullptr) {
+    return static_cast<QStackedWidget*>(stack->q)->count();
   }
   return 0;
 }
