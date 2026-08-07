@@ -15,6 +15,10 @@ extending it.
 - Delayed work must go through a `Timer` (`yse_ui::QtTimer` in the app,
   `yse_model::ManualTimer` in tests), never through a thread that touches
   widgets directly.
+- Every widget, action, selection bridge, and dialog records the thread that
+  created it. Callbacks arriving on a different thread (a misuse Yse does not
+  support) are detected at the FFI boundary and logged as errors, so silent
+  cross-thread access shows up during development instead of corrupting state.
 
 ## Ownership and pointer lifetime
 

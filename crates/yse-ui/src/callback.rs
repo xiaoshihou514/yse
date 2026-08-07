@@ -81,6 +81,9 @@ pub(crate) unsafe fn action_destroyed(data: *mut Void) {
 pub(crate) unsafe fn selection_changed(data: *mut Void) {
     unsafe {
         let bridge = &*(data as *const SelectionBridge);
+        if std::thread::current().id() != bridge.created_on {
+            crate::component::log_off_thread("selection changed");
+        }
         let rows: Vec<usize> = ffi::view_selected_rows(bridge.view)
             .into_iter()
             .map(|row| row as usize)

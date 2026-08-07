@@ -6,9 +6,20 @@ use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
+use std::thread::ThreadId;
 use yse_model::{Owner, Sink};
 
 pub(crate) type RetainedId = u64;
+
+/// Log an error when a C++-side callback arrives on a different thread than
+/// the one that created the object. Qt delivers widget signals and queued
+/// invocations on the GUI thread, so a mismatch means the object was used
+/// from a worker thread — a misuse Yse does not support.
+pub(crate) fn log_off_thread(what: &str) {
+    let message = format!("{what} invoked off the thread that created it");
+    yse_model::log_error(message.clone());
+    eprintln!("yse: {message}");
+}
 
 /// Internal component state shared by every widget wrapper.
 #[doc(hidden)]
@@ -16,6 +27,7 @@ pub struct Component {
     pub ptr: *mut ffi::Widget,
     pub owner: RefCell<Owner>,
     pub destroyed: Cell<bool>,
+    created_on: ThreadId,
     parent: RefCell<Option<Weak<Component>>>,
     self_weak: Weak<Component>,
     children: RefCell<Vec<Rc<Component>>>,
@@ -50,6 +62,7 @@ impl Component {
             ptr,
             owner: RefCell::new(Owner::new()),
             destroyed: Cell::new(false),
+            created_on: std::thread::current().id(),
             parent: RefCell::new(parent.map(Rc::downgrade)),
             self_weak: self_weak.clone(),
             children: RefCell::new(Vec::new()),
@@ -125,6 +138,7 @@ impl Component {
         if !self.is_alive() {
             return;
         }
+        self.check_thread("widget clicked");
         if let Some(sink) = self.clicked_sink.borrow().as_ref() {
             sink.send(());
         }
@@ -134,6 +148,7 @@ impl Component {
         if !self.is_alive() || self.updating.get() {
             return;
         }
+        self.check_thread("text changed");
         let text = unsafe { ffi::line_edit_text(self.ptr) };
         if let Some(sink) = self.text_sink.borrow().as_ref() {
             sink.send(text);
@@ -144,6 +159,7 @@ impl Component {
         if !self.is_alive() || self.updating.get() {
             return;
         }
+        self.check_thread("toggled");
         let checked = unsafe { ffi::checkbox_checked(self.ptr) };
         if let Some(sink) = self.toggled_sink.borrow().as_ref() {
             sink.send(checked);
@@ -154,6 +170,7 @@ impl Component {
         if !self.is_alive() {
             return;
         }
+        self.check_thread("value changed");
         let value = unsafe { ffi::widget_value(self.ptr) };
         if let Some(sink) = self.value_sink.borrow().as_ref() {
             sink.send(value);
@@ -164,6 +181,7 @@ impl Component {
         if self.destroyed.replace(true) {
             return;
         }
+        self.check_thread("widget destroyed");
         self.clear_owner();
         self.retained.borrow_mut().clear();
         self.children.borrow_mut().clear();
@@ -178,6 +196,12 @@ impl Component {
                 .children
                 .borrow_mut()
                 .retain(|child| !Rc::ptr_eq(child, &this));
+        }
+    }
+
+    fn check_thread(&self, what: &str) {
+        if std::thread::current().id() != self.created_on {
+            log_off_thread(what);
         }
     }
 

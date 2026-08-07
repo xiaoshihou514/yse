@@ -779,6 +779,7 @@ impl Ui {
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
         });
         inner.retain(model.state.clone());
         inner.retain(selection.clone());
@@ -802,6 +803,7 @@ impl Ui {
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
         });
         inner.retain(model.state.clone());
         inner.retain(selection.clone());

@@ -2,8 +2,10 @@
 
 use crate::bridge as ffi;
 use crate::bridge::Void;
+use crate::component::log_off_thread;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::thread::ThreadId;
 use yse_model::{Owner, Sink};
 
 /// Internal state shared by every [`crate::Action`] wrapper.
@@ -12,6 +14,7 @@ pub struct ActionState {
     ptr: *mut ffi::Action,
     pub owner: RefCell<Owner>,
     pub destroyed: Cell<bool>,
+    created_on: ThreadId,
     pub triggered_sink: RefCell<Option<Rc<Sink<()>>>>,
 }
 
@@ -25,6 +28,7 @@ impl ActionState {
             ptr,
             owner: RefCell::new(Owner::new()),
             destroyed: Cell::new(false),
+            created_on: std::thread::current().id(),
             triggered_sink: RefCell::new(None),
         });
         unsafe { ffi::action_set_destroyed_cb(ptr, &*this as *const Self as *mut Void) };
@@ -51,6 +55,9 @@ impl ActionState {
     pub fn on_triggered(&self) {
         if !self.is_alive() {
             return;
+        }
+        if std::thread::current().id() != self.created_on {
+            log_off_thread("action triggered");
         }
         if let Some(sink) = self.triggered_sink.borrow().as_ref() {
             sink.send(());

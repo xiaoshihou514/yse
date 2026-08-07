@@ -301,7 +301,7 @@ where
 use crate::action::ActionState;
 use crate::bridge as ffi;
 use crate::bridge::Void;
-use crate::component::{Component, RetainedId};
+use crate::component::{Component, RetainedId, log_off_thread};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
@@ -690,6 +690,7 @@ impl Row {
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
         });
         inner.retain(model.state.clone());
         inner.retain(selection.clone());
@@ -712,6 +713,7 @@ impl Row {
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
         });
         inner.retain(model.state.clone());
         inner.retain(selection.clone());
@@ -861,6 +863,7 @@ impl Column {
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
         });
         inner.retain(model.state.clone());
         inner.retain(selection.clone());
@@ -883,6 +886,7 @@ impl Column {
         let selection = Rc::new(SelectionBridge {
             view: inner.raw(),
             sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
         });
         inner.retain(model.state.clone());
         inner.retain(selection.clone());
@@ -1840,6 +1844,7 @@ impl ListView {
 pub(crate) struct SelectionBridge {
     view: *mut ffi::Widget,
     sink: RefCell<Option<Rc<Sink<Vec<usize>>>>>,
+    created_on: std::thread::ThreadId,
 }
 
 impl IntoWidget for ListView {
@@ -2207,6 +2212,7 @@ struct DialogState {
     ptr: *mut ffi::Dialog,
     result_sink: RefCell<Option<Rc<Sink<MessageBoxResult>>>>,
     finished: Cell<bool>,
+    created_on: std::thread::ThreadId,
     parent: std::rc::Weak<Component>,
     self_weak: std::rc::Weak<DialogState>,
     retained_id: Cell<Option<RetainedId>>,
@@ -2222,6 +2228,9 @@ impl DialogState {
     fn on_finished(&self) {
         if self.finished.get() {
             return;
+        }
+        if std::thread::current().id() != self.created_on {
+            log_off_thread("dialog finished");
         }
         let keep_alive = self.self_weak.upgrade();
         self.finished.set(true);
@@ -2269,6 +2278,7 @@ impl MessageBox {
             ptr,
             result_sink: RefCell::new(None),
             finished: Cell::new(false),
+            created_on: std::thread::current().id(),
             parent: Rc::downgrade(&window.inner),
             self_weak: self_weak.clone(),
             retained_id: Cell::new(None),
@@ -2310,6 +2320,7 @@ struct FileDialogState {
     ptr: *mut ffi::FileDialog,
     result_sink: RefCell<Option<Rc<Sink<Option<String>>>>>,
     finished: Cell<bool>,
+    created_on: std::thread::ThreadId,
     parent: std::rc::Weak<Component>,
     self_weak: std::rc::Weak<FileDialogState>,
     retained_id: Cell<Option<RetainedId>>,
@@ -2325,6 +2336,9 @@ impl FileDialogState {
     fn on_finished(&self) {
         if self.finished.get() {
             return;
+        }
+        if std::thread::current().id() != self.created_on {
+            log_off_thread("file dialog finished");
         }
         let keep_alive = self.self_weak.upgrade();
         self.finished.set(true);
@@ -2365,6 +2379,7 @@ impl FileDialog {
             ptr,
             result_sink: RefCell::new(None),
             finished: Cell::new(false),
+            created_on: std::thread::current().id(),
             parent: Rc::downgrade(&window.inner),
             self_weak: self_weak.clone(),
             retained_id: Cell::new(None),
@@ -2385,6 +2400,7 @@ impl FileDialog {
             ptr,
             result_sink: RefCell::new(None),
             finished: Cell::new(false),
+            created_on: std::thread::current().id(),
             parent: Rc::downgrade(&window.inner),
             self_weak: self_weak.clone(),
             retained_id: Cell::new(None),
