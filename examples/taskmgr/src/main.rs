@@ -1115,10 +1115,8 @@ fn main() {
 
     // 表格布局与外观（一次性配置）。
     process_view.select_rows(true);
-    process_view.set_alternating_row_colors(true);
     process_view.enable_heat();
     details_view.select_rows(true);
-    details_view.set_alternating_row_colors(true);
     process_view.set_column_width(0, 230);
     process_view.set_column_width(1, 90);
     process_view.set_column_width(3, 70);
