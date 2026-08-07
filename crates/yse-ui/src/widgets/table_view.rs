@@ -366,13 +366,6 @@ impl TableView {
         }
     }
 
-    /// Alternate row background colors for easier scanning.
-    pub fn set_alternating_row_colors(&self, on: bool) {
-        if self.inner.is_alive() {
-            unsafe { ffi::view_set_alternating_row_colors(self.inner.raw(), on) };
-        }
-    }
-
     /// Install the heat-map delegate so cells with heat values render with an
     /// intensity wash.
     pub fn enable_heat(&self) {

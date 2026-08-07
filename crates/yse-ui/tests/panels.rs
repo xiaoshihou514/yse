@@ -190,8 +190,6 @@ fn color_scheme_and_table_polish() {
     let view = column.table_view(&model);
 
     view.select_rows(true);
-    view.set_alternating_row_colors(true);
-
     // Icons resolve from real executable paths; empty paths stay iconless.
     let paths = vec![String::from("/bin/ls"), String::new()];
     model.set_row_icons(paths);

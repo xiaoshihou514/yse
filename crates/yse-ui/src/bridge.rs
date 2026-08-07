@@ -181,7 +181,6 @@ mod bridge {
         unsafe fn view_set_column_width(view: *mut Widget, column: i32, width: i32);
         unsafe fn view_stretch_last_section(view: *mut Widget, stretch: bool);
         unsafe fn view_set_select_rows(view: *mut Widget, on: bool);
-        unsafe fn view_set_alternating_row_colors(view: *mut Widget, on: bool);
         unsafe fn view_set_heat_delegate(view: *mut Widget);
         unsafe fn view_set_column_hidden(view: *mut Widget, column: i32, hidden: bool);
         unsafe fn view_set_sort_indicator(view: *mut Widget, column: i32, ascending: bool);

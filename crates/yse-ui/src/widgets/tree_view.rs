@@ -340,13 +340,6 @@ impl TreeView {
         }
     }
 
-    /// Alternate row background colors.
-    pub fn set_alternating_row_colors(&self, on: bool) {
-        if self.inner.is_alive() {
-            unsafe { ffi::view_set_alternating_row_colors(self.inner.raw(), on) };
-        }
-    }
-
     /// Install the heat-map delegate.
     pub fn enable_heat(&self) {
         if self.inner.is_alive() {

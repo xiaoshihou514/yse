@@ -438,13 +438,6 @@ void view_set_select_rows(Widget* view, bool on)
   }
 }
 
-void view_set_alternating_row_colors(Widget* view, bool on)
-{
-  if (view->alive && view->q != nullptr) {
-    static_cast<QAbstractItemView*>(view->q)->setAlternatingRowColors(on);
-  }
-}
-
 void view_set_heat_delegate(Widget* view)
 {
   if (view->alive && view->q != nullptr) {

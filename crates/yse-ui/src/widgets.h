@@ -249,7 +249,6 @@ void view_emit_context_menu(Widget* view, int row);
 void view_set_column_width(Widget* view, int column, int width);
 void view_stretch_last_section(Widget* view, bool stretch);
 void view_set_select_rows(Widget* view, bool on);
-void view_set_alternating_row_colors(Widget* view, bool on);
 void view_set_heat_delegate(Widget* view);
 void view_set_column_hidden(Widget* view, int column, bool hidden);
 void view_set_sort_indicator(Widget* view, int column, bool ascending);

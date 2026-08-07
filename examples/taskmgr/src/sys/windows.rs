@@ -106,6 +106,7 @@ fn visible_window_pids() -> HashSet<u32> {
     let mut pids = HashSet::new();
     // SAFETY: the callback writes only into `pids`, whose address is passed as
     // LPARAM; the enumeration runs synchronously on this thread.
+    #[allow(unsafe_op_in_unsafe_fn)]
     unsafe extern "system" fn collect(window: HWND, lparam: isize) -> BOOL {
         if unsafe { IsWindowVisible(window) } != 0 {
             let mut pid: u32 = 0;
