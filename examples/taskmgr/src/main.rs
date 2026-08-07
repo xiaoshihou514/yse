@@ -15,9 +15,10 @@ use yse::{
     Subscription, TreeModel, Var, Window, clone,
 };
 
-const HISTORY: usize = 60;
+// 图表只保留最近一小段历史，避免长时间运行后堆积整段曲线。
+const HISTORY: usize = 30;
 const TITLES: [&str; 5] = ["CPU", "内存", "磁盘 0", "以太网", "GPU 0"];
-const PROCESS_COLUMNS: [&str; 10] = [
+const PROCESS_COLUMNS: [&str; 8] = [
     "名称",
     "类型",
     "状态",
@@ -25,8 +26,6 @@ const PROCESS_COLUMNS: [&str; 10] = [
     "内存",
     "磁盘",
     "网络",
-    "GPU",
-    "GPU 引擎",
     "电源使用情况",
 ];
 
@@ -139,7 +138,7 @@ fn compare_rows(
         3 => a.mem_bytes.cmp(&b.mem_bytes),
         4 => a.disk_bytes_per_s.cmp(&b.disk_bytes_per_s),
         5 => a.net_bytes_per_s.cmp(&b.net_bytes_per_s),
-        9 => a.power.cmp(&b.power),
+        7 => a.power.cmp(&b.power),
         _ => a
             .cpu
             .partial_cmp(&b.cpu)
@@ -191,8 +190,6 @@ fn process_cells(p: &sys::ProcessSample) -> Vec<String> {
         format_mb(p.mem_bytes),
         format_bytes_per_s(p.disk_bytes_per_s),
         format_bytes_per_s(p.net_bytes_per_s),
-        String::from("—"),
-        String::from("—"),
         p.power.label().to_string(),
     ]
 }
@@ -205,7 +202,7 @@ fn build_tree(data: &[sys::ProcessSample], sort: SortState) -> Vec<ProcessTreeRo
         sys::ProcessGroup::System,
     ] {
         let parent = rows.len() as i32;
-        let mut cells = vec![String::new(); 10];
+        let mut cells = vec![String::new(); 8];
         cells[0] = group.label().to_string();
         cells[1] = group.label().to_string();
         rows.push(ProcessTreeRow {
@@ -1043,6 +1040,8 @@ fn main() {
     let initial = initial_sampler.sample();
     apply(&initial);
     *last_stats.borrow_mut() = Some(initial);
+    // 进程树默认展开所有分组。
+    process_view.expand_all(true);
 
     let interval = yse::spawn_interval(
         Arc::new(QtGuiScheduler),
@@ -1126,9 +1125,7 @@ fn main() {
     process_view.set_column_width(4, 110);
     process_view.set_column_width(5, 90);
     process_view.set_column_width(6, 90);
-    process_view.set_column_width(7, 70);
-    process_view.set_column_width(8, 90);
-    process_view.set_column_width(9, 110);
+    process_view.set_column_width(7, 110);
     process_view.stretch_last_section(true);
 
     // Headless smoke run: drive sorting, selection, the details toggle, and
