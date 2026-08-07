@@ -57,9 +57,16 @@ function Invoke-Cargo([string[]]$ArgsList) {
     # cargo fmt cannot resolve a UNC --manifest-path; running from the repo
     # directory works (build artifacts stay in CARGO_TARGET_DIR on C:).
     Set-Location $Repo
+    # Cargo writes progress to stderr; PowerShell 5.1 surfaces that as
+    # NativeCommandError records, which `$ErrorActionPreference = 'Stop'`
+    # would turn into a terminating error and abort every rebuild.
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & cargo @ArgsList
-    if ($LASTEXITCODE -ne 0) {
-        throw "cargo $($ArgsList -join ' ') failed with exit code $LASTEXITCODE"
+    $cargoExit = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorAction
+    if ($cargoExit -ne 0) {
+        throw "cargo $($ArgsList -join ' ') failed with exit code $cargoExit"
     }
 }
 

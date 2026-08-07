@@ -107,7 +107,18 @@ fn process_io_bytes(pid: u32) -> u64 {
         .unwrap_or(0)
 }
 
-fn process_exe(pid: u32, name: &str) -> String {
+fn path_dirs() -> &'static Vec<std::path::PathBuf> {
+    static DIRS: std::sync::OnceLock<Vec<std::path::PathBuf>> = std::sync::OnceLock::new();
+    DIRS.get_or_init(|| {
+        std::env::var_os("PATH")
+            .map(|paths| std::env::split_paths(&paths).collect())
+            .unwrap_or_default()
+    })
+}
+
+/// Resolve the executable path, caching the PATH lookup per process name so
+/// the fallback is paid once instead of on every tick.
+fn process_exe(pid: u32, name: &str, cache: &mut HashMap<String, Option<String>>) -> String {
     if let Ok(path) = std::fs::read_link(format!("/proc/{pid}/exe")) {
         let path = path.to_string_lossy().into_owned();
         if !path.is_empty() {
@@ -116,16 +127,20 @@ fn process_exe(pid: u32, name: &str) -> String {
     }
     // `/proc/<pid>/exe` can be unreadable (hidepid / ptrace restrictions);
     // fall back to a PATH lookup so the process list still gets icons.
-    if !name.contains('/')
-        && let Some(path) = std::env::var_os("PATH").and_then(|paths| {
-            std::env::split_paths(&paths).find_map(|dir| {
-                let candidate = dir.join(name);
-                candidate
-                    .is_file()
-                    .then(|| candidate.to_string_lossy().into_owned())
-            })
-        })
-    {
+    if name.contains('/') {
+        return String::new();
+    }
+    if let Some(cached) = cache.get(name) {
+        return cached.clone().unwrap_or_default();
+    }
+    let found = path_dirs().iter().find_map(|dir| {
+        let candidate = dir.join(name);
+        candidate
+            .is_file()
+            .then(|| candidate.to_string_lossy().into_owned())
+    });
+    cache.insert(name.to_string(), found.clone());
+    if let Some(path) = found {
         return path;
     }
     String::new()
@@ -455,6 +470,7 @@ pub struct LinuxSampler {
     prev_total_delta: u64,
     prev_proc: HashMap<u32, StatTick>,
     prev_nets: HashMap<String, (u64, u64)>,
+    exe_cache: HashMap<String, Option<String>>,
 }
 
 impl LinuxSampler {
@@ -464,6 +480,7 @@ impl LinuxSampler {
             prev_total_delta: 0,
             prev_proc: HashMap::new(),
             prev_nets: HashMap::new(),
+            exe_cache: HashMap::new(),
         }
     }
 
@@ -536,7 +553,7 @@ impl LinuxSampler {
                 processes.push(ProcessSample {
                     pid,
                     parent_pid: fields.parent_pid,
-                    exe: process_exe(pid, &name),
+                    exe: process_exe(pid, &name, &mut self.exe_cache),
                     name,
                     threads: fields.threads,
                     cpu_ticks: stat_ticks,

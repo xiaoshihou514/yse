@@ -102,17 +102,17 @@ fn visible_window_pids() -> HashSet<u32> {
     // SAFETY: the callback writes only into `pids`, whose address is passed as
     // LPARAM; the enumeration runs synchronously on this thread.
     unsafe extern "system" fn collect(window: HWND, lparam: isize) -> BOOL {
-        if IsWindowVisible(window) != 0 {
+        if unsafe { IsWindowVisible(window) } != 0 {
             let mut pid: u32 = 0;
-            GetWindowThreadProcessId(window, &mut pid);
+            unsafe {
+                GetWindowThreadProcessId(window, &mut pid);
+            }
             let pids = &mut *(lparam as *mut HashSet<u32>);
             pids.insert(pid);
         }
         1
     }
-    unsafe {
-        EnumWindows(Some(collect), &mut pids as *mut HashSet<u32> as isize);
-    }
+    unsafe { EnumWindows(Some(collect), &mut pids as *mut HashSet<u32> as isize) };
     pids
 }
 
@@ -655,9 +655,9 @@ pub fn user_sessions() -> Vec<UserSession> {
     let Ok(output) = std::process::Command::new("query.exe").arg("user").output() else {
         return sessions;
     };
-    if !output.status.success() {
-        return sessions;
-    }
+    // `query.exe` reports exit code 1 when spawned from a non-console context
+    // (e.g. WSL interop) even though it prints the session table; parse the
+    // output regardless of the exit status.
     let text = String::from_utf8_lossy(&output.stdout);
     let mut lines = text.lines();
     let _header = lines.next();

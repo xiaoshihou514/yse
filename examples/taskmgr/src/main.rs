@@ -17,6 +17,18 @@ use yse::{
 
 const HISTORY: usize = 60;
 const TITLES: [&str; 5] = ["CPU", "内存", "磁盘 0", "以太网", "GPU 0"];
+const PROCESS_COLUMNS: [&str; 10] = [
+    "名称",
+    "类型",
+    "状态",
+    "CPU",
+    "内存",
+    "磁盘",
+    "网络",
+    "GPU",
+    "GPU 引擎",
+    "电源使用情况",
+];
 
 const LIGHT_QSS: &str = r#"
 QTabWidget::pane { border: 1px solid #d0d0d0; border-radius: 4px; }
@@ -225,11 +237,13 @@ fn main() {
     // --- 状态：全部放在 Var 中，UI 通过绑定消费这些信号 ---
     let process_data = Var::new(Vec::<sys::ProcessSample>::new());
     let sort = Var::new(SortState::default());
+    let visible_columns = Var::new((0..PROCESS_COLUMNS.len()).collect::<Vec<usize>>());
     let selected_pid = Var::new(None::<u32>);
     let details_open = Var::new(false);
     let resource = Var::new(0usize);
     let cpu_history = Var::new(Vec::<f64>::new());
     let mem_history = Var::new(Vec::<f64>::new());
+    let net_history = Var::new(Vec::<f64>::new());
     let per_core_history = Var::new(Vec::<Vec<f64>>::new());
     let metrics_text = Var::new(String::new());
     let status_text = Var::new(String::new());
@@ -303,7 +317,7 @@ fn main() {
         (m.action("退出").shortcut("Ctrl+Q"), m.action("立即刷新"))
     });
     let about_action = menubar.menu_with("选项", |m| m.action("关于"));
-    let (high_action, normal_action, low_action, pause_action, group_action) =
+    let (high_action, normal_action, low_action, pause_action, group_action, column_actions) =
         menubar.menu_with("查看", |m| {
             let speed = m.menu("更新速度");
             let high = speed.action("高（500 毫秒）");
@@ -317,7 +331,18 @@ fn main() {
             let group = m.action("按类型分组");
             group.set_checkable(true);
             group.set_checked(true);
-            (high, normal, low, pause, group)
+            let columns = m.menu("列");
+            let mut column_actions = Vec::new();
+            for (index, label) in PROCESS_COLUMNS.iter().enumerate() {
+                let action = columns.action(*label);
+                if index > 0 {
+                    // 名称列始终显示，其余列可切换。
+                    action.set_checkable(true);
+                    action.set_checked(true);
+                }
+                column_actions.push((index, action));
+            }
+            (high, normal, low, pause, group, column_actions)
         });
     let about_box = MessageBox::new(
         &window,
@@ -445,10 +470,28 @@ fn main() {
     perf_stats_label.set_style_class("muted");
 
     // --- 派生信号与绑定（不直接操作控件） ---
-    let sorted = process_data
-        .signal()
-        .combine(&sort.signal(), |data, s| sorted_table(data, *s));
+    let sorted = process_data.signal().combine3(
+        &sort.signal(),
+        &visible_columns.signal(),
+        |data, s, visible| {
+            sorted_table(data, *s)
+                .into_iter()
+                .map(|(cells, exe)| {
+                    (
+                        visible.iter().map(|&index| cells[index].clone()).collect(),
+                        exe,
+                    )
+                })
+                .collect()
+        },
+    );
     process_model.bind_table(&sorted);
+    process_model.bind_headers(&visible_columns.signal().map(|visible| {
+        visible
+            .iter()
+            .map(|&index| PROCESS_COLUMNS[index].to_string())
+            .collect()
+    }));
     details_model.bind_table(&details_rows_var.signal());
     services_model.bind_rows(&services_rows.signal());
     startup_model.bind_rows(&startup_rows.signal());
@@ -506,14 +549,17 @@ fn main() {
     );
     resource_label.bind_visible(&resource.signal().map(|r| *r >= 2));
 
-    let chart_series = resource.signal().combine3(
+    let chart_series = resource.signal().combine4(
         &cpu_history.signal(),
         &mem_history.signal(),
-        |r, cpu, mem| {
+        &net_history.signal(),
+        |r, cpu, mem, net| {
             if *r == 0 {
                 cpu.clone()
             } else if *r == 1 {
                 mem.clone()
+            } else if *r == 3 {
+                net.clone()
             } else {
                 Vec::new()
             }
@@ -744,6 +790,7 @@ fn main() {
         resource_texts,
         cpu_history,
         mem_history,
+        net_history,
         per_core_history,
         mem_percent,
         mem_label_text,
@@ -844,6 +891,13 @@ fn main() {
                 0.0
             };
             push_history(&mem_history, mem_pct);
+            let net_mbps = stats
+                .nets
+                .iter()
+                .map(|net| net.rx_bps + net.tx_bps)
+                .sum::<u64>() as f64
+                / 1_000_000.0;
+            push_history(&net_history, net_mbps);
             let mut cores = per_core_history.value().as_ref().clone();
             if cores.len() != stats.cpu.per_core_pct.len() {
                 cores = vec![Vec::new(); stats.cpu.per_core_pct.len()];
@@ -918,6 +972,25 @@ fn main() {
         next.group_primary = !next.group_primary;
         sort.set(next);
     }));
+    for (index, action) in &column_actions {
+        let index = *index;
+        let handle = action.clone();
+        action.on_trigger(clone!(visible_columns => move |_| {
+            let mut visible = visible_columns.value().as_ref().clone();
+            let now_visible = if let Some(position) =
+                visible.iter().position(|&column| column == index)
+            {
+                visible.remove(position);
+                false
+            } else {
+                visible.push(index);
+                visible.sort_unstable();
+                true
+            };
+            visible_columns.set(visible);
+            handle.set_checked(now_visible);
+        }));
+    }
 
     // 表格布局与外观（一次性配置）。
     process_view.select_rows(true);
@@ -994,4 +1067,34 @@ fn main() {
         "process list must show icons"
     );
     std::process::exit(code);
+}
+
+#[cfg(test)]
+mod tests {
+    //! Bounded soak: repeatedly sample the system the way the app does at
+    //! run time, asserting the sampler stays healthy and keeps producing
+    //! data. The roadmap's 24-hour soak runs this loop for the session
+    //! duration on real machines.
+    #[test]
+    fn sampler_survives_repeated_ticking() {
+        let mut sampler = crate::sys::Sampler::new();
+        let started = std::time::Instant::now();
+        for tick in 0..50 {
+            let stats = sampler.sample();
+            assert!(
+                !stats.processes.is_empty(),
+                "tick {tick}: process list must be populated"
+            );
+            assert!(
+                stats.cpu.logical > 0,
+                "tick {tick}: CPU topology must exist"
+            );
+            assert!(stats.mem_total > 0, "tick {tick}: memory must be readable");
+        }
+        eprintln!(
+            "[soak] 50 samples in {:.1}s ({:.0} ms/sample)",
+            started.elapsed().as_secs_f64(),
+            started.elapsed().as_secs_f64() * 1000.0 / 50.0,
+        );
+    }
 }

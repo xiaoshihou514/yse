@@ -92,6 +92,22 @@ impl StringTableModel {
         self.state.bindings.borrow_mut().push(subscription);
     }
 
+    /// Replace the column headers.
+    pub fn set_headers(&self, headers: impl IntoIterator<Item = String>) {
+        unsafe {
+            ffi::table_set_headers(self.state.table, headers.into_iter().collect());
+        }
+    }
+
+    /// Bind the column headers to a signal.
+    pub fn bind_headers(&self, signal: &Signal<Vec<String>>) {
+        let state = self.state.clone();
+        let subscription = signal.observe(move |headers| unsafe {
+            ffi::table_set_headers(state.table, (*headers).clone());
+        });
+        self.state.bindings.borrow_mut().push(subscription);
+    }
+
     /// Set a per-row icon for column 0, given the file path whose icon should
     /// be shown (e.g. an executable). Empty paths show no icon.
     pub fn set_row_icons(&self, paths: impl IntoIterator<Item = String>) {
