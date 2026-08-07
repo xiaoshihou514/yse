@@ -18,6 +18,11 @@ use windows_sys::Win32::Storage::FileSystem::GetLogicalDriveStringsW;
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
+use windows_sys::Win32::System::Performance::{
+    PDH_CSTATUS_VALID_DATA, PDH_FMT_COUNTERVALUE, PDH_FMT_DOUBLE, PDH_HCOUNTER, PDH_HQUERY,
+    PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterValue,
+    PdhOpenQueryW,
+};
 use windows_sys::Win32::System::ProcessStatus::{
     GetPerformanceInfo, GetProcessMemoryInfo, PERFORMANCE_INFORMATION, PROCESS_MEMORY_COUNTERS,
 };
@@ -489,6 +494,66 @@ fn gpu_name() -> String {
     reg_query_string(GPU_KEY, "DriverDesc").unwrap_or_else(|| "—".into())
 }
 
+/// PDH-backed per-disk active time. The first collect is discarded (PDH needs
+/// ~1 s between collects for a meaningful rate), so the first sample reports
+/// no data and later samples carry the value.
+struct PdhDisk {
+    // Handles are stored as `usize` so the sampler stays `Send` (it lives on
+    // a worker thread); PDH handles are opaque and only used on that thread.
+    query: usize,
+    counter: usize,
+}
+
+impl PdhDisk {
+    fn new() -> Option<Self> {
+        let mut query: PDH_HQUERY = std::ptr::null_mut();
+        // SAFETY: standard PDH query setup; `query` is written on success.
+        if unsafe { PdhOpenQueryW(std::ptr::null(), 0, &mut query) } != 0 {
+            return None;
+        }
+        let mut counter: PDH_HCOUNTER = std::ptr::null_mut();
+        let path = wide(r"\PhysicalDisk(_Total)\% Disk Time");
+        // SAFETY: `path` is NUL-terminated and remains valid for the call.
+        let status = unsafe { PdhAddEnglishCounterW(query, path.as_ptr(), 0, &mut counter) };
+        if status != 0 {
+            // SAFETY: the query was opened above and is no longer needed.
+            unsafe { PdhCloseQuery(query) };
+            return None;
+        }
+        Some(Self {
+            query: query as usize,
+            counter: counter as usize,
+        })
+    }
+
+    fn active_percent(&self) -> Option<f64> {
+        let query = self.query as PDH_HQUERY;
+        let counter = self.counter as PDH_HCOUNTER;
+        // SAFETY: `collect` then read the formatted double from the counter.
+        unsafe {
+            if PdhCollectQueryData(query) != 0 {
+                return None;
+            }
+            let mut ty = 0u32;
+            let mut value = PDH_FMT_COUNTERVALUE::default();
+            if PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, &mut ty, &mut value) != 0 {
+                return None;
+            }
+            if value.CStatus != PDH_CSTATUS_VALID_DATA {
+                return None;
+            }
+            Some(value.Anonymous.doubleValue.clamp(0.0, 100.0))
+        }
+    }
+}
+
+impl Drop for PdhDisk {
+    fn drop(&mut self) {
+        // SAFETY: `query` was returned by PdhOpenQueryW and is still open.
+        unsafe { PdhCloseQuery(self.query as PDH_HQUERY) };
+    }
+}
+
 /// Windows-specific sampler holding previous counters for rate diffs.
 pub struct WindowsSampler {
     prev_system: Option<SystemTimes>,
@@ -497,6 +562,8 @@ pub struct WindowsSampler {
     identity: (String, f64, f64, u32, u32, u32, u64, u64, u64),
     virtualization: bool,
     gpu: String,
+    pdh: Option<PdhDisk>,
+    pdh_created: bool,
 }
 
 impl WindowsSampler {
@@ -508,6 +575,8 @@ impl WindowsSampler {
             identity: cpu_identity(),
             virtualization: virtualization_enabled(),
             gpu: gpu_name(),
+            pdh: None,
+            pdh_created: false,
         }
     }
 
@@ -558,9 +627,17 @@ impl WindowsSampler {
             handle_count,
             nets,
             disk_names: disk_names(),
-            // Per-disk active time needs performance counters (PDH); mark it
-            // unavailable rather than fabricating zeroes.
-            disk_activity: Vec::new(),
+            disk_activity: {
+                if !self.pdh_created {
+                    self.pdh = PdhDisk::new();
+                    self.pdh_created = true;
+                }
+                self.pdh
+                    .as_ref()
+                    .and_then(PdhDisk::active_percent)
+                    .map(|active| vec![(String::from("总计"), active)])
+                    .unwrap_or_default()
+            },
             gpu_name: self.gpu.clone(),
         }
     }
@@ -570,7 +647,11 @@ pub fn kill(pid: u32, expected_start_time: u64) -> bool {
     // SAFETY: PROCESS_QUERY_LIMITED_INFORMATION is required to read the
     // creation time; PROCESS_TERMINATE for TerminateProcess.
     let handle = unsafe {
-        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, 0, pid)
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+            0,
+            pid,
+        )
     };
     if handle.is_null() {
         return false;
@@ -580,9 +661,8 @@ pub fn kill(pid: u32, expected_start_time: u64) -> bool {
     let mut kernel = FILETIME::default();
     let mut user = FILETIME::default();
     // SAFETY: all pointers point to writable FILETIME values.
-    let creation_ok = unsafe {
-        GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user)
-    } != 0;
+    let creation_ok =
+        unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) } != 0;
     if !creation_ok || filetime_to_u64(&creation) != expected_start_time {
         // The pid now refers to a different process (or is gone).
         unsafe { CloseHandle(handle) };
