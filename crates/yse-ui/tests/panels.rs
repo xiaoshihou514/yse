@@ -235,6 +235,86 @@ fn menus_support_submenus_and_checkable_actions() {
     drop(window);
 }
 
+fn tree_views_group_select_and_context_rows() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let column = window.column();
+    let model = yse_ui::TreeModel::new(2);
+    model.set_headers([String::from("组"), String::from("值")]);
+    let view = column.tree_view(&model);
+
+    let rows = Var::new(vec![
+        (
+            -1i32,
+            vec![String::from("应用"), String::new()],
+            String::new(),
+        ),
+        (
+            0i32,
+            vec![String::from("firefox"), String::from("10")],
+            String::from("/bin/ls"),
+        ),
+        (
+            0i32,
+            vec![String::from("code"), String::from("20")],
+            String::new(),
+        ),
+        (
+            -1i32,
+            vec![String::from("系统"), String::new()],
+            String::new(),
+        ),
+        (
+            3i32,
+            vec![String::from("systemd"), String::from("5")],
+            String::new(),
+        ),
+    ]);
+    model.bind(&rows.signal());
+    assert_eq!(model.row_count(), 5, "tree must hold groups and children");
+    view.expand_all(true);
+    view.select_rows(true);
+    view.enable_heat();
+    view.set_column_hidden(1, false);
+
+    let selection: Rc<RefCell<Vec<Vec<usize>>>> = Rc::new(RefCell::new(Vec::new()));
+    let selection_rc = selection.clone();
+    let _sub = view
+        .selection_changed()
+        .observe(move |rows| selection_rc.borrow_mut().push(rows.clone()));
+    view.select(1);
+    assert_eq!(
+        *selection.borrow(),
+        vec![vec![1]],
+        "flat child row selection"
+    );
+
+    let menus: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::new()));
+    let menus_rc = menus.clone();
+    let _menu_sub = view
+        .context_menu()
+        .observe(move |row| menus_rc.borrow_mut().push(*row));
+    view.emit_context_menu(4);
+    assert_eq!(*menus.borrow(), vec![4], "flat context row");
+
+    let headers: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::new()));
+    let headers_rc = headers.clone();
+    let _header_sub = view
+        .header_clicked()
+        .observe(move |section| headers_rc.borrow_mut().push(*section));
+    view.click_header(1);
+    assert_eq!(*headers.borrow(), vec![1]);
+
+    let heat = Var::new(vec![0.0, 0.5, 1.0, 0.0, 0.2]);
+    model.bind_heat(1, &heat.signal());
+    heat.set(vec![0.0, 1.0, 0.5, 0.0, 0.1]);
+
+    drop(column);
+    drop(window);
+}
+
 // Qt permits one QApplication per process and binds it to its creating
 // thread. Keeping this integration binary to one test prevents Rust's test
 // harness from running the cases on different worker threads.
@@ -247,4 +327,5 @@ fn panel_cases_share_one_qt_thread() {
     context_menu_reports_the_row();
     color_scheme_and_table_polish();
     menus_support_submenus_and_checkable_actions();
+    tree_views_group_select_and_context_rows();
 }

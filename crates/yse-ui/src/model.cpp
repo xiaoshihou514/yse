@@ -15,6 +15,7 @@
 #include <QtWidgets/QAbstractItemView>
 #include <QtWidgets/QListView>
 #include <QtWidgets/QTableView>
+#include <QtWidgets/QTreeView>
 
 #include "yse-ui/src/bridge.cxx.h"
 #include "yse-ui/src/widgets.h"
@@ -49,7 +50,7 @@ public:
 // QObject), so it dies with the widget.
 class ContextMenuFilter final : public QObject {
 public:
-  ContextMenuFilter(QTableView* view, Widget* widget, QObject* parent)
+  ContextMenuFilter(QAbstractItemView* view, Widget* widget, QObject* parent)
     : QObject(parent), view_(view), widget_(widget) {}
 
 protected:
@@ -59,8 +60,11 @@ protected:
       const QModelIndex index = view_->indexAt(context->pos());
       if (index.isValid()) {
         if (widget_->alive && widget_->context_cb_data != nullptr) {
+          const int row = qobject_cast<QTreeView*>(view_) != nullptr
+                            ? static_cast<int>(index.internalId())
+                            : index.row();
           yse_ui::on_view_context_menu(
-            static_cast<yse_ui::Void*>(widget_->context_cb_data), index.row());
+            static_cast<yse_ui::Void*>(widget_->context_cb_data), row);
         }
       }
       return true;
@@ -69,13 +73,28 @@ protected:
   }
 
 private:
-  QTableView* view_;
+  QAbstractItemView* view_;
   Widget* widget_;
 };
 
 Model* model_new()
 {
   return new Model{ new RustListModel(), true, nullptr };
+}
+
+TreeModel* tree_model_new(int columns)
+{
+  return new TreeModel{ new RustTreeModel(columns), true, nullptr };
+}
+
+void tree_model_drop(TreeModel* m)
+{
+  if (m == nullptr) {
+    return;
+  }
+  m->alive = false;
+  delete m->q;
+  delete m;
 }
 
 void model_drop(Model* m)
@@ -233,6 +252,49 @@ void table_model_set_heat(TableModel* m, int column, rust::Vec<double> values)
   m->q->rustSetHeat(column, heat);
 }
 
+void tree_model_reset(TreeModel* m, rust::Vec<yse_ui::TreeRow> rows)
+{
+  if (!m->alive) {
+    return;
+  }
+  static QFileIconProvider provider;
+  QVector<RustTreeRow> native;
+  native.reserve(rows.size());
+  for (const auto& row : rows) {
+    const auto cells = to_qstrings(row.cells);
+    QStringList cellList;
+    for (const QString& cell : cells) {
+      cellList.append(cell);
+    }
+    native.append(RustTreeRow{
+      row.parent,
+      cellList,
+      row.icon.empty() ? QIcon() : provider.icon(QFileInfo(QString::fromUtf8(row.icon.data(), row.icon.size()))),
+    });
+  }
+  m->q->rustTreeReset(native);
+}
+
+void tree_model_set_headers(TreeModel* m, rust::Vec<rust::String> headers)
+{
+  if (m->alive) {
+    m->q->rustTreeSetHeaders(to_qstrings(headers));
+  }
+}
+
+void tree_model_set_heat(TreeModel* m, int column, rust::Vec<double> values)
+{
+  if (!m->alive) {
+    return;
+  }
+  QVector<qreal> heat;
+  heat.reserve(values.size());
+  for (double value : values) {
+    heat.append(static_cast<qreal>(value));
+  }
+  m->q->rustTreeSetHeat(column, heat);
+}
+
 int table_model_row_icon_count(TableModel* m)
 {
   return m->alive ? m->q->rustIconCount() : 0;
@@ -260,6 +322,17 @@ Widget* widget_new_table_view(TableModel* m, Widget* parent)
   if (q->selectionModel() == nullptr) {
     q->setSelectionModel(new QItemSelectionModel(m->q));
   }
+  return widget_wrap_child(q, parent);
+}
+
+Widget* widget_new_tree_view(TreeModel* m, Widget* parent)
+{
+  auto* q = new QTreeView(parent != nullptr ? parent->q : nullptr);
+  q->setModel(m->q);
+  if (q->selectionModel() == nullptr) {
+    q->setSelectionModel(new QItemSelectionModel(m->q));
+  }
+  q->setUniformRowHeights(true);
   return widget_wrap_child(q, parent);
 }
 
@@ -352,32 +425,119 @@ void view_set_select_rows(Widget* view, bool on)
 void view_set_alternating_row_colors(Widget* view, bool on)
 {
   if (view->alive && view->q != nullptr) {
-    static_cast<QTableView*>(view->q)->setAlternatingRowColors(on);
+    static_cast<QAbstractItemView*>(view->q)->setAlternatingRowColors(on);
   }
 }
 
 void view_set_heat_delegate(Widget* view)
 {
   if (view->alive && view->q != nullptr) {
-    static_cast<QTableView*>(view->q)->setItemDelegate(
-      new HeatDelegate(static_cast<QTableView*>(view->q)));
+    static_cast<QAbstractItemView*>(view->q)->setItemDelegate(
+      new HeatDelegate(static_cast<QAbstractItemView*>(view->q)));
   }
+}
+
+void view_set_column_hidden(Widget* view, int column, bool hidden)
+{
+  if (view->alive && view->q != nullptr) {
+    QHeaderView* header = nullptr;
+    if (auto* table = qobject_cast<QTableView*>(view->q)) {
+      header = table->horizontalHeader();
+    } else if (auto* tree = qobject_cast<QTreeView*>(view->q)) {
+      header = tree->header();
+    }
+    if (header != nullptr) {
+      header->setSectionHidden(column, hidden);
+    }
+  }
+}
+
+void tree_view_expand_all(Widget* view, bool expand)
+{
+  if (view->alive && view->q != nullptr) {
+    auto* tree = static_cast<QTreeView*>(view->q);
+    if (expand) {
+      tree->expandAll();
+    } else {
+      tree->collapseAll();
+    }
+  }
+}
+
+void tree_view_set_column_width(Widget* view, int column, int width)
+{
+  if (view->alive && view->q != nullptr) {
+    static_cast<QTreeView*>(view->q)->setColumnWidth(column, width);
+  }
+}
+
+void tree_view_stretch_last_section(Widget* view, bool stretch)
+{
+  if (view->alive && view->q != nullptr) {
+    static_cast<QTreeView*>(view->q)->header()->setStretchLastSection(stretch);
+  }
+}
+
+void tree_view_set_header_clicked_cb(Widget* view, Void* data)
+{
+  QObject::disconnect(view->header_connection);
+  view->header_cb_data = static_cast<void*>(data);
+  auto* tree = static_cast<QTreeView*>(view->q);
+  view->header_connection = QObject::connect(
+    tree->header(),
+    &QHeaderView::sectionClicked,
+    tree,
+    [view](int section) {
+      if (view->header_cb_data != nullptr) {
+        yse_ui::on_header_clicked(
+          static_cast<yse_ui::Void*>(view->header_cb_data), section);
+      }
+    });
+}
+
+void tree_view_click_header(Widget* view, int section)
+{
+  if (view->alive && view->q != nullptr) {
+    QMetaObject::invokeMethod(
+      static_cast<QTreeView*>(view->q)->header(),
+      "sectionClicked",
+      Q_ARG(int, section));
+  }
+}
+
+void tree_view_select_flat(Widget* view, int flat)
+{
+  if (view->alive && view->q != nullptr) {
+    auto* tree = static_cast<QTreeView*>(view->q);
+    auto* model = static_cast<RustTreeModel*>(tree->model());
+    const QModelIndex target = model->rustIndexFromFlat(flat);
+    if (target.isValid()) {
+      tree->selectionModel()->select(target, QItemSelectionModel::ClearAndSelect);
+    }
+  }
+}
+
+int tree_model_flat_row_count(TreeModel* m)
+{
+  return m->alive ? m->q->rustFlatRowCount() : 0;
 }
 
 rust::Vec<int32_t> view_selected_rows(Widget* view)
 {
   rust::Vec<int32_t> rows;
   if (view->alive && view->q != nullptr) {
-    // selectedRows() can be empty on a view that has never been laid out;
-    // dedupe rows from selectedIndexes() instead.
+    // For trees, report flat model rows; for flat views, report deduped
+    // row() values (selectedRows() can be empty before layout).
     const auto indexes =
       static_cast<QAbstractItemView*>(view->q)->selectionModel()->selectedIndexes();
     QSet<int> seen;
+    const bool isTree = qobject_cast<QTreeView*>(view->q) != nullptr;
     rows.reserve(indexes.size());
     for (const auto& index : indexes) {
-      if (!seen.contains(index.row())) {
-        seen.insert(index.row());
-        rows.push_back(index.row());
+      const int row = isTree ? static_cast<int>(index.internalId()) : index.row();
+      if (!seen.contains(row)) {
+        seen.insert(row);
+        rows.push_back(row);
       }
     }
   }

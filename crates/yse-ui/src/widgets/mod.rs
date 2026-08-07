@@ -34,6 +34,8 @@ mod list_view;
 pub use list_view::{ListView, StringListModel};
 mod table_view;
 pub use table_view::{StringTableModel, TableView};
+mod tree_view;
+pub use tree_view::{TreeModel, TreeView};
 pub(crate) mod dialogs;
 pub use dialogs::{FileDialog, MessageBox, MessageBoxButtons, MessageBoxResult};
 mod settings;

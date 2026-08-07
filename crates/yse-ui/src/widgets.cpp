@@ -51,6 +51,7 @@ using Vec = ::rust::Vec<T>;
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QTabWidget>
 #include <QtWidgets/QToolBar>
+#include <QtWidgets/QTreeView>
 #include <QtWidgets/QTimeEdit>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>

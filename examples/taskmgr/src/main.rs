@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use yse::{
     Application, MessageBox, MessageBoxButtons, MessageBoxResult, QtGuiScheduler, StringTableModel,
-    Subscription, Var, Window, clone,
+    Subscription, TreeModel, Var, Window, clone,
 };
 
 const HISTORY: usize = 60;
@@ -74,8 +74,6 @@ fn apply_theme(app: &Application) -> bool {
 struct SortState {
     column: usize,
     descending: bool,
-    /// Sort by group (应用/后台进程/系统进程) first, then by `column`.
-    group_primary: bool,
 }
 
 impl Default for SortState {
@@ -83,7 +81,6 @@ impl Default for SortState {
         Self {
             column: 2, // CPU
             descending: true,
-            group_primary: true,
         }
     }
 }
@@ -130,41 +127,94 @@ fn friendly_name(name: &str) -> String {
     name.to_string()
 }
 
-fn sorted_table(data: &[sys::ProcessSample], sort: SortState) -> Vec<(Vec<String>, String)> {
-    let mut rows: Vec<&sys::ProcessSample> = data.iter().collect();
-    rows.sort_by(|a, b| {
-        let ordering = if sort.group_primary && sort.column != 1 {
-            a.group
-                .cmp(&b.group)
-                .then_with(|| compare_rows(a, b, sort.column))
-        } else {
-            compare_rows(a, b, sort.column)
-        };
-        if sort.descending {
-            ordering.reverse()
-        } else {
-            ordering
-        }
-    });
-    rows.iter()
-        .map(|p| {
-            (
-                vec![
-                    friendly_name(&p.name),
-                    p.group.label().to_string(),
-                    String::from("正在运行"),
-                    format!("{:.1}%", p.cpu),
-                    format_mb(p.mem_bytes),
-                    format_bytes_per_s(p.disk_bytes_per_s),
-                    format_bytes_per_s(p.net_bytes_per_s),
-                    String::from("—"),
-                    String::from("—"),
-                    p.power.label().to_string(),
+/// One row of the grouped process tree: group roots have `parent == -1` and
+/// no pid; children carry their pid, icon path, and per-column heat values.
+#[derive(Clone, PartialEq)]
+struct ProcessTreeRow {
+    parent: i32,
+    cells: Vec<String>,
+    icon: String,
+    pid: Option<u32>,
+    heat: [f64; 4],
+}
+
+fn process_cells(p: &sys::ProcessSample) -> Vec<String> {
+    vec![
+        friendly_name(&p.name),
+        p.group.label().to_string(),
+        String::from("正在运行"),
+        format!("{:.1}%", p.cpu),
+        format_mb(p.mem_bytes),
+        format_bytes_per_s(p.disk_bytes_per_s),
+        format_bytes_per_s(p.net_bytes_per_s),
+        String::from("—"),
+        String::from("—"),
+        p.power.label().to_string(),
+    ]
+}
+
+fn build_tree(data: &[sys::ProcessSample], sort: SortState) -> Vec<ProcessTreeRow> {
+    let mut rows = Vec::new();
+    for group in [
+        sys::ProcessGroup::App,
+        sys::ProcessGroup::Background,
+        sys::ProcessGroup::System,
+    ] {
+        let parent = rows.len() as i32;
+        let mut cells = vec![String::new(); 10];
+        cells[0] = group.label().to_string();
+        cells[1] = group.label().to_string();
+        rows.push(ProcessTreeRow {
+            parent: -1,
+            cells,
+            icon: String::new(),
+            pid: None,
+            heat: [0.0; 4],
+        });
+        let mut children: Vec<&sys::ProcessSample> =
+            data.iter().filter(|p| p.group == group).collect();
+        children.sort_by(|a, b| {
+            let ordering = compare_rows(a, b, sort.column);
+            if sort.descending {
+                ordering.reverse()
+            } else {
+                ordering
+            }
+        });
+        let mem_max = children
+            .iter()
+            .map(|p| p.mem_bytes)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let disk_max = children
+            .iter()
+            .map(|p| p.disk_bytes_per_s)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let net_max = children
+            .iter()
+            .map(|p| p.net_bytes_per_s)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        for p in children {
+            rows.push(ProcessTreeRow {
+                parent,
+                cells: process_cells(p),
+                icon: p.exe.clone(),
+                pid: Some(p.pid),
+                heat: [
+                    (p.cpu / 100.0).clamp(0.0, 1.0),
+                    (p.mem_bytes as f64 / mem_max as f64).clamp(0.0, 1.0),
+                    (p.disk_bytes_per_s as f64 / disk_max as f64).clamp(0.0, 1.0),
+                    (p.net_bytes_per_s as f64 / net_max as f64).clamp(0.0, 1.0),
                 ],
-                p.exe.clone(),
-            )
-        })
-        .collect()
+            });
+        }
+    }
+    rows
 }
 
 fn details_rows(stats: &sys::SystemStats) -> Vec<(Vec<String>, String)> {
@@ -257,21 +307,8 @@ fn main() {
     let users_rows = Var::new(Vec::<Vec<String>>::new());
 
     // --- 表格模型 ---
-    let process_model = StringTableModel::new(
-        10,
-        vec![
-            String::from("名称"),
-            String::from("类型"),
-            String::from("状态"),
-            String::from("CPU"),
-            String::from("内存"),
-            String::from("磁盘"),
-            String::from("网络"),
-            String::from("GPU"),
-            String::from("GPU 引擎"),
-            String::from("电源使用情况"),
-        ],
-    );
+    let tree_model = TreeModel::new(PROCESS_COLUMNS.len());
+    tree_model.set_headers(PROCESS_COLUMNS.iter().map(|h| (*h).to_string()));
     let details_model = StringTableModel::new(
         9,
         vec![
@@ -317,7 +354,7 @@ fn main() {
         (m.action("退出").shortcut("Ctrl+Q"), m.action("立即刷新"))
     });
     let about_action = menubar.menu_with("选项", |m| m.action("关于"));
-    let (high_action, normal_action, low_action, pause_action, group_action, column_actions) =
+    let (high_action, normal_action, low_action, pause_action, column_actions) =
         menubar.menu_with("查看", |m| {
             let speed = m.menu("更新速度");
             let high = speed.action("高（500 毫秒）");
@@ -328,9 +365,6 @@ fn main() {
                 action.set_checkable(true);
             }
             normal.set_checked(true);
-            let group = m.action("按类型分组");
-            group.set_checkable(true);
-            group.set_checked(true);
             let columns = m.menu("列");
             let mut column_actions = Vec::new();
             for (index, label) in PROCESS_COLUMNS.iter().enumerate() {
@@ -342,7 +376,7 @@ fn main() {
                 }
                 column_actions.push((index, action));
             }
-            (high, normal, low, pause, group, column_actions)
+            (high, normal, low, pause, column_actions)
         });
     let about_box = MessageBox::new(
         &window,
@@ -368,7 +402,7 @@ fn main() {
 
         let process_page = tabs.add_tab("进程");
         let (view, end_task, toggle, status, detail_stats) = process_page.column(|page| {
-            let view = page.table_view(&process_model.clone());
+            let view = page.tree_view(&tree_model.clone());
             let bottom = page.row(|bar| {
                 let toggle = bar.button("详细信息");
                 let status = bar.label("");
@@ -470,71 +504,36 @@ fn main() {
     perf_stats_label.set_style_class("muted");
 
     // --- 派生信号与绑定（不直接操作控件） ---
-    let sorted = process_data.signal().combine3(
-        &sort.signal(),
-        &visible_columns.signal(),
-        |data, s, visible| {
-            sorted_table(data, *s)
-                .into_iter()
-                .map(|(cells, exe)| {
-                    (
-                        visible.iter().map(|&index| cells[index].clone()).collect(),
-                        exe,
-                    )
-                })
-                .collect()
-        },
-    );
-    process_model.bind_table(&sorted);
-    process_model.bind_headers(&visible_columns.signal().map(|visible| {
-        visible
-            .iter()
-            .map(|&index| PROCESS_COLUMNS[index].to_string())
-            .collect()
-    }));
     details_model.bind_table(&details_rows_var.signal());
     services_model.bind_rows(&services_rows.signal());
     startup_model.bind_rows(&startup_rows.signal());
     users_model.bind_rows(&users_rows.signal());
 
-    // 资源列热力图：CPU / 内存 / 磁盘 / 网络 按相对强度着色。
-    let cpu_heat = process_data.signal().map(|data| {
-        data.iter()
-            .map(|p| (p.cpu / 100.0).clamp(0.0, 1.0))
+    // 分组进程树：三组根行 + 组内按所选列排序的子进程。
+    let tree = process_data
+        .signal()
+        .combine(&sort.signal(), |data, s| build_tree(data, *s));
+    tree_model.bind(&tree.map(|rows| {
+        rows.iter()
+            .map(|r| (r.parent, r.cells.clone(), r.icon.clone()))
             .collect()
-    });
-    process_model.bind_heat(3, &cpu_heat);
-    let mem_heat = process_data.signal().map(|data| {
-        let max = data.iter().map(|p| p.mem_bytes).max().unwrap_or(1).max(1);
-        data.iter()
-            .map(|p| (p.mem_bytes as f64 / max as f64).clamp(0.0, 1.0))
-            .collect()
-    });
-    process_model.bind_heat(4, &mem_heat);
-    let disk_heat = process_data.signal().map(|data| {
-        let max = data
-            .iter()
-            .map(|p| p.disk_bytes_per_s)
-            .max()
-            .unwrap_or(1)
-            .max(1);
-        data.iter()
-            .map(|p| (p.disk_bytes_per_s as f64 / max as f64).clamp(0.0, 1.0))
-            .collect()
-    });
-    process_model.bind_heat(5, &disk_heat);
-    let net_heat = process_data.signal().map(|data| {
-        let max = data
-            .iter()
-            .map(|p| p.net_bytes_per_s)
-            .max()
-            .unwrap_or(1)
-            .max(1);
-        data.iter()
-            .map(|p| (p.net_bytes_per_s as f64 / max as f64).clamp(0.0, 1.0))
-            .collect()
-    });
-    process_model.bind_heat(6, &net_heat);
+    }));
+    tree_model.bind_heat(
+        3,
+        &tree.map(|rows| rows.iter().map(|r| r.heat[0]).collect()),
+    );
+    tree_model.bind_heat(
+        4,
+        &tree.map(|rows| rows.iter().map(|r| r.heat[1]).collect()),
+    );
+    tree_model.bind_heat(
+        5,
+        &tree.map(|rows| rows.iter().map(|r| r.heat[2]).collect()),
+    );
+    tree_model.bind_heat(
+        6,
+        &tree.map(|rows| rows.iter().map(|r| r.heat[3]).collect()),
+    );
 
     status_label.bind_text(&status_text.signal());
     detail_stats_label.bind_text(&stats_text.signal());
@@ -597,21 +596,12 @@ fn main() {
             sort.set(next);
         }));
 
-    process_view.on_selection(clone!(process_data, sort, selected_pid => move |rows| {
-        let Some(&row) = rows.first() else { return };
-        let data = process_data.value();
-        let s = *sort.value();
-        let mut ordered: Vec<&sys::ProcessSample> = data.iter().collect();
-        ordered.sort_by(|a, b| {
-            let ordering = compare_rows(a, b, s.column);
-            if s.descending {
-                ordering.reverse()
-            } else {
-                ordering
-            }
-        });
-        if let Some(process) = ordered.get(row) {
-            selected_pid.set(Some(process.pid));
+    process_view.on_selection(clone!(tree, selected_pid => move |rows| {
+        if let Some(&row) = rows.first()
+            && let Some(entry) = tree.value().get(row)
+            && let Some(pid) = entry.pid
+        {
+            selected_pid.set(Some(pid));
         }
     }));
 
@@ -719,29 +709,13 @@ fn main() {
     // 右键菜单：结束任务 / 结束进程树 / 打开文件位置。
     let context_menu_holder: Rc<RefCell<Option<yse::Menu>>> = Rc::new(RefCell::new(None));
     process_view.context_menu().observe(clone!(
-        process_data, sort, selected_pid, confirm_kill, open_location, window,
+        tree, selected_pid, confirm_kill, open_location, window,
         context_menu_holder
     => move |row| {
-        let data = process_data.value();
-        let s = *sort.value();
-        let mut ordered: Vec<&sys::ProcessSample> = data.iter().collect();
-        ordered.sort_by(|a, b| {
-            let ordering = if s.group_primary && s.column != 1 {
-                a.group
-                    .cmp(&b.group)
-                    .then_with(|| compare_rows(a, b, s.column))
-            } else {
-                compare_rows(a, b, s.column)
-            };
-            if s.descending {
-                ordering.reverse()
-            } else {
-                ordering
-            }
-        });
-        if let Some(process) = ordered.get(*row) {
-            selected_pid.set(Some(process.pid));
-            let pid = process.pid;
+        if let Some(entry) = tree.value().get(*row)
+            && let Some(pid) = entry.pid
+        {
+            selected_pid.set(Some(pid));
             let menu = window.menu("");
             let end = menu.action("结束任务");
             end.on_trigger(clone!(confirm_kill => move |_| confirm_kill(pid, false)));
@@ -967,11 +941,6 @@ fn main() {
     normal_action.on_trigger(clone!(set_mode => move |_| set_mode(1000, false)));
     low_action.on_trigger(clone!(set_mode => move |_| set_mode(4000, false)));
     pause_action.on_trigger(clone!(set_mode => move |_| set_mode(1000, true)));
-    group_action.on_trigger(clone!(sort => move |_| {
-        let mut next = *sort.value();
-        next.group_primary = !next.group_primary;
-        sort.set(next);
-    }));
     for (index, action) in &column_actions {
         let index = *index;
         let handle = action.clone();
@@ -991,6 +960,15 @@ fn main() {
             handle.set_checked(now_visible);
         }));
     }
+
+    // 列选择器通过隐藏表头列生效，模型布局与热力列位置保持稳定。
+    let _column_visibility = visible_columns.signal().observe(clone!(
+        process_view => move |visible| {
+            for column in 0..PROCESS_COLUMNS.len() {
+                process_view.set_column_hidden(column, !visible.contains(&column));
+            }
+        }
+    ));
 
     // 表格布局与外观（一次性配置）。
     process_view.select_rows(true);
@@ -1044,7 +1022,7 @@ fn main() {
         tabs.is_visible(),
         tabs.width(),
         tabs.height(),
-        process_model.row_count(),
+        tree_model.row_count(),
         process_view.is_visible(),
         process_view.width(),
         process_view.height(),
@@ -1052,9 +1030,14 @@ fn main() {
         services_model.row_count(),
         startup_model.row_count(),
         users_model.row_count(),
-        process_model.row_icon_count(),
+        tree_model.row_count(),
         (0..3)
-            .map(|row| process_model.cell(row, 0))
+            .map(|row| {
+                tree.value()
+                    .get(row)
+                    .map(|entry| entry.cells[0].clone())
+                    .unwrap_or_default()
+            })
             .collect::<Vec<_>>(),
     );
     println!(
@@ -1062,10 +1045,7 @@ fn main() {
         rows.iter().filter(|p| !p.exe.is_empty()).count(),
     );
     assert!(!rows.is_empty(), "process table must be populated");
-    assert!(
-        process_model.row_icon_count() > 0,
-        "process list must show icons"
-    );
+    assert!(tree_model.row_count() > 3, "process tree must have groups");
     std::process::exit(code);
 }
 

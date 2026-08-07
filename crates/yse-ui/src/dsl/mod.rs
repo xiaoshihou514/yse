@@ -27,7 +27,7 @@ use crate::component::Component;
 use crate::{
     Button, CheckBox, ComboBox, DateEdit, DateTimeEdit, DiskMap, Label, LineChart, LineEdit,
     ListView, Menu, ProgressBar, SelectionBridge, Slider, SpinBox, StringListModel,
-    StringTableModel, TabWidget, TableView, TimeEdit, Window,
+    StringTableModel, TabWidget, TableView, TimeEdit, TreeModel, TreeView, Window,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -464,6 +464,26 @@ impl Ui {
             table: model.state.clone(),
             selection,
         }
+    }
+
+    /// Create a tree view bound to `model`.
+    pub fn tree_view(&self, model: &TreeModel) -> TreeView {
+        let parent = self.layout_parent();
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_tree_view(model.state.tree, parent.raw()),
+                parent,
+            )
+        };
+        unsafe { ffi::layout_add(parent.raw(), inner.raw()) };
+        let selection = Rc::new(SelectionBridge {
+            view: inner.raw(),
+            sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
+        });
+        inner.retain(model.state.clone());
+        inner.retain(selection.clone());
+        TreeView { inner, selection }
     }
 
     /// Retain a non-widget subscription until this subtree is destroyed.

@@ -6,7 +6,7 @@ use crate::component::Component;
 use crate::widgets::{
     Button, CheckBox, ComboBox, DateEdit, DateTimeEdit, IntoWidget, Label, LineChart, LineEdit,
     ListView, ProgressBar, SelectionBridge, Slider, SpinBox, StringListModel, StringTableModel,
-    TabWidget, TableView, TimeEdit, widget_wrapper,
+    TabWidget, TableView, TimeEdit, TreeModel, TreeView, widget_wrapper,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -224,6 +224,25 @@ impl Row {
         }
     }
 
+    /// Create a tree view bound to `model`.
+    pub fn tree_view(&self, model: &TreeModel) -> TreeView {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_tree_view(model.state.tree, self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        let selection = Rc::new(SelectionBridge {
+            view: inner.raw(),
+            sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
+        });
+        inner.retain(model.state.clone());
+        inner.retain(selection.clone());
+        TreeView { inner, selection }
+    }
+
     /// Add a stretch spacer at the end of the row.
     pub fn spacer(&self) {
         if self.inner.is_alive() {
@@ -395,6 +414,25 @@ impl Column {
             table: model.state.clone(),
             selection,
         }
+    }
+
+    /// Create a tree view bound to `model`.
+    pub fn tree_view(&self, model: &TreeModel) -> TreeView {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_tree_view(model.state.tree, self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        let selection = Rc::new(SelectionBridge {
+            view: inner.raw(),
+            sink: RefCell::new(None),
+            created_on: std::thread::current().id(),
+        });
+        inner.retain(model.state.clone());
+        inner.retain(selection.clone());
+        TreeView { inner, selection }
     }
 
     /// Add a stretch spacer at the end of the column.

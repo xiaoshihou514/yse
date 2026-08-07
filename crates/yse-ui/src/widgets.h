@@ -18,6 +18,7 @@ class QFileDialog;
 class QSettings;
 class RustListModel;
 class RustTableModel;
+class RustTreeModel;
 
 namespace yse_ui {
 
@@ -29,6 +30,7 @@ class WidgetState;
 /// Opaque handle used as callback data by the cxx bridge.
 struct Void;
 struct Row;
+struct TreeRow;
 
 /// Opaque wrapper around a QWidget. `owned` means the wrapper deletes the
 /// widget when dropped (windows); child widgets are owned by their Qt parent.
@@ -92,6 +94,13 @@ struct Model {
 /// Opaque wrapper around a RustTableModel.
 struct TableModel {
   RustTableModel* q;
+  bool alive;
+  void* cb_data;
+};
+
+/// Opaque wrapper around a RustTreeModel.
+struct TreeModel {
+  RustTreeModel* q;
   bool alive;
   void* cb_data;
 };
@@ -174,6 +183,7 @@ void menu_add_separator(Widget* menu);
 void toolbar_add_action(Widget* toolbar, Action* action);
 Widget* widget_new_list_view(Model* model, Widget* parent);
 Widget* widget_new_table_view(TableModel* model, Widget* parent);
+Widget* widget_new_tree_view(TreeModel* model, Widget* parent);
 
 // Internal C++ helper: wrap a native child widget with the common generated
 // WidgetState. Model/view factories use this rather than bypassing state.
@@ -237,6 +247,14 @@ void view_stretch_last_section(Widget* view, bool stretch);
 void view_set_select_rows(Widget* view, bool on);
 void view_set_alternating_row_colors(Widget* view, bool on);
 void view_set_heat_delegate(Widget* view);
+void view_set_column_hidden(Widget* view, int column, bool hidden);
+void tree_view_expand_all(Widget* view, bool expand);
+void tree_view_set_column_width(Widget* view, int column, int width);
+void tree_view_stretch_last_section(Widget* view, bool stretch);
+void tree_view_set_header_clicked_cb(Widget* view, Void* data);
+void tree_view_click_header(Widget* view, int section);
+void tree_view_select_flat(Widget* view, int flat);
+int tree_model_flat_row_count(TreeModel* m);
 rust::Vec<int32_t> view_selected_rows(Widget* view);
 void view_select_row(Widget* view, int row);
 void view_clear_selection(Widget* view);
@@ -311,6 +329,11 @@ void table_reset(TableModel* m, rust::Vec<Row> rows);
 void table_model_set_row_icons(TableModel* m, rust::Vec<rust::String> paths);
 int table_model_row_icon_count(TableModel* m);
 void table_model_set_heat(TableModel* m, int column, rust::Vec<double> values);
+TreeModel* tree_model_new(int columns);
+void tree_model_drop(TreeModel* m);
+void tree_model_reset(TreeModel* m, rust::Vec<TreeRow> rows);
+void tree_model_set_headers(TreeModel* m, rust::Vec<rust::String> headers);
+void tree_model_set_heat(TreeModel* m, int column, rust::Vec<double> values);
 int table_row_count(TableModel* m);
 int table_column_count(TableModel* m);
 rust::String table_text(TableModel* m, int row, int column);

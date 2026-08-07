@@ -21,7 +21,7 @@ graphs, and the process-management actions.
 | 0 | Parity baseline, capability matrix, keyboard/menu inventory | In progress |
 | 1 | Provider/snapshot separation, background sampling, update speed, settings, benchmarks | Partially done (worker-thread sampling via `spawn_interval`, High/Normal/Low/Paused, coalescing) |
 | 2 | Theme tokens, responsive shell, shared table/graph widgets, DPI | Partially done (theme + shell live) |
-| 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Partially done (grouping, friendly names, icons, resource columns, heat-map cells, column chooser, end task/tree, open location; expandable tree pending) |
+| 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Done (expandable App/Background/System tree, friendly names, icons, heat maps, column chooser, end task/tree, open location) |
 | 4 | Performance parity: CPU/memory/disk/network/GPU detail pages | CPU + memory + network history done; disk/GPU metadata only |
 | 5 | Details + Services | Details partial (PID/PPID/threads/CPU time/priority); Services implemented (systemd / `sc`) |
 | 6 | Startup + Users | Startup implemented (XDG autostart / registry Run); Users implemented (who / query user) |
@@ -48,8 +48,8 @@ graphs, and the process-management actions.
 - Expandable app groups (tree view) and column chooser.
 - Heat-map resource cells.
 - Performance detail pages for disk/network/GPU.
-- Expandable tree groups, disk/GPU performance detail pages, keyboard/accessibility
-  audit, 24-hour soak, release hardening.
+- Disk/GPU performance detail pages, keyboard/accessibility audit, 24-hour
+  soak, release hardening.
 - Keyboard parity, accessibility, 24-hour soak, release hardening.
 
 ## Data-correctness rules (from the original roadmap)

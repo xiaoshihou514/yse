@@ -319,6 +319,13 @@ impl TableView {
         }
     }
 
+    /// Hide or show `column` without changing the model layout.
+    pub fn set_column_hidden(&self, column: usize, hidden: bool) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_set_column_hidden(self.inner.raw(), column as i32, hidden) };
+        }
+    }
+
     /// Let the last column fill the remaining view width.
     pub fn stretch_last_section(&self, stretch: bool) {
         if self.inner.is_alive() {

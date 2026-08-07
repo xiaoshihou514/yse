@@ -85,6 +85,178 @@ private:
 /// Custom role carrying a normalized (0..1) heat value for a table cell.
 inline constexpr int kHeatRole = Qt::UserRole + 1;
 
+/// One row of a tree model: `parent` is the flat row of the parent (-1 for a
+/// root/group row), `cells` its display text, and `icon` the resolved icon.
+struct RustTreeRow {
+  int parent = -1;
+  QStringList cells;
+  QIcon icon;
+};
+
+/// A QAbstractItemModel tree whose rows arrive as a flat list with parent
+/// links, driven from Rust. Group/root rows have `parent == -1`; children
+/// point at their parent's flat row.
+class RustTreeModel : public QAbstractItemModel {
+public:
+  explicit RustTreeModel(int columns, QObject* parent = nullptr)
+    : QAbstractItemModel(parent), columns_(columns) {}
+
+  QModelIndex index(int row, int column, const QModelIndex& parent) const override
+  {
+    if (!hasIndex(row, column, parent)) {
+      return {};
+    }
+    const int parentFlat = parent.isValid() ? static_cast<int>(parent.internalId()) : -1;
+    int seen = 0;
+    for (int i = 0; i < rows_.size(); ++i) {
+      if (rows_.at(i).parent == parentFlat) {
+        if (seen == row) {
+          return createIndex(row, column, static_cast<quintptr>(i));
+        }
+        ++seen;
+      }
+    }
+    return {};
+  }
+
+  QModelIndex parent(const QModelIndex& child) const override
+  {
+    if (!child.isValid()) {
+      return {};
+    }
+    const int flat = static_cast<int>(child.internalId());
+    if (flat < 0 || flat >= rows_.size()) {
+      return {};
+    }
+    const int parentFlat = rows_.at(flat).parent;
+    if (parentFlat < 0) {
+      return {};
+    }
+    const int grandParent = rows_.at(parentFlat).parent;
+    int row = 0;
+    for (int i = 0; i < parentFlat; ++i) {
+      if (rows_.at(i).parent == grandParent) {
+        ++row;
+      }
+    }
+    return createIndex(row, 0, static_cast<quintptr>(parentFlat));
+  }
+
+  int rowCount(const QModelIndex& parent) const override
+  {
+    const int parentFlat = parent.isValid() ? static_cast<int>(parent.internalId()) : -1;
+    int count = 0;
+    for (const RustTreeRow& row : rows_) {
+      if (row.parent == parentFlat) {
+        ++count;
+      }
+    }
+    return count;
+  }
+
+  int columnCount(const QModelIndex& = QModelIndex()) const override
+  {
+    return columns_;
+  }
+
+  QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override
+  {
+    if (!index.isValid()) {
+      return {};
+    }
+    const int flat = static_cast<int>(index.internalId());
+    if (flat < 0 || flat >= rows_.size()) {
+      return {};
+    }
+    const RustTreeRow& row = rows_.at(flat);
+    if (index.column() >= row.cells.size()) {
+      return {};
+    }
+    if (role == Qt::DecorationRole && index.column() == 0 && !row.icon.isNull()) {
+      return row.icon;
+    }
+    if (role == kHeatRole
+        && index.column() < heatColumns_.size()
+        && flat < heatColumns_.at(index.column()).size()) {
+      return heatColumns_.at(index.column()).at(flat);
+    }
+    if (role != Qt::DisplayRole) {
+      return {};
+    }
+    return row.cells.at(index.column());
+  }
+
+  QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override
+  {
+    if (role != Qt::DisplayRole) {
+      return {};
+    }
+    if (orientation == Qt::Horizontal) {
+      return section < headers_.size() ? headers_.at(section) : QString();
+    }
+    return QString::number(section + 1);
+  }
+
+  void rustTreeSetHeaders(const QVector<QString>& headers)
+  {
+    beginResetModel();
+    headers_ = headers;
+    endResetModel();
+  }
+
+  void rustTreeReset(const QVector<RustTreeRow>& rows)
+  {
+    beginResetModel();
+    rows_ = rows;
+    heatColumns_.clear();
+    endResetModel();
+  }
+
+  void rustTreeSetHeat(int column, const QVector<qreal>& values)
+  {
+    if (column < 0) {
+      return;
+    }
+    while (heatColumns_.size() <= static_cast<qsizetype>(column)) {
+      heatColumns_.append(QVector<qreal>());
+    }
+    heatColumns_[column] = values;
+    if (!rows_.isEmpty()) {
+      emit dataChanged(index(0, column, QModelIndex()),
+                       index(rowCount({}) - 1, column, QModelIndex()), { kHeatRole });
+    }
+  }
+
+  int rustFlatRowCount() const
+  {
+    return rows_.size();
+  }
+
+  QModelIndex rustIndexFromFlat(int flat) const
+  {
+    if (flat < 0 || flat >= rows_.size()) {
+      return {};
+    }
+    const int parentFlat = rows_.at(flat).parent;
+    int row = 0;
+    for (int i = 0; i < flat; ++i) {
+      if (rows_.at(i).parent == parentFlat) {
+        ++row;
+      }
+    }
+    if (parentFlat < 0) {
+      return index(row, 0, QModelIndex());
+    }
+    return index(row, 0, rustIndexFromFlat(parentFlat));
+  }
+
+private:
+  int columns_;
+  QVector<RustTreeRow> rows_;
+  QStringList headers_;
+  QVector<QVector<qreal>> heatColumns_;
+};
+
 /// A QAbstractTableModel mirror with a fixed column count, headers, and
 /// string rows, driven incrementally from Rust.
 class RustTableModel : public QAbstractTableModel
