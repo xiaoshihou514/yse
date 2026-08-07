@@ -131,6 +131,8 @@ struct Settings {
 // Application ---------------------------------------------------------------
 
 void app_init();
+bool app_system_color_scheme_dark();
+void app_apply_color_scheme(bool dark);
 void app_set_style_sheet(rust::Str style_sheet);
 int app_exec();
 void app_quit_after(int ms);
@@ -229,6 +231,8 @@ void view_click_header(Widget* view, int section);
 void view_emit_context_menu(Widget* view, int row);
 void view_set_column_width(Widget* view, int column, int width);
 void view_stretch_last_section(Widget* view, bool stretch);
+void view_set_select_rows(Widget* view, bool on);
+void view_set_alternating_row_colors(Widget* view, bool on);
 rust::Vec<int32_t> view_selected_rows(Widget* view);
 void view_select_row(Widget* view, int row);
 void view_clear_selection(Widget* view);
@@ -297,6 +301,8 @@ void table_insert_rows(TableModel* m, int row, rust::Vec<Row> rows);
 void table_remove_rows(TableModel* m, int row, int count);
 void table_update_rows(TableModel* m, int row, rust::Vec<Row> rows);
 void table_reset(TableModel* m, rust::Vec<Row> rows);
+void table_model_set_row_icons(TableModel* m, rust::Vec<rust::String> paths);
+int table_model_row_icon_count(TableModel* m);
 int table_row_count(TableModel* m);
 int table_column_count(TableModel* m);
 rust::String table_text(TableModel* m, int row, int column);

@@ -17,6 +17,7 @@ using Vec = ::rust::Vec<T>;
 #include <QtCore/QSettings>
 #include <QtGui/QKeySequence>
 #include <QtGui/QIcon>
+#include <QtGui/QStyleHints>
 #include <QtCore/QMetaObject>
 #include <QtGui/QFont>
 #include <QtGui/QPainter>
@@ -297,6 +298,52 @@ Widget* widget_wrap_child(QWidget* q, Widget* parent)
 void app_init()
 {
   ensure_app();
+}
+
+bool app_system_color_scheme_dark()
+{
+  QApplication* app = ensure_app();
+  const auto scheme = app->styleHints()->colorScheme();
+  if (scheme == Qt::ColorScheme::Dark) {
+    return true;
+  }
+  if (scheme == Qt::ColorScheme::Light) {
+    return false;
+  }
+  // Unknown scheme: fall back to the palette's window luminance.
+  return app->palette().color(QPalette::Window).lightness() < 128;
+}
+
+void app_apply_color_scheme(bool dark)
+{
+  QApplication* app = ensure_app();
+  app->setStyle(QStringLiteral("Fusion"));
+  if (!dark) {
+    app->setPalette(app->style()->standardPalette());
+    return;
+  }
+  QPalette palette;
+  const QColor window(53, 53, 53);
+  const QColor base(35, 35, 35);
+  const QColor text(220, 220, 220);
+  const QColor accent(58, 174, 233);
+  palette.setColor(QPalette::Window, window);
+  palette.setColor(QPalette::WindowText, text);
+  palette.setColor(QPalette::Base, base);
+  palette.setColor(QPalette::AlternateBase, window);
+  palette.setColor(QPalette::ToolTipBase, base);
+  palette.setColor(QPalette::ToolTipText, text);
+  palette.setColor(QPalette::Text, text);
+  palette.setColor(QPalette::Button, window);
+  palette.setColor(QPalette::ButtonText, text);
+  palette.setColor(QPalette::BrightText, QColor(255, 0, 0));
+  palette.setColor(QPalette::Link, accent);
+  palette.setColor(QPalette::Highlight, accent);
+  palette.setColor(QPalette::HighlightedText, QColor(10, 10, 10));
+  palette.setColor(QPalette::PlaceholderText, QColor(150, 150, 150));
+  palette.setColor(QPalette::Disabled, QPalette::Text, QColor(120, 120, 120));
+  palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(120, 120, 120));
+  app->setPalette(palette);
 }
 
 void app_set_style_sheet(rust::Str style_sheet)

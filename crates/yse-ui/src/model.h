@@ -5,6 +5,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QIcon>
 #include <QStringList>
 #include <QVector>
 
@@ -103,10 +104,17 @@ public:
 
   QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override
   {
-    if (!index.isValid() || role != Qt::DisplayRole) {
+    if (!index.isValid()) {
       return {};
     }
     if (index.row() >= rows_.size() || index.column() >= rows_.at(index.row()).size()) {
+      return {};
+    }
+    if (role == Qt::DecorationRole && index.column() == 0
+        && index.row() < icons_.size() && !icons_.at(index.row()).isNull()) {
+      return icons_.at(index.row());
+    }
+    if (role != Qt::DisplayRole) {
       return {};
     }
     return rows_.at(index.row()).at(index.column());
@@ -138,6 +146,7 @@ public:
     beginInsertRows({}, row, row + rows.size() - 1);
     for (int i = 0; i < rows.size(); ++i) {
       rows_.insert(row + i, rows.at(i));
+      icons_.insert(row + i, QIcon());
     }
     endInsertRows();
   }
@@ -150,6 +159,7 @@ public:
     const int end = qMin(row + count, rows_.size());
     beginRemoveRows({}, row, end - 1);
     rows_.remove(row, end - row);
+    icons_.remove(row, end - row);
     endRemoveRows();
   }
 
@@ -168,12 +178,36 @@ public:
   {
     beginResetModel();
     rows_ = rows;
+    // Keep icons aligned with the new row count instead of dropping them:
+    // a deferred reset can land after a same-pass icon update (the table sync
+    // runs in the follow-up propagation pass), and clearing here would erase
+    // icons that were just set for the new rows.
+    icons_.resize(rows_.size());
     endResetModel();
+  }
+
+  void rustSetRowIcons(const QVector<QIcon>& icons)
+  {
+    icons_ = icons;
+    if (!rows_.isEmpty()) {
+      emit dataChanged(index(0, 0), index(rows_.size() - 1, 0), { Qt::DecorationRole });
+    }
   }
 
   int rustRowCount() const
   {
     return rows_.size();
+  }
+
+  int rustIconCount() const
+  {
+    int count = 0;
+    for (const QIcon& icon : icons_) {
+      if (!icon.isNull()) {
+        ++count;
+      }
+    }
+    return count;
   }
 
   QString rustText(int row, int column) const
@@ -188,4 +222,5 @@ private:
   int columns_;
   QVector<QStringList> rows_;
   QStringList headers_;
+  QVector<QIcon> icons_;
 };

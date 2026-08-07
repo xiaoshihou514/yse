@@ -128,7 +128,10 @@ hook, panic containment at the C++ boundary, and the widget-extension pattern
 `Var`s, the UI binds to derived signals (`bind_rows`, `bind_series`,
 `bind_visible`, ...), and event handlers only mutate state. System data is
 collected by platform-specific backends selected with `cfg`: `/proc` and
-`/sys` on Linux, `windows-sys` on Windows. Run it headless with
+`/sys` on Linux, `windows-sys` on Windows. It follows the system color scheme
+(light/dark), shows real per-process icons (shell icons on Windows, PATH
+lookups on Linux), and is styled with a modern Fusion + stylesheet look. Run
+it headless with
 `QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 cargo run -p yse-taskmgr` (or
 `just windows-run yse-taskmgr` on the Windows host).
 

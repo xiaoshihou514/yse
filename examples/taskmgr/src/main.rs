@@ -16,6 +16,45 @@ use yse::{
 const HISTORY: usize = 60;
 const TITLES: [&str; 5] = ["CPU", "内存", "磁盘 0", "以太网", "GPU 0"];
 
+const LIGHT_QSS: &str = r#"
+QTabWidget::pane { border: 1px solid #d0d0d0; border-radius: 4px; }
+QTabBar::tab { padding: 6px 14px; border: 1px solid transparent; border-top-left-radius: 4px; border-top-right-radius: 4px; background: transparent; }
+QTabBar::tab:selected { background: #ffffff; border-color: #d0d0d0; }
+QTabBar::tab:hover:!selected { background: #f0f0f0; }
+QHeaderView::section { background: #f5f5f5; border: none; border-right: 1px solid #e0e0e0; border-bottom: 1px solid #d0d0d0; padding: 5px 8px; font-weight: 600; }
+QTableView { gridline-color: #ececec; selection-background-color: #3daee9; selection-color: #ffffff; }
+QPushButton { padding: 6px 14px; border: 1px solid #c8c8c8; border-radius: 4px; background: #fafafa; }
+QPushButton:hover { background: #f0f0f0; }
+QPushButton:pressed { background: #e4e4e4; }
+QPushButton:disabled { color: #a0a0a0; }
+QPushButton[yseClass="accent"] { background: #3daee9; color: #ffffff; border-color: #2e9bd6; }
+QPushButton[yseClass="quiet"] { background: transparent; border-color: transparent; }
+QLabel[yseClass="muted"] { color: #888888; }
+"#;
+
+const DARK_QSS: &str = r#"
+QTabWidget::pane { border: 1px solid #4a4a4a; border-radius: 4px; }
+QTabBar::tab { padding: 6px 14px; border: 1px solid transparent; border-top-left-radius: 4px; border-top-right-radius: 4px; background: transparent; color: #dcdcdc; }
+QTabBar::tab:selected { background: #353535; border-color: #4a4a4a; }
+QTabBar::tab:hover:!selected { background: #2f2f2f; }
+QHeaderView::section { background: #3a3a3a; border: none; border-right: 1px solid #464646; border-bottom: 1px solid #4a4a4a; padding: 5px 8px; font-weight: 600; color: #dcdcdc; }
+QTableView { gridline-color: #3a3a3a; selection-background-color: #2a82da; selection-color: #ffffff; }
+QPushButton { padding: 6px 14px; border: 1px solid #4e4e4e; border-radius: 4px; background: #3f3f3f; color: #dcdcdc; }
+QPushButton:hover { background: #4a4a4a; }
+QPushButton:pressed { background: #555555; }
+QPushButton:disabled { color: #808080; }
+QPushButton[yseClass="accent"] { background: #2a82da; color: #ffffff; border-color: #2171b8; }
+QPushButton[yseClass="quiet"] { background: transparent; border-color: transparent; }
+QLabel[yseClass="muted"] { color: #9a9a9a; }
+"#;
+
+/// Follow the system color scheme and apply the matching stylesheet.
+fn apply_theme(app: &Application) -> bool {
+    let dark = app.follow_system_color_scheme();
+    app.set_style_sheet(if dark { DARK_QSS } else { LIGHT_QSS });
+    dark
+}
+
 /// Sortable columns of the process table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct SortState {
@@ -50,7 +89,7 @@ fn compare_rows(
     }
 }
 
-fn sorted_rows(data: &[sys::ProcessSample], sort: SortState) -> Vec<Vec<String>> {
+fn sorted_table(data: &[sys::ProcessSample], sort: SortState) -> Vec<(Vec<String>, String)> {
     let mut rows: Vec<&sys::ProcessSample> = data.iter().collect();
     rows.sort_by(|a, b| {
         let ordering = compare_rows(a, b, sort.column);
@@ -62,33 +101,39 @@ fn sorted_rows(data: &[sys::ProcessSample], sort: SortState) -> Vec<Vec<String>>
     });
     rows.iter()
         .map(|p| {
-            vec![
-                p.name.clone(),
-                String::from("正在运行"),
-                format!("{:.1}%", p.cpu),
-                format_mb(p.mem_bytes),
-                format_bytes_per_s(p.disk_bytes_per_s),
-                format_bytes_per_s(p.net_bytes_per_s),
-                String::from("—"),
-                String::from("—"),
-                p.power.label().to_string(),
-            ]
+            (
+                vec![
+                    p.name.clone(),
+                    String::from("正在运行"),
+                    format!("{:.1}%", p.cpu),
+                    format_mb(p.mem_bytes),
+                    format_bytes_per_s(p.disk_bytes_per_s),
+                    format_bytes_per_s(p.net_bytes_per_s),
+                    String::from("—"),
+                    String::from("—"),
+                    p.power.label().to_string(),
+                ],
+                p.exe.clone(),
+            )
         })
         .collect()
 }
 
-fn details_rows(stats: &sys::SystemStats) -> Vec<Vec<String>> {
+fn details_rows(stats: &sys::SystemStats) -> Vec<(Vec<String>, String)> {
     let mut rows: Vec<&sys::ProcessSample> = stats.processes.iter().collect();
     rows.sort_by_key(|p| p.pid);
     rows.iter()
         .map(|p| {
-            vec![
-                p.name.clone(),
-                p.pid.to_string(),
-                String::from("正在运行"),
-                format!("{:.1}%", p.cpu),
-                format_mb(p.mem_bytes),
-            ]
+            (
+                vec![
+                    p.name.clone(),
+                    p.pid.to_string(),
+                    String::from("正在运行"),
+                    format!("{:.1}%", p.cpu),
+                    format_mb(p.mem_bytes),
+                ],
+                p.exe.clone(),
+            )
         })
         .collect()
 }
@@ -132,6 +177,7 @@ fn push_history(history: &Var<Vec<f64>>, value: f64) {
 
 fn main() {
     let app = Application::init();
+    let _initial_dark = apply_theme(&app);
     let window = Window::new();
     window.set_title("任务管理器");
     window.set_size(960, 620);
@@ -151,7 +197,7 @@ fn main() {
     let resource_texts = Var::new(vec![String::new(); 5]);
     let mem_percent = Var::new(0i32);
     let mem_label_text = Var::new(String::new());
-    let details_rows_var = Var::new(Vec::<Vec<String>>::new());
+    let details_rows_var = Var::new(Vec::<(Vec<String>, String)>::new());
 
     // --- 表格模型 ---
     let process_model = StringTableModel::new(
@@ -197,7 +243,7 @@ fn main() {
     let (
         tabs,
         process_view,
-        _details_view,
+        details_view,
         end_task,
         toggle,
         status_label,
@@ -259,18 +305,8 @@ fn main() {
             (sidebar, perf)
         });
 
-        let history_page = tabs.add_tab("应用历史记录");
-        history_page.label("该视图尚未实现");
-        let startup_page = tabs.add_tab("启动");
-        startup_page.label("该视图尚未实现");
-        let users_page = tabs.add_tab("用户");
-        users_page.label("该视图尚未实现");
-
         let details_page = tabs.add_tab("详细信息");
         let details_view = details_page.table_view(&details_model.clone());
-
-        let services_page = tabs.add_tab("服务");
-        services_page.label("该视图尚未实现");
 
         (
             tabs,
@@ -297,12 +333,23 @@ fn main() {
     ) = perf;
     let (cpu_btn, mem_btn, disk_btn, net_btn, gpu_btn) = sidebar;
 
+    // 视觉润色：主操作按钮用强调色，侧边栏与次要按钮用扁平样式。
+    end_task.set_style_class("accent");
+    resmon.set_style_class("quiet");
+    toggle.set_style_class("quiet");
+    for button in [&cpu_btn, &mem_btn, &disk_btn, &net_btn, &gpu_btn] {
+        button.set_style_class("quiet");
+    }
+    status_label.set_style_class("muted");
+    detail_stats_label.set_style_class("muted");
+    perf_stats_label.set_style_class("muted");
+
     // --- 派生信号与绑定（不直接操作控件） ---
     let sorted = process_data
         .signal()
-        .combine(&sort.signal(), |data, s| sorted_rows(data, *s));
-    process_model.bind_rows(&sorted);
-    details_model.bind_rows(&details_rows_var.signal());
+        .combine(&sort.signal(), |data, s| sorted_table(data, *s));
+    process_model.bind_table(&sorted);
+    details_model.bind_table(&details_rows_var.signal());
 
     status_label.bind_text(&status_text.signal());
     detail_stats_label.bind_text(&stats_text.signal());
@@ -480,8 +527,10 @@ fn main() {
         per_core_history,
         mem_percent,
         mem_label_text,
-        sampler
+        sampler,
+        app
         => move || {
+            apply_theme(&app);
             let stats = sampler.borrow_mut().sample();
 
             process_data.set(stats.processes.clone());
@@ -597,10 +646,19 @@ fn main() {
     });
     tick.run();
 
-    // 表格列宽（一次性布局配置）。
-    process_view.set_column_width(0, 220);
-    process_view.set_column_width(2, 80);
-    process_view.set_column_width(3, 100);
+    // 表格布局与外观（一次性配置）。
+    process_view.select_rows(true);
+    process_view.set_alternating_row_colors(true);
+    details_view.select_rows(true);
+    details_view.set_alternating_row_colors(true);
+    process_view.set_column_width(0, 230);
+    process_view.set_column_width(2, 70);
+    process_view.set_column_width(3, 110);
+    process_view.set_column_width(4, 90);
+    process_view.set_column_width(5, 90);
+    process_view.set_column_width(6, 70);
+    process_view.set_column_width(7, 90);
+    process_view.set_column_width(8, 110);
     process_view.stretch_last_section(true);
 
     // Headless smoke run: drive sorting, selection, the details toggle, and
@@ -633,7 +691,7 @@ fn main() {
     println!(
         "[diag] tabs={} tab_visible={} tab_size={}x{} \
          table_rows={} table_visible={} table_size={}x{} \
-         details_rows={} first_entries={:?}",
+         details_rows={} icons={} first_entries={:?}",
         tabs.count(),
         tabs.is_visible(),
         tabs.width(),
@@ -643,10 +701,19 @@ fn main() {
         process_view.width(),
         process_view.height(),
         details_model.row_count(),
+        process_model.row_icon_count(),
         (0..3)
             .map(|row| process_model.cell(row, 0))
             .collect::<Vec<_>>(),
     );
+    println!(
+        "[diag] exe_count={}",
+        rows.iter().filter(|p| !p.exe.is_empty()).count(),
+    );
     assert!(!rows.is_empty(), "process table must be populated");
+    assert!(
+        process_model.row_icon_count() > 0,
+        "process list must show icons"
+    );
     std::process::exit(code);
 }

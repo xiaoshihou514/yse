@@ -89,6 +89,30 @@ fn process_io_bytes(pid: u32) -> u64 {
         .unwrap_or(0)
 }
 
+fn process_exe(pid: u32, name: &str) -> String {
+    if let Ok(path) = std::fs::read_link(format!("/proc/{pid}/exe")) {
+        let path = path.to_string_lossy().into_owned();
+        if !path.is_empty() {
+            return path;
+        }
+    }
+    // `/proc/<pid>/exe` can be unreadable (hidepid / ptrace restrictions);
+    // fall back to a PATH lookup so the process list still gets icons.
+    if !name.contains('/')
+        && let Some(path) = std::env::var_os("PATH").and_then(|paths| {
+            std::env::split_paths(&paths).find_map(|dir| {
+                let candidate = dir.join(name);
+                candidate
+                    .is_file()
+                    .then(|| candidate.to_string_lossy().into_owned())
+            })
+        })
+    {
+        return path;
+    }
+    String::new()
+}
+
 struct ProcFields {
     name: String,
     rss_bytes: u64,
@@ -337,9 +361,11 @@ impl LinuxSampler {
                 );
                 thread_count += fields.threads;
                 process_count += 1;
+                let name = fields.name;
                 processes.push(ProcessSample {
                     pid,
-                    name: fields.name,
+                    exe: process_exe(pid, &name),
+                    name,
                     cpu,
                     mem_bytes: fields.rss_bytes,
                     disk_bytes_per_s: disk_bps,

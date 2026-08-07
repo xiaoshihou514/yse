@@ -6,6 +6,8 @@
 #include <QContextMenuEvent>
 #include <QItemSelectionModel>
 #include <QHeaderView>
+#include <QFileIconProvider>
+#include <QFileInfo>
 #include <QMenu>
 #include <QSet>
 #include <QtWidgets/QAbstractItemView>
@@ -181,6 +183,28 @@ void table_reset(TableModel* m, rust::Vec<yse_ui::Row> rows)
   }
 }
 
+void table_model_set_row_icons(TableModel* m, rust::Vec<rust::String> paths)
+{
+  if (!m->alive) {
+    return;
+  }
+  QVector<QIcon> icons;
+  icons.reserve(paths.size());
+  static QFileIconProvider provider;
+  for (const auto& path : paths) {
+    const QString file = QString::fromUtf8(path.data(), path.size());
+    icons.append(file.isEmpty()
+                   ? QIcon()
+                   : provider.icon(QFileInfo(file)));
+  }
+  m->q->rustSetRowIcons(icons);
+}
+
+int table_model_row_icon_count(TableModel* m)
+{
+  return m->alive ? m->q->rustIconCount() : 0;
+}
+
 int table_row_count(TableModel* m)
 {
   return m->alive ? m->q->rustRowCount() : 0;
@@ -280,6 +304,22 @@ void view_stretch_last_section(Widget* view, bool stretch)
   if (view->alive && view->q != nullptr) {
     static_cast<QTableView*>(view->q)
       ->horizontalHeader()->setStretchLastSection(stretch);
+  }
+}
+
+void view_set_select_rows(Widget* view, bool on)
+{
+  if (view->alive && view->q != nullptr) {
+    static_cast<QAbstractItemView*>(view->q)
+      ->setSelectionBehavior(on ? QAbstractItemView::SelectRows
+                                : QAbstractItemView::SelectItems);
+  }
+}
+
+void view_set_alternating_row_colors(Widget* view, bool on)
+{
+  if (view->alive && view->q != nullptr) {
+    static_cast<QTableView*>(view->q)->setAlternatingRowColors(on);
   }
 }
 

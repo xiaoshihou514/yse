@@ -156,6 +156,53 @@ fn context_menu_reports_the_row() {
     assert_eq!(*seen.borrow(), vec![1, 0]);
 }
 
+fn color_scheme_and_table_polish() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let app = Application::init();
+    // The scheme APIs must run in either mode without panicking.
+    let _dark = app.system_dark();
+    app.apply_color_scheme(true);
+    app.apply_color_scheme(false);
+    let _followed = app.follow_system_color_scheme();
+
+    let window = Window::new();
+    let column = window.column();
+    let model = StringTableModel::new(2, vec![String::from("Name"), String::from("CPU")]);
+    model.push_row([String::from("terminal"), String::from("10")]);
+    model.push_row([String::from("editor"), String::from("20")]);
+    let view = column.table_view(&model);
+
+    view.select_rows(true);
+    view.set_alternating_row_colors(true);
+
+    // Icons resolve from real executable paths; empty paths stay iconless.
+    let paths = vec![String::from("/bin/ls"), String::new()];
+    model.set_row_icons(paths);
+    assert!(model.row_icon_count() >= 1, "file icons must resolve");
+
+    let paths_var = Var::new(vec![String::new(), String::from("/bin/sh")]);
+    model.bind_row_icons(&paths_var.signal());
+    assert!(model.row_icon_count() >= 1, "bound icons must apply");
+
+    // Rows and icons bound from the SAME source: a row reset must not wipe
+    // the icons that arrive in the same propagation pass.
+    let data = Var::new(vec![(vec![String::from("a")], String::from("/bin/ls"))]);
+    let m2 = StringTableModel::new(1, vec![String::from("x")]);
+    m2.bind_table(&data.signal());
+    data.set(vec![
+        (vec![String::from("b")], String::from("/bin/sh")),
+        (vec![String::from("c")], String::from("/bin/ls")),
+    ]);
+    assert!(
+        m2.row_icon_count() >= 2,
+        "rows and icons must apply atomically"
+    );
+
+    drop(column);
+    drop(window);
+}
+
 // Qt permits one QApplication per process and binds it to its creating
 // thread. Keeping this integration binary to one test prevents Rust's test
 // harness from running the cases on different worker threads.
@@ -166,4 +213,5 @@ fn panel_cases_share_one_qt_thread() {
     line_chart_accepts_single_and_multi_series();
     reactive_bindings_drive_widgets();
     context_menu_reports_the_row();
+    color_scheme_and_table_polish();
 }

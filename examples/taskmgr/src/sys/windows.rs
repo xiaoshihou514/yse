@@ -4,7 +4,7 @@
 use crate::sys::{CpuInfo, NetRate, PowerLevel, ProcessSample, SystemStats};
 use std::collections::HashMap;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_INSUFFICIENT_BUFFER, FILETIME, GetLastError, INVALID_HANDLE_VALUE,
+    CloseHandle, ERROR_INSUFFICIENT_BUFFER, FILETIME, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::NetworkManagement::IpHelper::{
     GetIfTable, IF_TYPE_SOFTWARE_LOOPBACK, MIB_IFTABLE,
@@ -27,7 +27,8 @@ use windows_sys::Win32::System::SystemInformation::{
 };
 use windows_sys::Win32::System::Threading::{
     GetProcessIoCounters, GetProcessTimes, GetSystemTimes, IO_COUNTERS, OpenProcess,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, TerminateProcess,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, QueryFullProcessImageNameW,
+    TerminateProcess,
 };
 
 fn filetime_to_u64(ft: &FILETIME) -> u64 {
@@ -68,11 +69,31 @@ struct ProcTick {
 }
 
 /// Returns `(working set bytes, io bytes, kernel+user ticks)`.
-fn process_details(pid: u32) -> (u64, u64, u64) {
+fn process_exe_path(handle: HANDLE) -> String {
+    let mut size: u32 = 1024;
+    let mut buffer = vec![0u16; size as usize];
+    loop {
+        // SAFETY: `buffer` is writable for `size` u16 slots; the API updates
+        // `size` with the number of characters written.
+        let ok = unsafe { QueryFullProcessImageNameW(handle, 0, buffer.as_mut_ptr(), &mut size) };
+        if ok != 0 {
+            return wide_to_string(&buffer[..size as usize]);
+        }
+        if unsafe { GetLastError() } == ERROR_INSUFFICIENT_BUFFER {
+            size = size.saturating_mul(2).max(1024);
+            buffer.resize(size as usize, 0);
+            continue;
+        }
+        return String::new();
+    }
+}
+
+/// Returns `(working set bytes, io bytes, kernel+user ticks, exe path)`.
+fn process_details(pid: u32) -> (u64, u64, u64, String) {
     // SAFETY: OpenProcess with a valid access mask and pid.
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
-        return (0, 0, 0);
+        return (0, 0, 0, String::new());
     }
     let mut counters = PROCESS_MEMORY_COUNTERS::default();
     let mut io = IO_COUNTERS::default();
@@ -97,9 +118,10 @@ fn process_details(pid: u32) -> (u64, u64, u64) {
         unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) != 0 }
             .then_some(filetime_to_u64(&kernel) + filetime_to_u64(&user))
             .unwrap_or(0);
+    let exe = process_exe_path(handle);
     // SAFETY: `handle` was returned by OpenProcess and is still open.
     unsafe { CloseHandle(handle) };
-    (mem, io_bytes, ticks)
+    (mem, io_bytes, ticks, exe)
 }
 
 fn process_table(prev: &mut HashMap<u32, ProcTick>, total_delta: u64) -> Vec<ProcessSample> {
@@ -116,7 +138,7 @@ fn process_table(prev: &mut HashMap<u32, ProcTick>, total_delta: u64) -> Vec<Pro
     while ok {
         let pid = entry.th32ProcessID;
         let name = wide_to_string(&entry.szExeFile);
-        let (mem, io_bytes, ticks) = process_details(pid);
+        let (mem, io_bytes, ticks, exe) = process_details(pid);
         let cpu = match prev.get(&pid) {
             Some(p) if total_delta > 0 => {
                 ticks.saturating_sub(p.ticks) as f64 / total_delta as f64 * 100.0
@@ -131,6 +153,7 @@ fn process_table(prev: &mut HashMap<u32, ProcTick>, total_delta: u64) -> Vec<Pro
         processes.push(ProcessSample {
             pid,
             name,
+            exe,
             cpu,
             mem_bytes: mem,
             disk_bytes_per_s: disk,

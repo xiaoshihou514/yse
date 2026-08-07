@@ -47,6 +47,8 @@ impl PowerLevel {
 pub struct ProcessSample {
     pub pid: u32,
     pub name: String,
+    /// Absolute path of the executable, when resolvable.
+    pub exe: String,
     /// CPU usage as a percentage of total machine capacity (0..100).
     pub cpu: f64,
     pub mem_bytes: u64,

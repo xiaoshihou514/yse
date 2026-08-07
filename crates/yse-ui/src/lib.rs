@@ -48,6 +48,8 @@ mod bridge {
         type Settings;
 
         fn app_init();
+        fn app_system_color_scheme_dark() -> bool;
+        fn app_apply_color_scheme(dark: bool);
         fn app_set_style_sheet(style_sheet: &str);
         fn app_exec() -> i32;
         fn app_quit_after(ms: i32);
@@ -166,6 +168,8 @@ mod bridge {
         unsafe fn table_remove_rows(m: *mut TableModel, row: i32, count: i32);
         unsafe fn table_update_rows(m: *mut TableModel, row: i32, rows: Vec<Row>);
         unsafe fn table_reset(m: *mut TableModel, rows: Vec<Row>);
+        unsafe fn table_model_set_row_icons(m: *mut TableModel, paths: Vec<String>);
+        unsafe fn table_model_row_icon_count(m: *mut TableModel) -> i32;
         unsafe fn table_row_count(m: *mut TableModel) -> i32;
         unsafe fn table_column_count(m: *mut TableModel) -> i32;
         unsafe fn table_text(m: *mut TableModel, row: i32, column: i32) -> String;
@@ -176,6 +180,8 @@ mod bridge {
         unsafe fn view_emit_context_menu(view: *mut Widget, row: i32);
         unsafe fn view_set_column_width(view: *mut Widget, column: i32, width: i32);
         unsafe fn view_stretch_last_section(view: *mut Widget, stretch: bool);
+        unsafe fn view_set_select_rows(view: *mut Widget, on: bool);
+        unsafe fn view_set_alternating_row_colors(view: *mut Widget, on: bool);
         unsafe fn view_selected_rows(view: *mut Widget) -> Vec<i32>;
         unsafe fn view_select_row(view: *mut Widget, row: i32);
         unsafe fn view_clear_selection(view: *mut Widget);
@@ -400,6 +406,24 @@ impl Application {
     /// Remove an application-wide style sheet and restore the platform style.
     pub fn clear_style_sheet(&self) {
         ffi::app_set_style_sheet("");
+    }
+
+    /// Whether the system currently requests a dark color scheme.
+    pub fn system_dark(&self) -> bool {
+        ffi::app_system_color_scheme_dark()
+    }
+
+    /// Apply a fixed light or dark color scheme (Fusion style + palette).
+    pub fn apply_color_scheme(&self, dark: bool) {
+        ffi::app_apply_color_scheme(dark);
+    }
+
+    /// Follow the system color scheme: applies the matching Fusion palette and
+    /// returns whether the result is dark.
+    pub fn follow_system_color_scheme(&self) -> bool {
+        let dark = self.system_dark();
+        self.apply_color_scheme(dark);
+        dark
     }
 
     /// Run the Qt event loop; returns the application exit code.
@@ -2396,6 +2420,45 @@ impl StringTableModel {
         self.state.bindings.borrow_mut().push(subscription);
     }
 
+    /// Set a per-row icon for column 0, given the file path whose icon should
+    /// be shown (e.g. an executable). Empty paths show no icon.
+    pub fn set_row_icons(&self, paths: impl IntoIterator<Item = String>) {
+        unsafe { ffi::table_model_set_row_icons(self.state.table, paths.into_iter().collect()) };
+    }
+
+    /// Bind per-row icons (file paths whose icon appears in column 0) to a
+    /// signal. The subscription lives as long as the model.
+    pub fn bind_row_icons(&self, signal: &Signal<Vec<String>>) {
+        let state = self.state.clone();
+        let subscription = signal.observe(move |paths| unsafe {
+            ffi::table_model_set_row_icons(state.table, (*paths).clone());
+        });
+        self.state.bindings.borrow_mut().push(subscription);
+    }
+
+    /// Bind rows and their column-0 icons from one signal of
+    /// `(cells, icon path)` pairs. Rows and icons are applied atomically in a
+    /// single observer, so a row reset can never wipe the same-pass icons.
+    pub fn bind_table(&self, signal: &Signal<Vec<(Vec<String>, String)>>) {
+        let list = self.state.list.clone();
+        let state = self.state.clone();
+        let subscription = signal.observe(move |rows| {
+            list.replace_all(rows.iter().map(|(cells, _)| cells.clone()).collect());
+            unsafe {
+                ffi::table_model_set_row_icons(
+                    state.table,
+                    rows.iter().map(|(_, path)| path.clone()).collect(),
+                );
+            }
+        });
+        self.state.bindings.borrow_mut().push(subscription);
+    }
+
+    /// Number of rows with a non-null icon in column 0.
+    pub fn row_icon_count(&self) -> usize {
+        unsafe { ffi::table_model_row_icon_count(self.state.table) as usize }
+    }
+
     /// Number of rows in the C++ mirror.
     pub fn row_count(&self) -> usize {
         unsafe { ffi::table_row_count(self.state.table) as usize }
@@ -2551,6 +2614,20 @@ impl TableView {
     pub fn stretch_last_section(&self, stretch: bool) {
         if self.inner.is_alive() {
             unsafe { ffi::view_stretch_last_section(self.inner.raw(), stretch) };
+        }
+    }
+
+    /// Select whole rows instead of individual cells.
+    pub fn select_rows(&self, on: bool) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_set_select_rows(self.inner.raw(), on) };
+        }
+    }
+
+    /// Alternate row background colors for easier scanning.
+    pub fn set_alternating_row_colors(&self, on: bool) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_set_alternating_row_colors(self.inner.raw(), on) };
         }
     }
 
