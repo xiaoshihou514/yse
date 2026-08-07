@@ -9,10 +9,11 @@ found while implementing are fixed in `crates/yse-ui` and recorded here.
 
 ## Parity contract
 
-All seven classic sections must be present: **进程 / 性能 / 应用历史记录 /
-启动 / 用户 / 详细信息 / 服务**, plus menus, context-menu actions, update-speed
-and pause behavior, sorting/grouping, icons, resource columns, heat maps, live
-graphs, and the process-management actions.
+Six classic sections are present: **进程 / 性能 / 服务 / 启动 / 用户 /
+详细信息** (应用历史记录 was removed per product decision — no reliable
+cross-platform data source), plus menus, context-menu actions, update-speed
+and pause behavior, sorting/grouping, icons, resource columns, heat maps,
+live graphs, and the process-management actions.
 
 ## Status matrix
 
@@ -22,10 +23,10 @@ graphs, and the process-management actions.
 | 1 | Provider/snapshot separation, background sampling, update speed, settings, benchmarks | Partially done (worker-thread sampling via `spawn_interval`, High/Normal/Low/Paused, coalescing) |
 | 2 | Theme tokens, responsive shell, shared table/graph widgets, DPI | Done (left icon+label rail + stacked pages, quiet data-forward theme, shared heat delegate) |
 | 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Done (expandable tree, friendly names, icons, heat maps, column chooser, end task/tree guarded by PID+start-time pairing, open location) |
-| 4 | Performance parity: CPU/memory/disk/network/GPU detail pages | CPU/memory/network/disk (Linux + Windows PDH) done; GPU explicitly unavailable |
+| 4 | Performance parity: CPU/memory/disk/network/GPU detail pages | CPU (incl. per-core via PDH), memory, network, disk (Linux + Windows PDH) done; GPU explicitly unavailable |
 | 5 | Details + Services | Details partial (PID/PPID/threads/CPU time/priority); Services implemented (systemd / `sc`) |
 | 6 | Startup + Users | Startup implemented (XDG autostart / registry Run); Users implemented (who / query user) |
-| 7 | App history | Explicit unavailable state (degrades per roadmap) |
+| 7 | App history | Removed per product decision (no reliable cross-platform source) |
 | 8 | Menus/commands/keyboard parity | Partially done (update speed, pause, group toggle, submenus, checkable actions) |
 | 9 | Accessibility, reliability, polish | Bounded soak + 28x sampling speedup; keyboard nav/focus via Qt defaults, Ctrl+Q/R shortcuts, no color-only info |
 | 10 | Release hardening | Known-limitations matrix below; signing/installer pending |
@@ -75,7 +76,8 @@ Explicitly documented instead of fabricating values, per the roadmap rules:
 | Process icons | PATH lookup when `/proc/<pid>/exe` is unreadable | Shell icons |
 | Per-disk active time | `/proc/diskstats` deltas | PDH `% Disk Time` |
 | GPU usage | Unavailable (no vendor API) | Unavailable (no NVML/ADL/DXGI) |
-| App history | No source | Requires Windows resource-usage records |
+| Per-core CPU | `/proc/stat` deltas | PDH `Processor(<n>) % Processor Time` |
+| App history | Removed (no reliable source) | Removed (requires Windows resource-usage records) |
 | Users | `who` | `query user` (exit code 1 from non-console contexts; output still parsed) |
 | Privilege elevation | Not isolated (demo) | Not isolated (demo) |
 | 24-hour soak | Bounded soak in tests; run the sampler loop for full duration on real machines | Same |

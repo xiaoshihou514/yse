@@ -455,9 +455,7 @@ fn main() {
             // 左侧导航栏：与经典任务管理器一致的图标+文字导轨。
             let rail = row.column(|side| {
                 let mut buttons = Vec::new();
-                for label in [
-                    "应用", "性能", "服务", "启动", "用户", "详细信息", "应用历史记录",
-                ] {
+                for label in ["应用", "性能", "服务", "启动", "用户", "详细信息"] {
                     let button = side.button(label);
                     button.set_style_class("nav");
                     buttons.push(button);
@@ -543,9 +541,6 @@ fn main() {
 
             let users_page = stack.add_page();
             users_page.table_view(&users_model.clone());
-
-            let history_page = stack.add_page();
-            history_page.label("该视图需要平台资源使用记录：Windows 上需启用“应用历史记录”数据源，Linux 上无对应数据。");
 
             (
                 rail,
@@ -1166,7 +1161,7 @@ fn main() {
     println!(
         "[diag] pages={} stack_visible={} stack_size={}x{} \
          table_rows={} table_visible={} table_size={}x{} \
-         details_rows={} services={} startup={} users={} icons={} first_entries={:?}",
+         details_rows={} services={} startup={} users={} icons={} cores={} first_entries={:?}",
         stack.count(),
         stack.is_visible(),
         stack.width(),
@@ -1180,6 +1175,7 @@ fn main() {
         startup_model.row_count(),
         users_model.row_count(),
         tree_model.row_count(),
+        per_core_history.value().len(),
         (0..3)
             .map(|row| {
                 tree.value()

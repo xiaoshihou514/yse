@@ -554,6 +554,76 @@ impl Drop for PdhDisk {
     }
 }
 
+/// PDH-backed per-logical-processor usage via the documented
+/// `\Processor Information(<n>)\% Processor Time` counters.
+struct PdhProcessor {
+    query: usize,
+    counters: Vec<usize>,
+}
+
+impl PdhProcessor {
+    fn new(logical: u32) -> Option<Self> {
+        let mut query: PDH_HQUERY = std::ptr::null_mut();
+        // SAFETY: standard PDH query setup; `query` is written on success.
+        if unsafe { PdhOpenQueryW(std::ptr::null(), 0, &mut query) } != 0 {
+            return None;
+        }
+        let mut counters = Vec::new();
+        for index in 0..logical {
+            let path = format!(r"\Processor({index})\% Processor Time");
+            let mut counter: PDH_HCOUNTER = std::ptr::null_mut();
+            // SAFETY: `path` is NUL-terminated and stays alive for the call.
+            let status =
+                unsafe { PdhAddEnglishCounterW(query, wide(&path).as_ptr(), 0, &mut counter) };
+            if status == 0 {
+                counters.push(counter as usize);
+            }
+        }
+        if counters.is_empty() {
+            // SAFETY: the query was opened above and is no longer needed.
+            unsafe { PdhCloseQuery(query) };
+            return None;
+        }
+        Some(Self {
+            query: query as usize,
+            counters,
+        })
+    }
+
+    fn per_core(&self) -> Vec<f64> {
+        let query = self.query as PDH_HQUERY;
+        unsafe {
+            let status = PdhCollectQueryData(query);
+            if status != 0 {
+                return Vec::new();
+            }
+            let mut out = Vec::with_capacity(self.counters.len());
+            for &counter in &self.counters {
+                let mut ty = 0u32;
+                let mut value = PDH_FMT_COUNTERVALUE::default();
+                if PdhGetFormattedCounterValue(
+                    counter as PDH_HCOUNTER,
+                    PDH_FMT_DOUBLE,
+                    &mut ty,
+                    &mut value,
+                ) == 0
+                    && value.CStatus == PDH_CSTATUS_VALID_DATA
+                {
+                    out.push(value.Anonymous.doubleValue.clamp(0.0, 100.0));
+                }
+            }
+            out
+        }
+    }
+}
+
+impl Drop for PdhProcessor {
+    fn drop(&mut self) {
+        // SAFETY: `query` was returned by PdhOpenQueryW and is still open.
+        unsafe { PdhCloseQuery(self.query as PDH_HQUERY) };
+    }
+}
+
 /// Windows-specific sampler holding previous counters for rate diffs.
 pub struct WindowsSampler {
     prev_system: Option<SystemTimes>,
@@ -564,6 +634,8 @@ pub struct WindowsSampler {
     gpu: String,
     pdh: Option<PdhDisk>,
     pdh_created: bool,
+    pdh_cpu: Option<PdhProcessor>,
+    pdh_cpu_created: bool,
 }
 
 impl WindowsSampler {
@@ -577,6 +649,8 @@ impl WindowsSampler {
             gpu: gpu_name(),
             pdh: None,
             pdh_created: false,
+            pdh_cpu: None,
+            pdh_cpu_created: false,
         }
     }
 
@@ -598,6 +672,15 @@ impl WindowsSampler {
         };
         self.prev_system = current;
         let processes = process_table(&mut self.prev_proc, total_delta, &windows);
+        if !self.pdh_cpu_created {
+            self.pdh_cpu = PdhProcessor::new(self.identity.5);
+            self.pdh_cpu_created = true;
+        }
+        let per_core_pct = self
+            .pdh_cpu
+            .as_ref()
+            .map(PdhProcessor::per_core)
+            .unwrap_or_default();
         let (mem_total, mem_used) = memory_status();
         let (process_count, thread_count, handle_count) = performance_counts();
         let nets = net_rates(&mut self.prev_nets);
@@ -608,7 +691,7 @@ impl WindowsSampler {
             processes,
             cpu: CpuInfo {
                 usage_pct: cpu_pct,
-                per_core_pct: Vec::new(),
+                per_core_pct,
                 current_mhz: *current_mhz,
                 base_mhz: *base_mhz,
                 sockets: *sockets,
