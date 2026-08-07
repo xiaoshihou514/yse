@@ -707,7 +707,7 @@ impl Row {
         CheckBox { inner }
     }
 
-    /// Create a combo box with `items` in this column.
+    /// Create a combo box with `items` in this row.
     pub fn combo_box<I, S>(&self, items: I) -> ComboBox
     where
         I: IntoIterator<Item = S>,
@@ -726,7 +726,7 @@ impl Row {
         ComboBox { inner }
     }
 
-    /// Create a numeric spinner (default range `0..=100`) in this column.
+    /// Create a numeric spinner (default range `0..=100`) in this row.
     pub fn spin_box(&self, value: i32) -> SpinBox {
         let inner = unsafe {
             Component::from_raw_child(
@@ -738,7 +738,7 @@ impl Row {
         SpinBox { inner }
     }
 
-    /// Create a horizontal slider (default range `0..=100`) in this column.
+    /// Create a horizontal slider (default range `0..=100`) in this row.
     pub fn slider(&self, value: i32) -> Slider {
         let inner = unsafe {
             Component::from_raw_child(
@@ -750,7 +750,7 @@ impl Row {
         Slider { inner }
     }
 
-    /// Create a progress bar (default range `0..=100`) in this column.
+    /// Create a progress bar (default range `0..=100`) in this row.
     pub fn progress_bar(&self, value: i32) -> ProgressBar {
         let inner = unsafe {
             Component::from_raw_child(
@@ -762,7 +762,7 @@ impl Row {
         ProgressBar { inner }
     }
 
-    /// Create a tabbed container in this column.
+    /// Create a tabbed container in this row.
     pub fn tab_widget(&self) -> TabWidget {
         let inner = unsafe {
             Component::from_raw_child(ffi::widget_new_tab_widget(self.inner.raw()), &self.inner)
@@ -771,7 +771,7 @@ impl Row {
         TabWidget { inner }
     }
 
-    /// Create a painted line chart in this column.
+    /// Create a painted line chart in this row.
     pub fn line_chart(&self) -> LineChart {
         let inner = unsafe {
             Component::from_raw_child(ffi::widget_new_line_chart(self.inner.raw()), &self.inner)
@@ -898,7 +898,7 @@ impl Column {
         CheckBox { inner }
     }
 
-    /// Create a combo box with `items` in this row.
+    /// Create a combo box with `items` in this column.
     pub fn combo_box<I, S>(&self, items: I) -> ComboBox
     where
         I: IntoIterator<Item = S>,
@@ -917,7 +917,7 @@ impl Column {
         ComboBox { inner }
     }
 
-    /// Create a numeric spinner (default range `0..=100`) in this row.
+    /// Create a numeric spinner (default range `0..=100`) in this column.
     pub fn spin_box(&self, value: i32) -> SpinBox {
         let inner = unsafe {
             Component::from_raw_child(
@@ -929,7 +929,7 @@ impl Column {
         SpinBox { inner }
     }
 
-    /// Create a horizontal slider (default range `0..=100`) in this row.
+    /// Create a horizontal slider (default range `0..=100`) in this column.
     pub fn slider(&self, value: i32) -> Slider {
         let inner = unsafe {
             Component::from_raw_child(
@@ -941,7 +941,7 @@ impl Column {
         Slider { inner }
     }
 
-    /// Create a progress bar (default range `0..=100`) in this row.
+    /// Create a progress bar (default range `0..=100`) in this column.
     pub fn progress_bar(&self, value: i32) -> ProgressBar {
         let inner = unsafe {
             Component::from_raw_child(
