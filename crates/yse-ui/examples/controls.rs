@@ -19,24 +19,20 @@ fn main() {
     let level = Var::new(40i32);
     let status = Var::new(String::from("idle"));
 
-    // Declarative tree: signal bindings drive the widgets; value-change
-    // handlers write user edits back into the same `Var`s (manual two-way).
+    // Declarative tree: `Var`s are controlled by the widgets (two-way
+    // bindings); the progress bar derives from the same state as the slider.
     let (combo, spin, slider, bar, reset, status_label) = window.mount(column((
         combo_box(["Starter", "Balanced", "Power"])
-            .value(profile.signal())
+            .value(profile.clone())
             .on_value_change(clone!(profile, status => move |index| {
-                profile.set(*index);
                 status.set(format!("profile: {}", ["Starter", "Balanced", "Power"][*index as usize]));
             })),
-        spin_box(quantity.signal())
+        spin_box(quantity.clone())
             .range(1, 10)
             .on_value_change(clone!(quantity, status => move |value| {
-                quantity.set(*value);
                 status.set(format!("quantity: {value}"));
             })),
-        slider(level.signal())
-            .range(0, 100)
-            .on_value_change(clone!(level => move |value| level.set(*value))),
+        slider(level.clone()).range(0, 100),
         progress_bar(level.signal()).range(0, 100),
         button("Reset").on_click(clone!(profile, quantity, level, status => move |_| {
             profile.set(0);

@@ -64,17 +64,25 @@ lifecycle.
   embedder-installed connections.
 - Bindings: signal-to-property (`bind_text`, `bind_enabled`, ...), widget
   signals to `EventStream` (`clicked()`, `text_changed()`, `toggled()`,
-  `selection_changed()`, `triggered()`), and two-way line-edit bindings with a
-  feedback-loop guard. Labels use the generated `TextState` QObject, so a
-  normal Qt property signals update the widgets rather than one-off
-  Rust-to-C++ callbacks. `TextState` backs labels and line edits, and
-  `ToggleState` keeps a checkbox's `checked` property synchronized in both
-  directions. `ActionState` owns QAction text and enabled state used by menus
-  and toolbars. Every QWidget wrapper has a generated `WidgetState` for its
-  shared enabled, visibility, and title properties.
+  `value_changed()`, `header_clicked()`, `selection_changed()`, `triggered()`),
+  and two-way bindings (`bind_text_two_way`, `bind_value_two_way`,
+  `bind_checked`) with feedback-loop guards. Tables, button labels, chart
+  series, and widget visibility can all be bound to signals
+  (`bind_rows`, `bind_text`, `bind_series`, `bind_visible`), so applications
+  can be written Laminar-style: state lives in `Var`s, the UI is a pure
+  function of derived signals, and event handlers only mutate state. Labels
+  use the generated `TextState` QObject, so a normal Qt property signals
+  update the widgets rather than one-off Rust-to-C++ callbacks. `TextState`
+  backs labels and line edits, and `ToggleState` keeps a checkbox's `checked`
+  property synchronized in both directions. `ActionState` owns QAction text
+  and enabled state used by menus and toolbars. Every QWidget wrapper has a
+  generated `WidgetState` for its shared enabled, visibility, and title
+  properties.
 - `StringListModel`/`StringTableModel` drive `QListView`/`QTableView` through
   C++ `QAbstractItemModel` mirrors using `beginInsertRows`/`beginRemoveRows`/
   `dataChanged`, so views update incrementally.
+- `TabWidget` pages, a painted `LineChart` for time-series data, and
+  date/time editors complete the initial desktop surface.
 - Actions/menus/toolbars, `MessageBox`/`FileDialog`, and `Settings`
   (QSettings-backed persistence) complete the desktop primitives.
 

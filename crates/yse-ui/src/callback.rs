@@ -47,6 +47,24 @@ pub(crate) unsafe fn value_changed(data: *mut Void) {
 
 /// # Safety
 ///
+/// Same contract as [`clicked`].
+pub(crate) unsafe fn date_value_changed(data: *mut Void) {
+    unsafe {
+        (*(data as *const Component)).on_date_value_changed();
+    }
+}
+
+/// # Safety
+///
+/// Same contract as [`clicked`]. `section` is the clicked header column.
+pub(crate) unsafe fn header_clicked(data: *mut Void, section: i32) {
+    unsafe {
+        (*(data as *const Component)).on_header_clicked(section);
+    }
+}
+
+/// # Safety
+///
 /// `data` must be a pointer to a live `Component`; it stays valid because the
 /// Rust wrapper outlives the widget destruction that triggers this callback.
 pub(crate) unsafe fn destroyed(data: *mut Void) {

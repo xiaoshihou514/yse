@@ -156,6 +156,46 @@ fn declarative_views_mount_the_new_widgets() {
     assert_eq!(*selected.value(), 1, "one-way binding does not write back");
 }
 
+fn two_way_bindings_round_trip() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let column = window.column();
+    let index = Var::new(0i32);
+    let amount = Var::new(10i32);
+    let date = Var::new(String::from("2026-08-07"));
+    let time = Var::new(String::from("09:00"));
+
+    let combo = column.combo_box(["a", "b", "c"]);
+    combo.bind_value_two_way(&index);
+    let spin = column.spin_box(0);
+    spin.bind_value_two_way(&amount);
+    let date_edit = column.date_edit("2026-08-07");
+    date_edit.bind_value_two_way(&date);
+    let time_edit = column.time_edit("09:00");
+    time_edit.bind_value_two_way(&time);
+
+    // State drives the widgets.
+    index.set(2);
+    amount.set(60);
+    assert_eq!(combo.current_index(), 2);
+    assert_eq!(spin.value(), 60);
+
+    // Widget changes drive the state back (user edits round-trip).
+    combo.set_current_index(1);
+    spin.set_value(75);
+    date_edit.set_value("2030-01-02");
+    time_edit.set_value("23:59");
+    assert_eq!(*index.value(), 1);
+    assert_eq!(*amount.value(), 75);
+    assert_eq!(date.value().as_str(), "2030-01-02");
+    assert_eq!(time.value().as_str(), "23:59");
+
+    drop(column);
+    drop(window);
+}
+
 // Qt permits one QApplication per process and binds it to its creating
 // thread. Keeping this integration binary to one test prevents Rust's test
 // harness from running the cases on different worker threads.
@@ -166,4 +206,5 @@ fn value_widget_cases_share_one_qt_thread() {
     progress_bar_values();
     value_bindings_follow_signals();
     declarative_views_mount_the_new_widgets();
+    two_way_bindings_round_trip();
 }

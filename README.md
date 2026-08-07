@@ -123,6 +123,15 @@ headless with `QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 cargo run -p yse-ui
 hook, panic containment at the C++ boundary, and the widget-extension pattern
 — are documented in [docs/safety.md](docs/safety.md).
 
+[`yse-taskmgr`](examples/taskmgr) is a cross-platform system task manager
+(Windows / Linux) built entirely in the Laminar style: all state lives in
+`Var`s, the UI binds to derived signals (`bind_rows`, `bind_series`,
+`bind_visible`, ...), and event handlers only mutate state. System data is
+collected by platform-specific backends selected with `cfg`: `/proc` and
+`/sys` on Linux, `windows-sys` on Windows. Run it headless with
+`QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 cargo run -p yse-taskmgr` (or
+`just windows-run yse-taskmgr` on the Windows host).
+
 ## Development environment
 
 - Rust toolchain (edition 2024)

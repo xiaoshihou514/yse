@@ -4,6 +4,7 @@
 #include "yse-ui/src/model.h"
 
 #include <QItemSelectionModel>
+#include <QHeaderView>
 #include <QSet>
 #include <QtWidgets/QAbstractItemView>
 #include <QtWidgets/QListView>
@@ -184,6 +185,48 @@ void view_set_selection_cb(Widget* view, Void* data)
           static_cast<yse_ui::Void*>(view->selection_cb_data));
       }
     });
+}
+
+void view_set_header_clicked_cb(Widget* view, Void* data)
+{
+  QObject::disconnect(view->header_connection);
+  view->header_cb_data = static_cast<void*>(data);
+  auto* table_view = static_cast<QTableView*>(view->q);
+  view->header_connection = QObject::connect(
+    table_view->horizontalHeader(),
+    &QHeaderView::sectionClicked,
+    table_view,
+    [view](int section) {
+      if (view->header_cb_data != nullptr) {
+        yse_ui::on_header_clicked(
+          static_cast<yse_ui::Void*>(view->header_cb_data), section);
+      }
+    });
+}
+
+void view_click_header(Widget* view, int section)
+{
+  if (view->alive && view->q != nullptr) {
+    QMetaObject::invokeMethod(
+      static_cast<QTableView*>(view->q)->horizontalHeader(),
+      "sectionClicked",
+      Q_ARG(int, section));
+  }
+}
+
+void view_set_column_width(Widget* view, int column, int width)
+{
+  if (view->alive && view->q != nullptr) {
+    static_cast<QTableView*>(view->q)->setColumnWidth(column, width);
+  }
+}
+
+void view_stretch_last_section(Widget* view, bool stretch)
+{
+  if (view->alive && view->q != nullptr) {
+    static_cast<QTableView*>(view->q)
+      ->horizontalHeader()->setStretchLastSection(stretch);
+  }
 }
 
 rust::Vec<int32_t> view_selected_rows(Widget* view)

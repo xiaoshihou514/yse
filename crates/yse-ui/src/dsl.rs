@@ -24,9 +24,9 @@
 
 use crate::component::Component;
 use crate::{
-    Button, CheckBox, ComboBox, DateEdit, DateTimeEdit, DiskMap, Label, LineEdit, ListView,
-    ProgressBar, SelectionBridge, Slider, SpinBox, StringListModel, StringTableModel, TableView,
-    TimeEdit, Window, ffi,
+    Button, CheckBox, ComboBox, DateEdit, DateTimeEdit, DiskMap, Label, LineChart, LineEdit,
+    ListView, ProgressBar, SelectionBridge, Slider, SpinBox, StringListModel, StringTableModel,
+    TabWidget, TableView, TimeEdit, Window, ffi,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -125,9 +125,10 @@ impl IntoBoolValue for Signal<bool> {
 pub enum IntValue {
     Static(i32),
     Reactive(Signal<i32>),
+    Controlled(Var<i32>),
 }
 
-/// Convert an `i32` or `Signal<i32>` into a reactive property.
+/// Convert an `i32`, `Signal<i32>`, or `Var<i32>` into a reactive property.
 pub trait IntoIntValue {
     /// Perform the conversion.
     fn into_int_value(self) -> IntValue;
@@ -142,6 +143,12 @@ impl IntoIntValue for i32 {
 impl IntoIntValue for Signal<i32> {
     fn into_int_value(self) -> IntValue {
         IntValue::Reactive(self)
+    }
+}
+
+impl IntoIntValue for Var<i32> {
+    fn into_int_value(self) -> IntValue {
+        IntValue::Controlled(self)
     }
 }
 
@@ -408,6 +415,7 @@ impl View for ComboBoxView {
             match selected {
                 IntValue::Static(index) => combo.set_current_index(index),
                 IntValue::Reactive(signal) => combo.bind_value(&signal),
+                IntValue::Controlled(var) => combo.bind_value_two_way(&var),
             }
         }
         for observer in self.changes {
@@ -454,13 +462,16 @@ impl View for SpinBoxView {
         let initial = match &self.value {
             IntValue::Static(value) => *value,
             IntValue::Reactive(signal) => *signal.value(),
+            IntValue::Controlled(var) => *var.value(),
         };
         let inner = context.child(unsafe {
             ffi::widget_new_spin_box(self.range.0, self.range.1, initial, context.parent.raw())
         });
         let spin = SpinBox { inner };
-        if let IntValue::Reactive(signal) = self.value {
-            spin.bind_value(&signal);
+        match self.value {
+            IntValue::Static(_) => {}
+            IntValue::Reactive(signal) => spin.bind_value(&signal),
+            IntValue::Controlled(var) => spin.bind_value_two_way(&var),
         }
         for observer in self.changes {
             spin.on_value_change(observer);
@@ -506,13 +517,16 @@ impl View for SliderView {
         let initial = match &self.value {
             IntValue::Static(value) => *value,
             IntValue::Reactive(signal) => *signal.value(),
+            IntValue::Controlled(var) => *var.value(),
         };
         let inner = context.child(unsafe {
             ffi::widget_new_slider(self.range.0, self.range.1, initial, context.parent.raw())
         });
         let slider = Slider { inner };
-        if let IntValue::Reactive(signal) = self.value {
-            slider.bind_value(&signal);
+        match self.value {
+            IntValue::Static(_) => {}
+            IntValue::Reactive(signal) => slider.bind_value(&signal),
+            IntValue::Controlled(var) => slider.bind_value_two_way(&var),
         }
         for observer in self.changes {
             slider.on_value_change(observer);
@@ -550,13 +564,16 @@ impl View for ProgressBarView {
         let initial = match &self.value {
             IntValue::Static(value) => *value,
             IntValue::Reactive(signal) => *signal.value(),
+            IntValue::Controlled(var) => *var.value(),
         };
         let inner = context.child(unsafe {
             ffi::widget_new_progress_bar(self.range.0, self.range.1, initial, context.parent.raw())
         });
         let bar = ProgressBar { inner };
-        if let IntValue::Reactive(signal) = self.value {
-            bar.bind_value(&signal);
+        match self.value {
+            IntValue::Static(_) => {}
+            IntValue::Reactive(signal) => bar.bind_value(&signal),
+            IntValue::Controlled(var) => bar.bind_value(&var.signal()),
         }
         bar
     }
@@ -760,6 +777,20 @@ impl Ui {
         ProgressBar { inner }
     }
 
+    /// Create a tabbed container in this layout.
+    pub fn tab_widget(&self) -> TabWidget {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_tab_widget(parent.raw()) });
+        TabWidget { inner }
+    }
+
+    /// Create a painted line chart in this layout.
+    pub fn line_chart(&self) -> LineChart {
+        let parent = self.layout_parent();
+        let inner = self.leaf(unsafe { ffi::widget_new_line_chart(parent.raw()) });
+        LineChart { inner }
+    }
+
     /// Add a stretch spacer to this layout.
     pub fn spacer(&self) {
         let parent = self.layout_parent();
@@ -838,6 +869,31 @@ impl Window {
         Ui {
             kind: ParentKind::Window,
             parent: self.inner.clone(),
+        }
+    }
+}
+
+impl TabWidget {
+    /// Append a tab and return a builder scoped to its page. Widgets created
+    /// through the returned [`Ui`] are owned by the page and released with the
+    /// tab widget.
+    pub fn add_tab(&self, label: impl Into<String>) -> Ui {
+        let page = unsafe {
+            Component::from_raw_child(
+                ffi::tab_widget_add_page(self.inner.raw(), &label.into()),
+                &self.inner,
+            )
+        };
+        Ui {
+            kind: ParentKind::Layout,
+            parent: page,
+        }
+    }
+
+    /// Select the tab at `index` (used by tests and headless smoke runs).
+    pub fn set_current(&self, index: usize) {
+        if self.inner.is_alive() {
+            unsafe { ffi::tab_widget_set_current(self.inner.raw(), index as i32) };
         }
     }
 }

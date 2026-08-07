@@ -28,6 +28,8 @@ fn main() {
     toolbar.add(&new_alarm);
     let settings = Settings::new("Yse", "KAlarmExample");
     let message = Var::new(String::new());
+    let date = Var::new(String::from("2026-08-07"));
+    let time = Var::new(String::from("09:00"));
     let recurrence = Var::new(String::from("Once"));
     let status = Var::new(String::from("Ready"));
     let table = StringTableModel::new(
@@ -62,8 +64,12 @@ fn main() {
         let title = ui.label("New alarm");
         let description = ui.label("Schedule a message for a specific date and time.");
         let message_edit = ui.line_edit("Alarm message");
-        let (date_edit, time_edit) =
-            ui.row(|ui| (ui.date_edit("2026-08-07"), ui.time_edit("09:00")));
+        let (date_edit, time_edit) = ui.row(|ui| {
+            (
+                ui.date_edit(date.value().as_str()),
+                ui.time_edit(time.value().as_str()),
+            )
+        });
         let (recurrence_edit, add, remove, toggle) = ui.row(|ui| {
             (
                 ui.line_edit(""),
@@ -96,11 +102,13 @@ fn main() {
     toggle.set_style_class("quiet");
     status_label.set_style_class("muted");
     message_edit.bind_text_two_way(&message);
+    date_edit.bind_value_two_way(&date);
+    time_edit.bind_value_two_way(&time);
     recurrence_edit.bind_text_two_way(&recurrence);
     status_label.bind_text(&status.signal());
-    add.on_click(clone!(message, date_edit, time_edit, recurrence, alarms, table, status, settings => move |_| {
+    add.on_click(clone!(message, date, time, recurrence, alarms, table, status, settings => move |_| {
         if message.value().trim().is_empty() { status.set(String::from("Enter an alarm message first.")); return; }
-        let when = format!("{} {}", date_edit.value(), time_edit.value());
+        let when = format!("{} {}", date.value(), time.value());
         alarms.borrow_mut().push(vec![message.value().to_string(), when, recurrence.value().to_string(), String::from("Active")]);
         refresh(&table, &alarms.borrow());
         settings.set("alarm_count", &alarms.borrow().len().to_string());

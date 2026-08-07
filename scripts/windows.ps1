@@ -90,6 +90,12 @@ switch ($Command) {
         # No QT_QPA_PLATFORM / YSE_SMOKE: show a real window.
         Invoke-Cargo @('run', '-p', 'yse-ui', '--example', $Name)
     }
+    'run' {
+        if (-not $Name) {
+            throw "run requires a package name, e.g. just windows-run yse-taskmgr"
+        }
+        Invoke-Cargo @('run', '-p', $Name)
+    }
     'check' {
         Invoke-Cargo @('fmt', '--check')
         Invoke-Cargo @('clippy', '--workspace', '--all-targets', '--', '-D', 'warnings')

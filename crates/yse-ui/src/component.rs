@@ -38,6 +38,8 @@ pub struct Component {
     pub text_sink: RefCell<Option<Rc<Sink<String>>>>,
     pub toggled_sink: RefCell<Option<Rc<Sink<bool>>>>,
     pub value_sink: RefCell<Option<Rc<Sink<i32>>>>,
+    pub date_sink: RefCell<Option<Rc<Sink<String>>>>,
+    pub header_sink: RefCell<Option<Rc<Sink<i32>>>>,
 }
 
 impl Component {
@@ -73,6 +75,8 @@ impl Component {
             text_sink: RefCell::new(None),
             toggled_sink: RefCell::new(None),
             value_sink: RefCell::new(None),
+            date_sink: RefCell::new(None),
+            header_sink: RefCell::new(None),
         });
         unsafe { ffi::widget_set_destroyed_cb(ptr, &*this as *const Self as *mut Void) };
         if let Some(parent) = parent {
@@ -177,6 +181,27 @@ impl Component {
         }
     }
 
+    pub fn on_date_value_changed(&self) {
+        if !self.is_alive() {
+            return;
+        }
+        self.check_thread("date value changed");
+        let value = unsafe { ffi::widget_value_text(self.ptr) };
+        if let Some(sink) = self.date_sink.borrow().as_ref() {
+            sink.send(value);
+        }
+    }
+
+    pub fn on_header_clicked(&self, section: i32) {
+        if !self.is_alive() {
+            return;
+        }
+        self.check_thread("header clicked");
+        if let Some(sink) = self.header_sink.borrow().as_ref() {
+            sink.send(section);
+        }
+    }
+
     pub fn on_destroyed(&self) {
         if self.destroyed.replace(true) {
             return;
@@ -242,6 +267,41 @@ impl Component {
             return;
         }
         unsafe { ffi::widget_set_value(self.ptr, value) };
+    }
+
+    pub fn set_widget_visible(&self, visible: bool) {
+        if !self.is_alive() {
+            return;
+        }
+        unsafe { ffi::widget_set_visible(self.ptr, visible) };
+    }
+
+    pub fn set_button_text(&self, text: String) {
+        if !self.is_alive() {
+            return;
+        }
+        unsafe { ffi::button_set_text(self.ptr, &text) };
+    }
+
+    pub fn set_chart_series(&self, points: Vec<f64>) {
+        if !self.is_alive() {
+            return;
+        }
+        unsafe { ffi::line_chart_set_series(self.ptr, points) };
+    }
+
+    pub fn set_chart_series_multi(&self, points: Vec<f64>, series: usize) {
+        if !self.is_alive() {
+            return;
+        }
+        unsafe { ffi::line_chart_set_series_multi(self.ptr, points, series) };
+    }
+
+    pub fn set_date_value(&self, text: String) {
+        if !self.is_alive() {
+            return;
+        }
+        unsafe { ffi::widget_set_value_text(self.ptr, &text) };
     }
 }
 

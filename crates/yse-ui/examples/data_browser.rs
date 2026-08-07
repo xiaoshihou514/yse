@@ -147,13 +147,15 @@ fn main() {
     let filter_var = Var::new(String::new());
     let sort_col = Var::new(0usize);
     let status_var = Var::new(String::from("idle"));
+    let name_var = Var::new(String::new());
+    let score_var = Var::new(String::new());
     let visible_indices: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::new()));
     let undo_stack = Rc::new(UndoStack::new());
     let table = StringTableModel::new(2, vec![String::from("Name"), String::from("Score")]);
 
     // Declarative widget tree: selection and apply handlers are registered on
     // the widgets themselves and are released with the tree.
-    let (view, name_edit, apply, status_label) = window.ui().column(|ui| {
+    let (view, _name_edit, apply, status_label) = window.ui().column(|ui| {
         let view = ui.table_view(&table);
 
         let filter_edit = ui.line_edit("Filter");
@@ -161,27 +163,29 @@ fn main() {
 
         let name_edit = ui.line_edit("Name");
         let score_edit = ui.line_edit("Score");
+        name_edit.bind_text_two_way(&name_var);
+        score_edit.bind_text_two_way(&score_var);
 
         view.on_selection(
-            clone!(records, visible_indices, name_edit, score_edit => move |rows| {
+            clone!(records, visible_indices, name_var, score_var => move |rows| {
                 if let Some(&row) = rows.first()
                     && let Some(&index) = visible_indices.borrow().get(row)
                     && let Some(record) = records.get(index)
                 {
-                    name_edit.set_text(record[0].clone());
-                    score_edit.set_text(record[1].clone());
+                    name_var.set(record[0].clone());
+                    score_var.set(record[1].clone());
                 }
             }),
         );
 
         let apply = ui.button("Apply edit");
         apply.on_click(
-            clone!(records, visible_indices, view, name_edit, score_edit, undo_stack => move |_| {
+            clone!(records, visible_indices, view, name_var, score_var, undo_stack => move |_| {
                 if let Some(&row) = view.selected_rows().first()
                     && let Some(&index) = visible_indices.borrow().get(row)
                     && let Some(old) = records.get(index)
                 {
-                    let new = vec![name_edit.text(), score_edit.text()];
+                    let new = vec![name_var.value().to_string(), score_var.value().to_string()];
                     if new != old {
                         undo_stack.push(Box::new(SetRow {
                             records: records.clone(),
@@ -304,8 +308,8 @@ fn main() {
                 refresh_view(&records, &filter_var.value(), 1, &table, &visible_indices);
                 app.after(100, clone!(view => move || {
                     view.select(0);
-                    app.after(80, clone!(name_edit, apply => move || {
-                        name_edit.set_text(String::from("Grace Hopper X"));
+                    app.after(80, clone!(name_var, apply => move || {
+                        name_var.set(String::from("Grace Hopper X"));
                         apply.click();
                         app.after(80, clone!(undo_action => move || {
                             undo_action.trigger();

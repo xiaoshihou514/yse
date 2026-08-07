@@ -50,7 +50,9 @@ struct Widget {
   void* toggled_cb_data = nullptr;
   void* value_cb_data = nullptr;
   void* selection_cb_data = nullptr;
+  void* header_cb_data = nullptr;
   // 0 = none, 1 = QComboBox, 2 = QSpinBox, 3 = QSlider, 4 = QProgressBar.
+  // 5 = QDateTimeEdit, 6 = QDateEdit, 7 = QTimeEdit.
   // `widget_value` / `widget_set_value` dispatch on this tag.
   int value_kind = 0;
   QMetaObject::Connection destroyed_connection;
@@ -59,6 +61,7 @@ struct Widget {
   QMetaObject::Connection toggled_connection;
   QMetaObject::Connection value_connection;
   QMetaObject::Connection selection_connection;
+  QMetaObject::Connection header_connection;
 
   Widget(QWidget* q_, bool owned_, bool alive_, void*)
       : q(q_), owned(owned_), alive(alive_) {}
@@ -143,11 +146,17 @@ Widget* widget_new_datetime_edit(rust::Str iso_datetime, Widget* parent);
 Widget* widget_new_date_edit(rust::Str iso_date, Widget* parent);
 Widget* widget_new_time_edit(rust::Str iso_time, Widget* parent);
 Widget* widget_new_disk_map(Widget* parent);
+Widget* widget_new_line_chart(Widget* parent);
+void line_chart_set_series(Widget* w, rust::Vec<double> points);
+void line_chart_set_series_multi(Widget* w, rust::Vec<double> points, size_t series);
 Widget* widget_new_checkbox(rust::Str text, Widget* parent);
 Widget* widget_new_combo(rust::Vec<rust::String> items, Widget* parent);
 Widget* widget_new_spin_box(int min, int max, int value, Widget* parent);
 Widget* widget_new_slider(int min, int max, int value, Widget* parent);
 Widget* widget_new_progress_bar(int min, int max, int value, Widget* parent);
+Widget* widget_new_tab_widget(Widget* parent);
+Widget* tab_widget_add_page(Widget* tabs, rust::Str label);
+void tab_widget_set_current(Widget* tabs, int index);
 Widget* widget_new_row(Widget* parent);
 Widget* widget_new_column(Widget* parent);
 Widget* widget_new_grid(Widget* parent);
@@ -209,6 +218,10 @@ void settings_sync(Settings* s);
 // List view selection --------------------------------------------------------
 
 void view_set_selection_cb(Widget* view, Void* data);
+void view_set_header_clicked_cb(Widget* view, Void* data);
+void view_click_header(Widget* view, int section);
+void view_set_column_width(Widget* view, int column, int width);
+void view_stretch_last_section(Widget* view, bool stretch);
 rust::Vec<int32_t> view_selected_rows(Widget* view);
 void view_select_row(Widget* view, int row);
 void view_clear_selection(Widget* view);
@@ -235,10 +248,15 @@ void combo_set_current_text(Widget* w, rust::Str text);
 int widget_value(Widget* w);
 void widget_set_value(Widget* w, int value);
 void widget_set_value_changed_cb(Widget* w, Void* data);
+void widget_set_date_value_changed_cb(Widget* w, Void* data);
+rust::String widget_value_text(Widget* w);
+void widget_set_value_text(Widget* w, rust::Str text);
 void spin_box_set_range(Widget* w, int min, int max);
 void slider_set_range(Widget* w, int min, int max);
 void progress_set_range(Widget* w, int min, int max);
 void button_click(Widget* w);
+void button_set_text(Widget* w, rust::Str text);
+rust::String button_text(Widget* w);
 
 // Actions --------------------------------------------------------------------
 

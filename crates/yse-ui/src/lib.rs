@@ -82,6 +82,12 @@ mod bridge {
             value: i32,
             parent: *mut Widget,
         ) -> *mut Widget;
+        unsafe fn widget_new_tab_widget(parent: *mut Widget) -> *mut Widget;
+        unsafe fn tab_widget_add_page(tabs: *mut Widget, label: &str) -> *mut Widget;
+        unsafe fn tab_widget_set_current(tabs: *mut Widget, index: i32);
+        unsafe fn widget_new_line_chart(parent: *mut Widget) -> *mut Widget;
+        unsafe fn line_chart_set_series(w: *mut Widget, points: Vec<f64>);
+        unsafe fn line_chart_set_series_multi(w: *mut Widget, points: Vec<f64>, series: usize);
         unsafe fn widget_new_row(parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_column(parent: *mut Widget) -> *mut Widget;
         unsafe fn widget_new_grid(parent: *mut Widget) -> *mut Widget;
@@ -120,10 +126,15 @@ mod bridge {
         unsafe fn widget_value(w: *mut Widget) -> i32;
         unsafe fn widget_set_value(w: *mut Widget, value: i32);
         unsafe fn widget_set_value_changed_cb(w: *mut Widget, data: *mut Void);
+        unsafe fn widget_set_date_value_changed_cb(w: *mut Widget, data: *mut Void);
+        unsafe fn widget_value_text(w: *mut Widget) -> String;
+        unsafe fn widget_set_value_text(w: *mut Widget, text: &str);
         unsafe fn spin_box_set_range(w: *mut Widget, min: i32, max: i32);
         unsafe fn slider_set_range(w: *mut Widget, min: i32, max: i32);
         unsafe fn progress_set_range(w: *mut Widget, min: i32, max: i32);
         unsafe fn button_click(w: *mut Widget);
+        unsafe fn button_set_text(w: *mut Widget, text: &str);
+        unsafe fn button_text(w: *mut Widget) -> String;
         unsafe fn action_new(text: &str, parent: *mut Widget) -> *mut Action;
         unsafe fn action_drop(a: *mut Action);
         unsafe fn action_set_text(a: *mut Action, text: &str);
@@ -155,6 +166,10 @@ mod bridge {
         unsafe fn table_column_count(m: *mut TableModel) -> i32;
         unsafe fn table_text(m: *mut TableModel, row: i32, column: i32) -> String;
         unsafe fn view_set_selection_cb(view: *mut Widget, data: *mut Void);
+        unsafe fn view_set_header_clicked_cb(view: *mut Widget, data: *mut Void);
+        unsafe fn view_click_header(view: *mut Widget, section: i32);
+        unsafe fn view_set_column_width(view: *mut Widget, column: i32, width: i32);
+        unsafe fn view_stretch_last_section(view: *mut Widget, stretch: bool);
         unsafe fn view_selected_rows(view: *mut Widget) -> Vec<i32>;
         unsafe fn view_select_row(view: *mut Widget, row: i32);
         unsafe fn view_clear_selection(view: *mut Widget);
@@ -199,6 +214,8 @@ mod bridge {
         unsafe fn on_toggled(data: *mut Void);
         unsafe fn on_widget_destroyed(data: *mut Void);
         unsafe fn on_value_changed(data: *mut Void);
+        unsafe fn on_date_value_changed(data: *mut Void);
+        unsafe fn on_header_clicked(data: *mut Void, section: i32);
         unsafe fn on_gui_scheduled(task: *mut Void);
         unsafe fn on_app_timer(task: *mut Void);
         unsafe fn on_action_triggered(data: *mut Void);
@@ -227,6 +244,18 @@ unsafe fn on_widget_destroyed(data: *mut bridge::Void) {
 
 unsafe fn on_value_changed(data: *mut bridge::Void) {
     catch_callback("value changed", || unsafe { callback::value_changed(data) });
+}
+
+unsafe fn on_date_value_changed(data: *mut bridge::Void) {
+    catch_callback("date value changed", || unsafe {
+        callback::date_value_changed(data)
+    });
+}
+
+unsafe fn on_header_clicked(data: *mut bridge::Void, section: i32) {
+    catch_callback("header clicked", || unsafe {
+        callback::header_clicked(data, section)
+    });
 }
 
 unsafe fn on_gui_scheduled(task: *mut bridge::Void) {
@@ -541,6 +570,25 @@ macro_rules! widget_wrapper {
         }
 
         impl $name {
+            /// Show or hide the widget.
+            pub fn set_visible(&self, visible: bool) {
+                if self.inner.is_alive() {
+                    unsafe { ffi::widget_set_visible(self.inner.raw(), visible) };
+                }
+            }
+
+            /// Bind the visibility to a signal. The binding lives in the
+            /// component's owner and is released when the widget is destroyed.
+            pub fn bind_visible(&self, signal: &Signal<bool>) {
+                let weak = Rc::downgrade(&self.inner);
+                let subscription = signal.observe(move |visible| {
+                    if let Some(this) = weak.upgrade() {
+                        this.set_widget_visible(*visible);
+                    }
+                });
+                self.inner.owner.borrow_mut().add(subscription);
+            }
+
             /// Escape hatch: the underlying Qt `QWidget` pointer.
             pub fn qobject_ptr(&self) -> *mut Void {
                 self.inner.raw() as *mut Void
@@ -611,6 +659,42 @@ impl Row {
         LineEdit { inner }
     }
 
+    /// Create a native Qt date/time editor with a calendar popup.
+    pub fn date_time_edit(&self, iso_datetime: impl Into<String>) -> DateTimeEdit {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_datetime_edit(&iso_datetime.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        DateTimeEdit { inner }
+    }
+
+    /// Create a native Qt calendar date editor.
+    pub fn date_edit(&self, iso_date: impl Into<String>) -> DateEdit {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_date_edit(&iso_date.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        DateEdit { inner }
+    }
+
+    /// Create a native Qt time editor with hour and minute spin controls.
+    pub fn time_edit(&self, iso_time: impl Into<String>) -> TimeEdit {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_time_edit(&iso_time.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        TimeEdit { inner }
+    }
+
     /// Create a checkbox in this row.
     pub fn checkbox(&self, text: impl Into<String>) -> CheckBox {
         let inner = unsafe {
@@ -676,6 +760,24 @@ impl Row {
         };
         unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
         ProgressBar { inner }
+    }
+
+    /// Create a tabbed container in this column.
+    pub fn tab_widget(&self) -> TabWidget {
+        let inner = unsafe {
+            Component::from_raw_child(ffi::widget_new_tab_widget(self.inner.raw()), &self.inner)
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        TabWidget { inner }
+    }
+
+    /// Create a painted line chart in this column.
+    pub fn line_chart(&self) -> LineChart {
+        let inner = unsafe {
+            Component::from_raw_child(ffi::widget_new_line_chart(self.inner.raw()), &self.inner)
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        LineChart { inner }
     }
 
     /// Create a list view bound to `model`.
@@ -911,6 +1013,60 @@ impl Column {
             self.inner.adopt_child(widget.component());
         }
     }
+
+    /// Create a tabbed container in this column.
+    pub fn tab_widget(&self) -> TabWidget {
+        let inner = unsafe {
+            Component::from_raw_child(ffi::widget_new_tab_widget(self.inner.raw()), &self.inner)
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        TabWidget { inner }
+    }
+
+    /// Create a painted line chart in this column.
+    pub fn line_chart(&self) -> LineChart {
+        let inner = unsafe {
+            Component::from_raw_child(ffi::widget_new_line_chart(self.inner.raw()), &self.inner)
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        LineChart { inner }
+    }
+
+    /// Create a native Qt date/time editor with a calendar popup.
+    pub fn date_time_edit(&self, iso_datetime: impl Into<String>) -> DateTimeEdit {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_datetime_edit(&iso_datetime.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        DateTimeEdit { inner }
+    }
+
+    /// Create a native Qt calendar date editor.
+    pub fn date_edit(&self, iso_date: impl Into<String>) -> DateEdit {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_date_edit(&iso_date.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        DateEdit { inner }
+    }
+
+    /// Create a native Qt time editor with hour and minute spin controls.
+    pub fn time_edit(&self, iso_time: impl Into<String>) -> TimeEdit {
+        let inner = unsafe {
+            Component::from_raw_child(
+                ffi::widget_new_time_edit(&iso_time.into(), self.inner.raw()),
+                &self.inner,
+            )
+        };
+        unsafe { ffi::layout_add(self.inner.raw(), inner.raw()) };
+        TimeEdit { inner }
+    }
 }
 
 widget_wrapper!(Column);
@@ -1111,6 +1267,30 @@ impl Button {
             unsafe { ffi::button_click(self.inner.raw()) };
         }
     }
+
+    /// Change the button's label.
+    pub fn set_text(&self, text: impl Into<String>) {
+        if self.inner.is_alive() {
+            unsafe { ffi::button_set_text(self.inner.raw(), &text.into()) };
+        }
+    }
+
+    /// Bind the button's label to a signal. The binding lives in the button's
+    /// owner and is released with the widget tree.
+    pub fn bind_text(&self, signal: &Signal<String>) {
+        let weak = Rc::downgrade(&self.inner);
+        let subscription = signal.observe(move |text| {
+            if let Some(this) = weak.upgrade() {
+                this.set_button_text((*text).clone());
+            }
+        });
+        self.inner.owner.borrow_mut().add(subscription);
+    }
+
+    /// The button's current label.
+    pub fn text(&self) -> String {
+        unsafe { ffi::button_text(self.inner.raw()) }
+    }
 }
 
 widget_wrapper!(Button);
@@ -1214,6 +1394,53 @@ impl DateTimeEdit {
     }
 }
 
+macro_rules! date_value_bindings {
+    ($name:ident) => {
+        impl $name {
+            /// A stream of user value changes carrying the ISO text value.
+            pub fn value_changed(&self) -> EventStream<String> {
+                if self.inner.date_sink.borrow().is_none() {
+                    unsafe {
+                        ffi::widget_set_date_value_changed_cb(
+                            self.inner.raw(),
+                            &*self.inner as *const Component as *mut Void,
+                        );
+                    }
+                    *self.inner.date_sink.borrow_mut() = Some(Rc::new(Sink::new()));
+                }
+                self.inner.date_sink.borrow().as_ref().unwrap().stream()
+            }
+
+            /// Bind the value to a signal. The binding lives in the widget's
+            /// owner and is released with the widget tree.
+            pub fn bind_value(&self, signal: &Signal<String>) {
+                let weak = Rc::downgrade(&self.inner);
+                let subscription = signal.observe(move |value| {
+                    if let Some(this) = weak.upgrade() {
+                        this.set_date_value((*value).clone());
+                    }
+                });
+                self.inner.owner.borrow_mut().add(subscription);
+            }
+
+            /// Two-way bind the value to a `Var`, like Laminar's controlled
+            /// input pattern.
+            pub fn bind_value_two_way(&self, var: &Var<String>) {
+                self.bind_value(&var.signal());
+                let var = var.clone();
+                let weak = Rc::downgrade(&self.inner);
+                let subscription = self.value_changed().observe(move |value| {
+                    if weak.upgrade().is_some() {
+                        var.set((*value).clone());
+                    }
+                });
+                self.inner.owner.borrow_mut().add(subscription);
+            }
+        }
+    };
+}
+
+date_value_bindings!(DateTimeEdit);
 widget_wrapper!(DateTimeEdit);
 
 /// A Qt calendar date editor with a popup calendar.
@@ -1235,6 +1462,7 @@ impl DateEdit {
     }
 }
 
+date_value_bindings!(DateEdit);
 widget_wrapper!(DateEdit);
 
 /// A Qt time editor with dedicated hour and minute spin controls.
@@ -1256,6 +1484,7 @@ impl TimeEdit {
     }
 }
 
+date_value_bindings!(TimeEdit);
 widget_wrapper!(TimeEdit);
 
 /// A painted disk-usage overview that displays proportional child segments.
@@ -1425,6 +1654,27 @@ impl ComboBox {
     }
 }
 
+macro_rules! value_two_way {
+    ($name:ident) => {
+        impl $name {
+            /// Two-way bind the value to a `Var`, like Laminar's controlled
+            /// input pattern.
+            pub fn bind_value_two_way(&self, var: &Var<i32>) {
+                self.bind_value(&var.signal());
+                let var = var.clone();
+                let weak = Rc::downgrade(&self.inner);
+                let subscription = self.value_changed().observe(move |value| {
+                    if weak.upgrade().is_some() {
+                        var.set(*value);
+                    }
+                });
+                self.inner.owner.borrow_mut().add(subscription);
+            }
+        }
+    };
+}
+
+value_two_way!(ComboBox);
 widget_wrapper!(ComboBox);
 
 /// A numeric spinner.
@@ -1490,6 +1740,7 @@ impl SpinBox {
     }
 }
 
+value_two_way!(SpinBox);
 widget_wrapper!(SpinBox);
 
 /// A horizontal slider.
@@ -1555,6 +1806,7 @@ impl Slider {
     }
 }
 
+value_two_way!(Slider);
 widget_wrapper!(Slider);
 
 /// A progress bar.
@@ -1595,6 +1847,67 @@ impl ProgressBar {
 }
 
 widget_wrapper!(ProgressBar);
+
+/// A tabbed container. Each tab page is a [`crate::Ui`] whose widgets are
+/// released with the tab widget.
+pub struct TabWidget {
+    inner: Rc<Component>,
+}
+
+widget_wrapper!(TabWidget);
+
+/// A lightweight painted line chart for time-series data (e.g. CPU/memory
+/// history). Feed it a fresh series on every tick; the widget autoscales.
+pub struct LineChart {
+    inner: Rc<Component>,
+}
+
+impl LineChart {
+    /// Replace the displayed series with a single line.
+    pub fn set_series(&self, points: Vec<f64>) {
+        if self.inner.is_alive() {
+            unsafe { ffi::line_chart_set_series(self.inner.raw(), points) };
+        }
+    }
+
+    /// Replace the displayed series with `series` overlaid lines. `points` is
+    /// row-major: every `points.len() / series` values form one line.
+    pub fn set_series_multi(&self, points: Vec<f64>, series: usize) {
+        if self.inner.is_alive() {
+            unsafe { ffi::line_chart_set_series_multi(self.inner.raw(), points, series) };
+        }
+    }
+
+    /// Bind the displayed series to a signal. The binding lives in the
+    /// chart's owner and is released with the widget tree.
+    pub fn bind_series(&self, signal: &Signal<Vec<f64>>) {
+        let weak = Rc::downgrade(&self.inner);
+        let subscription = signal.observe(move |points| {
+            if let Some(this) = weak.upgrade() {
+                this.set_chart_series((*points).clone());
+            }
+        });
+        self.inner.owner.borrow_mut().add(subscription);
+    }
+
+    /// Bind several overlaid series to a signal of per-line point vectors.
+    pub fn bind_series_multi(&self, signal: &Signal<Vec<Vec<f64>>>) {
+        let weak = Rc::downgrade(&self.inner);
+        let subscription = signal.observe(move |series| {
+            if let Some(this) = weak.upgrade() {
+                let count = series.len();
+                let mut flat = Vec::new();
+                for line in series {
+                    flat.extend_from_slice(line);
+                }
+                this.set_chart_series_multi(flat, count);
+            }
+        });
+        self.inner.owner.borrow_mut().add(subscription);
+    }
+}
+
+widget_wrapper!(LineChart);
 
 /// A QAction: a command that can be triggered from a menu, a toolbar, or a
 /// shortcut.
@@ -1975,6 +2288,7 @@ struct TableState {
     table: *mut ffi::TableModel,
     list: Rc<ListModel<Vec<String>>>,
     subscription: RefCell<Option<Subscription>>,
+    bindings: RefCell<Vec<Subscription>>,
 }
 
 impl Drop for TableState {
@@ -2039,8 +2353,19 @@ impl StringTableModel {
                 table,
                 list,
                 subscription: RefCell::new(Some(subscription)),
+                bindings: RefCell::new(Vec::new()),
             }),
         }
+    }
+
+    /// Bind the table's rows to a signal: every emission replaces all rows.
+    /// The subscription lives as long as the model.
+    pub fn bind_rows(&self, signal: &Signal<Vec<Vec<String>>>) {
+        let list = self.state.list.clone();
+        let subscription = signal.observe(move |rows| {
+            list.replace_all((*rows).clone());
+        });
+        self.state.bindings.borrow_mut().push(subscription);
     }
 
     /// Number of rows in the C++ mirror.
@@ -2111,6 +2436,49 @@ impl TableView {
     pub fn set_visible(&self, visible: bool) {
         if self.inner.is_alive() {
             unsafe { ffi::widget_set_visible(self.inner.raw(), visible) };
+        }
+    }
+
+    /// A stream of header clicks, each carrying the clicked column index.
+    /// Use it to implement click-to-sort columns.
+    pub fn header_clicked(&self) -> EventStream<usize> {
+        if self.inner.header_sink.borrow().is_none() {
+            unsafe {
+                ffi::view_set_header_clicked_cb(
+                    self.inner.raw(),
+                    &*self.inner as *const Component as *mut Void,
+                );
+            }
+            *self.inner.header_sink.borrow_mut() = Some(Rc::new(Sink::new()));
+        }
+        self.inner
+            .header_sink
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .stream()
+            .map(|section| *section as usize)
+    }
+
+    /// Simulate a click on the column header `section` (used by tests and
+    /// headless smoke runs).
+    pub fn click_header(&self, section: usize) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_click_header(self.inner.raw(), section as i32) };
+        }
+    }
+
+    /// Set the pixel width of `column`.
+    pub fn set_column_width(&self, column: usize, width: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_set_column_width(self.inner.raw(), column as i32, width) };
+        }
+    }
+
+    /// Let the last column fill the remaining view width.
+    pub fn stretch_last_section(&self, stretch: bool) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_stretch_last_section(self.inner.raw(), stretch) };
         }
     }
 

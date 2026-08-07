@@ -20,6 +20,7 @@ using Vec = ::rust::Vec<T>;
 #include <QtCore/QMetaObject>
 #include <QtGui/QFont>
 #include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
 #include <QtCore/QVector>
 #include <QTimer>
 #include <QtGui/QAction>
@@ -30,6 +31,7 @@ using Vec = ::rust::Vec<T>;
 #include <QtWidgets/QDateTimeEdit>
 #include <QtWidgets/QDateEdit>
 #include <QtWidgets/QFileDialog>
+#include <QtWidgets/QHeaderView>
 #include <QItemSelectionModel>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QHBoxLayout>
@@ -46,6 +48,7 @@ using Vec = ::rust::Vec<T>;
 #include <QtWidgets/QSpinBox>
 #include <QtWidgets/QSizePolicy>
 #include <QtWidgets/QStyle>
+#include <QtWidgets/QTabWidget>
 #include <QtWidgets/QToolBar>
 #include <QtWidgets/QTimeEdit>
 #include <QtWidgets/QVBoxLayout>
@@ -156,6 +159,96 @@ protected:
 
 private:
   QVector<Segment> segments_;
+};
+
+class LineChartWidget final : public QWidget {
+public:
+  explicit LineChartWidget(QWidget* parent) : QWidget(parent) {
+    setMinimumHeight(140);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  }
+
+  void setSeries(rust::Vec<double> points) {
+    series_.clear();
+    if (!points.empty()) {
+      QVector<double> single;
+      single.reserve(points.size());
+      for (double point : points) {
+        single.push_back(point);
+      }
+      series_.push_back(single);
+    }
+    update();
+  }
+
+  void setSeriesMulti(rust::Vec<double> points, size_t series) {
+    series_.clear();
+    if (series == 0) {
+      update();
+      return;
+    }
+    const size_t chunk = points.size() / series;
+    for (size_t index = 0; index < series; ++index) {
+      QVector<double> single;
+      single.reserve(chunk);
+      for (size_t offset = index * chunk; offset < (index + 1) * chunk; ++offset) {
+        const double point = points[offset];
+        single.push_back(point);
+      }
+      series_.push_back(single);
+    }
+    update();
+  }
+
+protected:
+  void paintEvent(QPaintEvent*) override {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QRectF bounds = rect().adjusted(6, 6, -6, -6);
+    painter.setPen(palette().color(QPalette::Mid));
+    painter.drawRect(bounds);
+
+    double minValue = 0.0;
+    double maxValue = 100.0;
+    for (const auto& points : series_) {
+      for (double point : points) {
+        minValue = std::min(minValue, point);
+        maxValue = std::max(maxValue, point);
+      }
+    }
+    if (maxValue - minValue < 1.0) {
+      maxValue = minValue + 1.0;
+    }
+
+    const QColor palette_[8] = {
+      QColor("#3daee9"), QColor("#8e7cc3"), QColor("#f6c344"), QColor("#ef6c6c"),
+      QColor("#42b883"), QColor("#e67e22"), QColor("#b48ead"), QColor("#7f8c8d"),
+    };
+    painter.setClipping(true);
+    painter.setClipRect(bounds.adjusted(1, 1, -1, -1));
+    for (int index = 0; index < series_.size(); ++index) {
+      const auto& points = series_[index];
+      if (points.size() < 2) {
+        continue;
+      }
+      painter.setPen(QPen(palette_[index % 8], 2));
+      QPainterPath path;
+      for (int point = 0; point < points.size(); ++point) {
+        const double x = bounds.left() + bounds.width() * point / (points.size() - 1);
+        const double y = bounds.bottom() -
+          (points[point] - minValue) / (maxValue - minValue) * bounds.height();
+        if (point == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      painter.drawPath(path);
+    }
+  }
+
+private:
+  QVector<QVector<double>> series_;
 };
 
 QApplication* ensure_app()
@@ -280,7 +373,9 @@ Widget* widget_new_datetime_edit(rust::Str iso_datetime, Widget* parent)
   edit->setDisplayFormat("ddd, d MMM yyyy  HH:mm");
   const auto value = QDateTime::fromString(QString::fromUtf8(iso_datetime.data(), iso_datetime.size()), Qt::ISODate);
   edit->setDateTime(value.isValid() ? value : QDateTime::currentDateTime());
-  return new_child(edit, parent);
+  auto* widget = new_child(edit, parent);
+  widget->value_kind = 5;
+  return widget;
 }
 
 Widget* widget_new_date_edit(rust::Str iso_date, Widget* parent)
@@ -290,7 +385,9 @@ Widget* widget_new_date_edit(rust::Str iso_date, Widget* parent)
   edit->setDisplayFormat("ddd, d MMM yyyy");
   const auto value = QDate::fromString(QString::fromUtf8(iso_date.data(), iso_date.size()), Qt::ISODate);
   edit->setDate(value.isValid() ? value : QDate::currentDate());
-  return new_child(edit, parent);
+  auto* widget = new_child(edit, parent);
+  widget->value_kind = 6;
+  return widget;
 }
 
 Widget* widget_new_time_edit(rust::Str iso_time, Widget* parent)
@@ -300,7 +397,9 @@ Widget* widget_new_time_edit(rust::Str iso_time, Widget* parent)
   edit->setWrapping(true);
   const auto value = QTime::fromString(QString::fromUtf8(iso_time.data(), iso_time.size()), "HH:mm");
   edit->setTime(value.isValid() ? value : QTime::currentTime());
-  return new_child(edit, parent);
+  auto* widget = new_child(edit, parent);
+  widget->value_kind = 7;
+  return widget;
 }
 
 Widget* widget_new_disk_map(Widget* parent)
@@ -363,6 +462,33 @@ Widget* widget_new_progress_bar(int min, int max, int value, Widget* parent)
   auto* widget = new_child(bar, parent);
   widget->value_kind = 4;
   return widget;
+}
+
+Widget* widget_new_tab_widget(Widget* parent)
+{
+  return new_child(new QTabWidget(parent != nullptr ? parent->q : nullptr), parent);
+}
+
+Widget* tab_widget_add_page(Widget* tabs, rust::Str label)
+{
+  auto* page = new QWidget(static_cast<QTabWidget*>(tabs->q));
+  auto* layout = new QVBoxLayout(page);
+  layout->setContentsMargins(6, 6, 6, 6);
+  static_cast<QTabWidget*>(tabs->q)->addTab(
+    page, QString::fromUtf8(label.data(), label.size()));
+  return new_child(page, tabs);
+}
+
+void tab_widget_set_current(Widget* tabs, int index)
+{
+  if (tabs->alive && tabs->q != nullptr) {
+    static_cast<QTabWidget*>(tabs->q)->setCurrentIndex(index);
+  }
+}
+
+Widget* widget_new_line_chart(Widget* parent)
+{
+  return new_child(new LineChartWidget(parent != nullptr ? parent->q : nullptr), parent);
 }
 
 Widget* widget_new_row(Widget* parent)
@@ -455,12 +581,14 @@ void widget_drop(Widget* w)
   QObject::disconnect(w->toggled_connection);
   QObject::disconnect(w->value_connection);
   QObject::disconnect(w->selection_connection);
+  QObject::disconnect(w->header_connection);
   w->destroyed_cb_data = nullptr;
   w->clicked_cb_data = nullptr;
   w->text_changed_cb_data = nullptr;
   w->toggled_cb_data = nullptr;
   w->value_cb_data = nullptr;
   w->selection_cb_data = nullptr;
+  w->header_cb_data = nullptr;
   if (w->owned && w->alive) {
     // Windows own their QWidget; children are deleted by their Qt parent.
     delete w->q;
@@ -626,6 +754,20 @@ void disk_map_set_segments(Widget* w, rust::Vec<rust::String> labels, rust::Vec<
   }
 }
 
+void line_chart_set_series(Widget* w, rust::Vec<double> points)
+{
+  if (w->alive && w->q != nullptr) {
+    static_cast<LineChartWidget*>(w->q)->setSeries(std::move(points));
+  }
+}
+
+void line_chart_set_series_multi(Widget* w, rust::Vec<double> points, size_t series)
+{
+  if (w->alive && w->q != nullptr) {
+    static_cast<LineChartWidget*>(w->q)->setSeriesMulti(std::move(points), series);
+  }
+}
+
 void button_set_icon(Widget* w, rust::Str theme_name)
 {
   if (w->alive && w->q != nullptr) {
@@ -754,6 +896,83 @@ void widget_set_value_changed_cb(Widget* w, Void* data)
   }
 }
 
+void widget_set_date_value_changed_cb(Widget* w, Void* data)
+{
+  QObject::disconnect(w->value_connection);
+  w->value_cb_data = static_cast<void*>(data);
+  const auto fire = [w] {
+    if (w->value_cb_data != nullptr) {
+      yse_ui::on_date_value_changed(static_cast<yse_ui::Void*>(w->value_cb_data));
+    }
+  };
+  switch (w->value_kind) {
+    case 5:
+      w->value_connection = QObject::connect(
+        static_cast<QDateTimeEdit*>(w->q),
+        &QDateTimeEdit::dateTimeChanged,
+        w->q,
+        fire);
+      break;
+    case 6:
+      w->value_connection = QObject::connect(
+        static_cast<QDateEdit*>(w->q),
+        &QDateEdit::dateChanged,
+        w->q,
+        fire);
+      break;
+    case 7:
+      w->value_connection = QObject::connect(
+        static_cast<QTimeEdit*>(w->q),
+        &QTimeEdit::timeChanged,
+        w->q,
+        fire);
+      break;
+    default:
+      break;
+  }
+}
+
+rust::String widget_value_text(Widget* w)
+{
+  if (w->alive && w->q != nullptr) {
+    switch (w->value_kind) {
+      case 5:
+        return rust::String(
+          static_cast<QDateTimeEdit*>(w->q)->dateTime().toString(Qt::ISODate).toUtf8().constData());
+      case 6:
+        return rust::String(
+          static_cast<QDateEdit*>(w->q)->date().toString(Qt::ISODate).toUtf8().constData());
+      case 7:
+        return rust::String(
+          static_cast<QTimeEdit*>(w->q)->time().toString("HH:mm").toUtf8().constData());
+      default:
+        break;
+    }
+  }
+  return rust::String();
+}
+
+void widget_set_value_text(Widget* w, rust::Str text)
+{
+  if (w->alive && w->q != nullptr) {
+    const QString value = QString::fromUtf8(text.data(), text.size());
+    switch (w->value_kind) {
+      case 5:
+        static_cast<QDateTimeEdit*>(w->q)->setDateTime(
+          QDateTime::fromString(value, Qt::ISODate));
+        break;
+      case 6:
+        static_cast<QDateEdit*>(w->q)->setDate(QDate::fromString(value, Qt::ISODate));
+        break;
+      case 7:
+        static_cast<QTimeEdit*>(w->q)->setTime(QTime::fromString(value, "HH:mm"));
+        break;
+      default:
+        break;
+    }
+  }
+}
+
 void spin_box_set_range(Widget* w, int min, int max)
 {
   if (w->alive && w->q != nullptr && w->value_kind == 2) {
@@ -780,6 +999,22 @@ void button_click(Widget* w)
   if (w->alive && w->q != nullptr) {
     static_cast<QPushButton*>(w->q)->click();
   }
+}
+
+void button_set_text(Widget* w, rust::Str text)
+{
+  if (w->alive && w->q != nullptr) {
+    static_cast<QPushButton*>(w->q)->setText(
+      QString::fromUtf8(text.data(), text.size()));
+  }
+}
+
+rust::String button_text(Widget* w)
+{
+  if (w->alive && w->q != nullptr) {
+    return rust::String(static_cast<QPushButton*>(w->q)->text().toUtf8().constData());
+  }
+  return rust::String();
 }
 
 Dialog* dialog_message_new(Widget* parent, rust::Str title, rust::Str text, int buttons)

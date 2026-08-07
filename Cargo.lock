@@ -581,6 +581,15 @@ name = "yse-model"
 version = "0.1.0"
 
 [[package]]
+name = "yse-taskmgr"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "windows-sys",
+ "yse",
+]
+
+[[package]]
 name = "yse-tool"
 version = "0.1.0"
 
