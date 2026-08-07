@@ -42,9 +42,10 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 pub use timing::{ManualTimer, Timer};
 pub use undo::{Command, UndoStack};
 
@@ -55,6 +56,15 @@ pub use undo::{Command, UndoStack};
 pub trait Scheduler {
     /// Schedule `task` for execution.
     fn schedule(&self, task: Box<dyn FnOnce() + Send>);
+
+    /// Schedule a closure, boxing it for you.
+    fn schedule_fn<F>(&self, f: F)
+    where
+        Self: Sized,
+        F: FnOnce() + Send + 'static,
+    {
+        self.schedule(Box::new(f));
+    }
 }
 
 /// A scheduler that runs tasks immediately on the current thread.
@@ -650,7 +660,7 @@ impl Default for CancellationToken {
     }
 }
 
-type DeliverySlot = Box<dyn FnOnce(Box<dyn Any + Send>)>;
+type DeliverySlot = Box<dyn FnMut(Box<dyn Any + Send>)>;
 
 thread_local! {
     static DELIVERY_SLOTS: RefCell<HashMap<u64, DeliverySlot>> = RefCell::new(HashMap::new());
@@ -737,7 +747,7 @@ where
         scheduler.schedule(Box::new(move || {
             let value: Box<dyn Any + Send> = Box::new(value);
             DELIVERY_SLOTS.with(|slots| {
-                if let Some(slot) = slots.borrow_mut().remove(&id) {
+                if let Some(mut slot) = slots.borrow_mut().remove(&id) {
                     slot(value);
                 }
             });
@@ -747,6 +757,132 @@ where
     Task {
         id,
         token,
+        sink,
+        handle: RefCell::new(Some(handle)),
+    }
+}
+
+/// Handle to a repeating background sampler started by [`spawn_interval`].
+/// Each sample is delivered to the thread that spawned it through the given
+/// [`Scheduler`]; subscribe with [`Interval::results`].
+pub struct Interval<T> {
+    id: u64,
+    token: CancellationToken,
+    stop: Arc<AtomicBool>,
+    sink: Rc<Sink<T>>,
+    handle: RefCell<Option<JoinHandle<()>>>,
+}
+
+impl<T> Interval<T>
+where
+    T: 'static,
+{
+    /// Request cancellation; the worker stops at the next tick boundary.
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+        self.token.cancel();
+    }
+
+    /// A stream of samples, delivered on the graph's thread.
+    pub fn results(&self) -> EventStream<T> {
+        self.sink.stream()
+    }
+}
+
+impl<T> Drop for Interval<T> {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        self.token.cancel();
+        DELIVERY_SLOTS.with(|slots| {
+            slots.borrow_mut().remove(&self.id);
+        });
+        // Detach the worker: it observes the stop flag within one tick.
+        self.handle.borrow_mut().take();
+    }
+}
+
+/// Run `f` on a background thread every `interval`, delivering each sample
+/// onto the thread that owns the reactive graph via `scheduler`.
+///
+/// `f` receives a [`CancellationToken`] so it can abort cooperatively.
+/// Deliveries are coalesced: if the previous sample is still pending on the
+/// graph thread when the next one is ready, the pending one is dropped rather
+/// than queueing an unbounded backlog. The scheduler must run tasks on the
+/// spawning thread; otherwise delivery is safely discarded.
+pub fn spawn_interval<F, T>(
+    scheduler: Arc<dyn Scheduler + Send + Sync>,
+    interval: Duration,
+    mut f: F,
+) -> Interval<T>
+where
+    T: 'static + Send,
+    F: FnMut(&CancellationToken) -> T + Send + 'static,
+{
+    static NEXT_INTERVAL_ID: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT_INTERVAL_ID.fetch_add(1, Ordering::Relaxed);
+
+    let sink = Rc::new(Sink::new());
+    let slot: DeliverySlot = {
+        let sink = sink.clone();
+        Box::new(move |value: Box<dyn Any + Send>| {
+            let value = value
+                .downcast::<T>()
+                .expect("interval sample type mismatch");
+            sink.send(*value);
+        })
+    };
+    DELIVERY_SLOTS.with(|slots| {
+        slots.borrow_mut().insert(id, slot);
+    });
+
+    let token = CancellationToken::new();
+    let worker_token = token.clone();
+    let stop = Arc::new(AtomicBool::new(false));
+    let worker_stop = stop.clone();
+    let pending = Arc::new(AtomicUsize::new(0));
+    let handle = std::thread::spawn(move || {
+        loop {
+            if worker_stop.load(Ordering::Relaxed) || worker_token.is_cancelled() {
+                break;
+            }
+            let value = f(&worker_token);
+            if worker_token.is_cancelled() {
+                break;
+            }
+            // Coalesce bursts: skip delivery when the previous sample has not
+            // been consumed by the graph thread yet.
+            if pending.load(Ordering::Relaxed) == 0 {
+                pending.store(1, Ordering::Relaxed);
+                let pending = pending.clone();
+                let id = id;
+                scheduler.schedule(Box::new(move || {
+                    let value: Box<dyn Any + Send> = Box::new(value);
+                    DELIVERY_SLOTS.with(|slots| {
+                        if let Some(slot) = slots.borrow_mut().get_mut(&id) {
+                            slot(value);
+                        }
+                    });
+                    pending.store(0, Ordering::Relaxed);
+                }));
+            }
+            // Sleep in small chunks so stop() is honoured within ~20 ms.
+            let deadline = Instant::now() + interval;
+            while Instant::now() < deadline {
+                if worker_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        DELIVERY_SLOTS.with(|slots| {
+            slots.borrow_mut().remove(&id);
+        });
+    });
+
+    Interval {
+        id,
+        token,
+        stop,
         sink,
         handle: RefCell::new(Some(handle)),
     }

@@ -1,6 +1,6 @@
 fn main() {
     let mut builder = cxx_qt_build::CxxQtBuilder::new()
-        .file("src/lib.rs")
+        .file("src/bridge.rs")
         .file("src/qt_object.rs")
         .cpp_file("src/widgets.cpp")
         .cpp_file("src/model.cpp")

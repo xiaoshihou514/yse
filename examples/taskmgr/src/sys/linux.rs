@@ -60,15 +60,30 @@ struct StatTick {
     io_bytes: u64,
 }
 
-fn parse_proc_stat(stat: &str) -> Option<(String, u64)> {
+struct ProcStat {
+    name: String,
+    parent_pid: u32,
+    ticks: u64,
+    nice: i64,
+}
+
+fn parse_proc_stat(stat: &str) -> Option<ProcStat> {
     let open = stat.find('(')?;
     let close = stat.rfind(')')?;
     let name = stat[open + 1..close].to_string();
     let rest: Vec<&str> = stat[close + 1..].split_whitespace().collect();
-    // rest[0] is field 3 (state); utime is field 14, stime field 15.
+    // rest[0] is field 3 (state); field 4 = ppid, field 14 = utime,
+    // field 15 = stime, field 19 = nice.
+    let parent_pid: u32 = rest.get(1)?.parse().ok()?;
     let utime: u64 = rest.get(11)?.parse().ok()?;
     let stime: u64 = rest.get(12)?.parse().ok()?;
-    Some((name, utime + stime))
+    let nice: i64 = rest.get(16)?.parse().ok()?;
+    Some(ProcStat {
+        name,
+        parent_pid,
+        ticks: utime + stime,
+        nice,
+    })
 }
 
 fn process_io_bytes(pid: u32) -> u64 {
@@ -115,13 +130,21 @@ fn process_exe(pid: u32, name: &str) -> String {
 
 struct ProcFields {
     name: String,
+    parent_pid: u32,
     rss_bytes: u64,
     threads: u32,
+    ticks: u64,
+    priority: String,
 }
 
 fn process_fields(pid: u32) -> Option<ProcFields> {
     let stat = read(&format!("/proc/{pid}/stat"))?;
-    let (name, _) = parse_proc_stat(&stat)?;
+    let parsed = parse_proc_stat(&stat)?;
+    let priority = match parsed.nice {
+        nice if nice < 0 => String::from("高"),
+        0 => String::from("普通"),
+        _ => String::from("低"),
+    };
     let status = read(&format!("/proc/{pid}/status")).unwrap_or_default();
     let mut rss_bytes = 0u64;
     let mut threads = 0u32;
@@ -134,9 +157,12 @@ fn process_fields(pid: u32) -> Option<ProcFields> {
         }
     }
     Some(ProcFields {
-        name,
+        name: parsed.name,
+        parent_pid: parsed.parent_pid,
         rss_bytes,
         threads,
+        ticks: parsed.ticks,
+        priority,
     })
 }
 
@@ -337,10 +363,7 @@ impl LinuxSampler {
                 let Some(fields) = process_fields(pid) else {
                     continue;
                 };
-                let stat_ticks =
-                    parse_proc_stat(&read(&format!("/proc/{pid}/stat")).unwrap_or_default())
-                        .map(|(_, ticks)| ticks)
-                        .unwrap_or(0);
+                let stat_ticks = fields.ticks;
                 let io_bytes = process_io_bytes(pid);
                 let (cpu, disk_bps) = match self.prev_proc.get(&pid) {
                     Some(prev) if total_ticks_delta > 0 => {
@@ -364,8 +387,12 @@ impl LinuxSampler {
                 let name = fields.name;
                 processes.push(ProcessSample {
                     pid,
+                    parent_pid: fields.parent_pid,
                     exe: process_exe(pid, &name),
                     name,
+                    threads: fields.threads,
+                    cpu_ticks: stat_ticks,
+                    priority: fields.priority,
                     cpu,
                     mem_bytes: fields.rss_bytes,
                     disk_bytes_per_s: disk_bps,

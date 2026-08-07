@@ -57,7 +57,7 @@ using Vec = ::rust::Vec<T>;
 
 #include <numeric>
 
-#include "yse-ui/src/lib.cxx.h"
+#include "yse-ui/src/bridge.cxx.h"
 
 namespace {
 
@@ -610,6 +610,19 @@ Widget* menu_new(rust::Str title, Widget* menubar)
   auto* q = static_cast<QMenuBar*>(menubar->q)->addMenu(
     QString::fromUtf8(title.data(), title.size()));
   return new_widget(q, false);
+}
+
+Widget* window_menu_new(rust::Str title, Widget* window)
+{
+  auto* q = new QMenu(QString::fromUtf8(title.data(), title.size()), window->q);
+  return new_widget(q, false);
+}
+
+void menu_popup(Widget* menu)
+{
+  if (menu->alive && menu->q != nullptr) {
+    static_cast<QMenu*>(menu->q)->popup(QCursor::pos());
+  }
 }
 
 void menu_add_separator(Widget* menu)
@@ -1378,6 +1391,25 @@ void action_set_shortcut(Action* a, rust::Str shortcut)
     a->q->setShortcut(
       QKeySequence(QString::fromUtf8(shortcut.data(), shortcut.size())));
   }
+}
+
+void action_set_checkable(Action* a, bool checkable)
+{
+  if (a->alive && a->q != nullptr) {
+    a->q->setCheckable(checkable);
+  }
+}
+
+void action_set_checked(Action* a, bool checked)
+{
+  if (a->alive && a->q != nullptr) {
+    a->q->setChecked(checked);
+  }
+}
+
+bool action_checked(Action* a)
+{
+  return a->alive && a->q != nullptr && a->q->isChecked();
 }
 
 void action_trigger(Action* a)

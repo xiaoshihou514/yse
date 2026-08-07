@@ -46,9 +46,15 @@ impl PowerLevel {
 #[derive(Clone, PartialEq)]
 pub struct ProcessSample {
     pub pid: u32,
+    pub parent_pid: u32,
     pub name: String,
     /// Absolute path of the executable, when resolvable.
     pub exe: String,
+    pub threads: u32,
+    /// Accumulated CPU time in clock ticks (process-specific granularity).
+    pub cpu_ticks: u64,
+    /// Human-readable priority class (高/普通/低/…).
+    pub priority: String,
     /// CPU usage as a percentage of total machine capacity (0..100).
     pub cpu: f64,
     pub mem_bytes: u64,

@@ -6,7 +6,7 @@ use crate::action::ActionState;
 use crate::bridge as ffi;
 use crate::bridge::Void;
 use crate::component::Component;
-use crate::{DialogState, FileDialogState};
+use crate::widgets::dialogs::{DialogState, FileDialogState};
 
 /// # Safety
 ///

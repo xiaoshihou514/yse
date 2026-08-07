@@ -14,14 +14,14 @@
 #include <QtWidgets/QListView>
 #include <QtWidgets/QTableView>
 
-#include "yse-ui/src/lib.cxx.h"
+#include "yse-ui/src/bridge.cxx.h"
 #include "yse-ui/src/widgets.h"
 
 namespace yse_ui {
 
-// Shows a "结束任务" popup menu on right-click and reports the row under the
-// cursor back to Rust. Owned by the view (parented QObject), so it dies with
-// the widget.
+// Reports the row under the cursor on right-click back to Rust, where the
+// application composes its own context menu. Owned by the view (parented
+// QObject), so it dies with the widget.
 class ContextMenuFilter final : public QObject {
 public:
   ContextMenuFilter(QTableView* view, Widget* widget, QObject* parent)
@@ -33,15 +33,10 @@ protected:
       auto* context = static_cast<QContextMenuEvent*>(event);
       const QModelIndex index = view_->indexAt(context->pos());
       if (index.isValid()) {
-        QMenu menu(view_);
-        QAction* end_task = menu.addAction(QStringLiteral("结束任务"));
-        connect(end_task, &QAction::triggered, this, [this, index] {
-          if (widget_->alive && widget_->context_cb_data != nullptr) {
-            yse_ui::on_view_context_menu(
-              static_cast<yse_ui::Void*>(widget_->context_cb_data), index.row());
-          }
-        });
-        menu.exec(context->globalPos());
+        if (widget_->alive && widget_->context_cb_data != nullptr) {
+          yse_ui::on_view_context_menu(
+            static_cast<yse_ui::Void*>(widget_->context_cb_data), index.row());
+        }
       }
       return true;
     }

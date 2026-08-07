@@ -37,6 +37,59 @@ fn task_delivers_result_on_the_spawning_thread() {
 }
 
 #[test]
+fn interval_delivers_repeated_samples_and_stops() {
+    let scheduler = Arc::new(QueueScheduler::new());
+    let interval = spawn_interval(scheduler.clone(), Duration::from_millis(30), |_token| 1u32);
+    let seen = collect();
+    let seen_rc = seen.clone();
+    let _sub = interval
+        .results()
+        .observe(move |v| seen_rc.borrow_mut().push(*v));
+
+    wait_until_pending(&scheduler, 1);
+    scheduler.drain();
+    assert_eq!(*seen.borrow(), vec![1]);
+
+    // The worker keeps sampling; a follow-up delivery arrives within a few
+    // intervals even if one drain was slightly late.
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(scheduler.pending() >= 1, "worker must keep sampling");
+    scheduler.drain();
+    assert!(seen.borrow().len() >= 2, "samples must keep arriving");
+
+    interval.stop();
+    std::thread::sleep(Duration::from_millis(80));
+    scheduler.drain();
+    let settled = seen.borrow().len();
+    std::thread::sleep(Duration::from_millis(100));
+    scheduler.drain();
+    assert_eq!(seen.borrow().len(), settled, "no samples after stop");
+}
+
+#[test]
+fn interval_drop_stops_the_worker() {
+    let scheduler = Arc::new(QueueScheduler::new());
+    let interval = spawn_interval(scheduler.clone(), Duration::from_millis(20), |_token| 1u32);
+    let seen = collect();
+    let seen_rc = seen.clone();
+    let _sub = interval
+        .results()
+        .observe(move |v| seen_rc.borrow_mut().push(*v));
+
+    wait_until_pending(&scheduler, 1);
+    scheduler.drain();
+    assert_eq!(seen.borrow().len(), 1);
+
+    drop(interval);
+    std::thread::sleep(Duration::from_millis(80));
+    scheduler.drain();
+    let settled = seen.borrow().len();
+    std::thread::sleep(Duration::from_millis(80));
+    scheduler.drain();
+    assert_eq!(seen.borrow().len(), settled, "dropped interval must stop");
+}
+
+#[test]
 fn cancelled_task_never_delivers() {
     let scheduler = Arc::new(QueueScheduler::new());
     let task = spawn_task(scheduler.clone(), |token| {
