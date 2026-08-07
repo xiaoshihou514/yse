@@ -471,12 +471,15 @@ Widget* widget_new_tab_widget(Widget* parent)
 
 Widget* tab_widget_add_page(Widget* tabs, rust::Str label)
 {
-  auto* page = new QWidget(static_cast<QTabWidget*>(tabs->q));
+  // `addTab` reparents `page` into the QTabWidget's internal stack. Wrap it
+  // WITHOUT calling setParent again: re-parenting the page back onto the tab
+  // widget would yank it out of the tab stack and hide it.
+  auto* page = new QWidget();
   auto* layout = new QVBoxLayout(page);
   layout->setContentsMargins(6, 6, 6, 6);
   static_cast<QTabWidget*>(tabs->q)->addTab(
     page, QString::fromUtf8(label.data(), label.size()));
-  return new_child(page, tabs);
+  return new_widget(page, false);
 }
 
 void tab_widget_set_current(Widget* tabs, int index)
@@ -484,6 +487,14 @@ void tab_widget_set_current(Widget* tabs, int index)
   if (tabs->alive && tabs->q != nullptr) {
     static_cast<QTabWidget*>(tabs->q)->setCurrentIndex(index);
   }
+}
+
+int tab_widget_count(Widget* tabs)
+{
+  if (tabs->alive && tabs->q != nullptr) {
+    return static_cast<QTabWidget*>(tabs->q)->count();
+  }
+  return 0;
 }
 
 Widget* widget_new_line_chart(Widget* parent)
@@ -618,6 +629,21 @@ void widget_set_visible(Widget* w, bool visible)
   if (w->alive && w->state != nullptr) {
     w->state->setVisible(visible);
   }
+}
+
+bool widget_is_visible(Widget* w)
+{
+  return w->alive && w->q != nullptr && w->q->isVisible();
+}
+
+int widget_width(Widget* w)
+{
+  return w->alive && w->q != nullptr ? w->q->width() : 0;
+}
+
+int widget_height(Widget* w)
+{
+  return w->alive && w->q != nullptr ? w->q->height() : 0;
 }
 
 void widget_set_enabled(Widget* w, bool enabled)

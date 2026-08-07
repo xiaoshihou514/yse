@@ -630,6 +630,23 @@ fn main() {
         cpu_history.value().last().copied().unwrap_or(0.0),
         rows.first().map(|p| (p.name.clone(), p.cpu)),
     );
+    println!(
+        "[diag] tabs={} tab_visible={} tab_size={}x{} \
+         table_rows={} table_visible={} table_size={}x{} \
+         details_rows={} first_entries={:?}",
+        tabs.count(),
+        tabs.is_visible(),
+        tabs.width(),
+        tabs.height(),
+        process_model.row_count(),
+        process_view.is_visible(),
+        process_view.width(),
+        process_view.height(),
+        details_model.row_count(),
+        (0..3)
+            .map(|row| process_model.cell(row, 0))
+            .collect::<Vec<_>>(),
+    );
     assert!(!rows.is_empty(), "process table must be populated");
     std::process::exit(code);
 }

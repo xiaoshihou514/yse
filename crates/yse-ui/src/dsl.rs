@@ -896,4 +896,9 @@ impl TabWidget {
             unsafe { ffi::tab_widget_set_current(self.inner.raw(), index as i32) };
         }
     }
+
+    /// The number of tabs.
+    pub fn count(&self) -> usize {
+        unsafe { ffi::tab_widget_count(self.inner.raw()) as usize }
+    }
 }

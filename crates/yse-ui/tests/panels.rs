@@ -17,6 +17,8 @@ fn tab_pages_build_and_release() {
     let process_button = process_page.button("结束任务");
     let performance_page = tabs.add_tab("性能");
     let performance_chart = performance_page.line_chart();
+    assert_eq!(tabs.count(), 2, "both pages must be registered");
+    assert!(process_button.width() > 0, "page widgets must have size");
 
     // Both pages are alive and functional.
     process_button.set_enabled(false);

@@ -85,6 +85,7 @@ mod bridge {
         unsafe fn widget_new_tab_widget(parent: *mut Widget) -> *mut Widget;
         unsafe fn tab_widget_add_page(tabs: *mut Widget, label: &str) -> *mut Widget;
         unsafe fn tab_widget_set_current(tabs: *mut Widget, index: i32);
+        unsafe fn tab_widget_count(tabs: *mut Widget) -> i32;
         unsafe fn widget_new_line_chart(parent: *mut Widget) -> *mut Widget;
         unsafe fn line_chart_set_series(w: *mut Widget, points: Vec<f64>);
         unsafe fn line_chart_set_series_multi(w: *mut Widget, points: Vec<f64>, series: usize);
@@ -99,6 +100,9 @@ mod bridge {
         unsafe fn widget_drop(w: *mut Widget);
         unsafe fn widget_show(w: *mut Widget);
         unsafe fn widget_set_visible(w: *mut Widget, visible: bool);
+        unsafe fn widget_is_visible(w: *mut Widget) -> bool;
+        unsafe fn widget_width(w: *mut Widget) -> i32;
+        unsafe fn widget_height(w: *mut Widget) -> i32;
         unsafe fn widget_set_enabled(w: *mut Widget, enabled: bool);
         unsafe fn widget_set_title(w: *mut Widget, title: &str);
         unsafe fn widget_set_style_class(w: *mut Widget, style_class: &str);
@@ -596,6 +600,21 @@ macro_rules! widget_wrapper {
                     }
                 });
                 self.inner.owner.borrow_mut().add(subscription);
+            }
+
+            /// Whether the widget is currently visible on screen.
+            pub fn is_visible(&self) -> bool {
+                unsafe { ffi::widget_is_visible(self.inner.raw()) }
+            }
+
+            /// The widget's current width in pixels.
+            pub fn width(&self) -> i32 {
+                unsafe { ffi::widget_width(self.inner.raw()) }
+            }
+
+            /// The widget's current height in pixels.
+            pub fn height(&self) -> i32 {
+                unsafe { ffi::widget_height(self.inner.raw()) }
             }
 
             /// Escape hatch: the underlying Qt `QWidget` pointer.
@@ -2446,6 +2465,21 @@ impl TableView {
         if self.inner.is_alive() {
             unsafe { ffi::widget_set_visible(self.inner.raw(), visible) };
         }
+    }
+
+    /// Whether the table is currently visible on screen.
+    pub fn is_visible(&self) -> bool {
+        unsafe { ffi::widget_is_visible(self.inner.raw()) }
+    }
+
+    /// The table's current width in pixels.
+    pub fn width(&self) -> i32 {
+        unsafe { ffi::widget_width(self.inner.raw()) }
+    }
+
+    /// The table's current height in pixels.
+    pub fn height(&self) -> i32 {
+        unsafe { ffi::widget_height(self.inner.raw()) }
     }
 
     /// A stream of header clicks, each carrying the clicked column index.
