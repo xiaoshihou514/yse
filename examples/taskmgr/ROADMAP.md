@@ -88,6 +88,8 @@ Explicitly documented instead of fabricating values, per the roadmap rules:
 - No information by color alone: heat maps pair with text labels. Done.
 - Units consistent and no layout jumps: formatting helpers centralized; refresh is coalesced. Done.
 - Light/dark both intentional: palette + per-scheme stylesheets. Done.
+- DPI: Qt Fusion scaling via device-pixel-ratio; explicit 150/200% audit pending on
+  real displays.
 - Inaccessible metrics show "不可用", not misleading zeroes. Done.
 - Provider errors never modal-spam: sampling failures degrade to empty/unavailable states. Done.
 
