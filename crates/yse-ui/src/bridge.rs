@@ -189,6 +189,10 @@ mod bridge {
         unsafe fn tree_view_click_header(view: *mut Widget, section: i32);
         unsafe fn tree_view_select_flat(view: *mut Widget, flat: i32);
         unsafe fn tree_model_flat_row_count(m: *mut TreeModel) -> i32;
+        unsafe fn tree_view_expanded_rows(view: *mut Widget) -> Vec<i32>;
+        unsafe fn tree_view_expand_rows(view: *mut Widget, rows: Vec<i32>);
+        unsafe fn tree_view_top_row(view: *mut Widget) -> i32;
+        unsafe fn tree_view_scroll_to_flat(view: *mut Widget, flat: i32);
         unsafe fn view_selected_rows(view: *mut Widget) -> Vec<i32>;
         unsafe fn view_select_row(view: *mut Widget, row: i32);
         unsafe fn view_clear_selection(view: *mut Widget);

@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QSet>
 #include <QStyledItemDelegate>
+#include <functional>
 #include <QtWidgets/QAbstractItemView>
 #include <QtWidgets/QListView>
 #include <QtWidgets/QTableView>
@@ -513,6 +514,70 @@ void tree_view_select_flat(Widget* view, int flat)
     const QModelIndex target = model->rustIndexFromFlat(flat);
     if (target.isValid()) {
       tree->selectionModel()->select(target, QItemSelectionModel::ClearAndSelect);
+    }
+  }
+}
+
+rust::Vec<int32_t> tree_view_expanded_rows(Widget* view)
+{
+  rust::Vec<int32_t> rows;
+  if (view->alive && view->q != nullptr) {
+    auto* tree = static_cast<QTreeView*>(view->q);
+    auto* model = static_cast<RustTreeModel*>(tree->model());
+    std::function<void(int)> collect = [&](int flat) {
+      const QModelIndex index = model->rustIndexFromFlat(flat);
+      if (!index.isValid()) {
+        return;
+      }
+      if (tree->isExpanded(index)) {
+        rows.push_back(flat);
+      }
+      for (int row = 0; row < model->rowCount(index); ++row) {
+        const QModelIndex child = model->index(row, 0, index);
+        collect(static_cast<int>(child.internalId()));
+      }
+    };
+    for (int row = 0; row < model->rowCount(QModelIndex()); ++row) {
+      collect(static_cast<int>(model->index(row, 0, QModelIndex()).internalId()));
+    }
+  }
+  return rows;
+}
+
+void tree_view_expand_rows(Widget* view, rust::Vec<int32_t> rows)
+{
+  if (view->alive && view->q != nullptr) {
+    auto* tree = static_cast<QTreeView*>(view->q);
+    auto* model = static_cast<RustTreeModel*>(tree->model());
+    for (int32_t flat : rows) {
+      const QModelIndex index = model->rustIndexFromFlat(flat);
+      if (index.isValid()) {
+        tree->expand(index);
+      }
+    }
+  }
+}
+
+int tree_view_top_row(Widget* view)
+{
+  if (view->alive && view->q != nullptr) {
+    auto* tree = static_cast<QTreeView*>(view->q);
+    const QModelIndex top = tree->indexAt(QPoint(4, 4));
+    if (top.isValid()) {
+      return static_cast<int>(top.internalId());
+    }
+  }
+  return -1;
+}
+
+void tree_view_scroll_to_flat(Widget* view, int flat)
+{
+  if (view->alive && view->q != nullptr) {
+    auto* tree = static_cast<QTreeView*>(view->q);
+    auto* model = static_cast<RustTreeModel*>(tree->model());
+    const QModelIndex index = model->rustIndexFromFlat(flat);
+    if (index.isValid()) {
+      tree->scrollTo(index, QAbstractItemView::PositionAtTop);
     }
   }
 }

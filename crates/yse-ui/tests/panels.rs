@@ -311,6 +311,19 @@ fn tree_views_group_select_and_context_rows() {
     model.bind_heat(1, &heat.signal());
     heat.set(vec![0.0, 1.0, 0.5, 0.0, 0.1]);
 
+    // Expansion and scroll state are queryable and restorable across resets.
+    view.expand_all(true);
+    assert!(
+        !view.expanded_rows().is_empty(),
+        "expanded rows are tracked"
+    );
+    view.expand_all(false);
+    assert!(view.expanded_rows().is_empty(), "collapsing clears the set");
+    view.expand_rows(&[0]);
+    assert_eq!(view.expanded_rows(), vec![0]);
+    view.scroll_to_flat(1);
+    assert!(view.top_row().is_some(), "top row is reportable");
+
     drop(column);
     drop(window);
 }

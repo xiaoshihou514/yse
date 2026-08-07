@@ -601,11 +601,29 @@ fn main() {
     let tree = process_data
         .signal()
         .combine(&sort.signal(), |data, s| build_tree(data, *s));
-    tree_model.bind(&tree.map(|rows| {
+    // 进程树每帧整树刷新会折叠组、跳回顶部；刷新前后保存并恢复展开、
+    // 滚动与选中状态。
+    let tree_rows_signal = tree.map(|rows| {
         rows.iter()
             .map(|r| (r.parent, r.cells.clone(), r.icon.clone()))
             .collect()
-    }));
+    });
+    let _tree_sync = tree_rows_signal.observe(clone!(
+        tree_model, process_view, tree, selected_pid => move |rows: &Vec<(i32, Vec<String>, String)>| {
+            let expanded = process_view.expanded_rows();
+            let top = process_view.top_row();
+            tree_model.reset(rows.clone());
+            process_view.expand_rows(&expanded);
+            if let Some(top) = top {
+                process_view.scroll_to_flat(top);
+            }
+            if let Some((pid, _)) = *selected_pid.value()
+                && let Some(row) = tree.value().iter().position(|r| r.pid == Some(pid))
+            {
+                process_view.select(row);
+            }
+        }
+    ));
     tree_model.bind_heat(
         3,
         &tree.map(|rows| rows.iter().map(|r| r.heat[0]).collect()),
@@ -969,13 +987,13 @@ fn main() {
                 gpu_text,
             ]);
 
-            push_history(&cpu_history, cpu.usage_pct);
+            push_history(&cpu_history, cpu.usage_pct.clamp(0.0, 100.0));
             let mem_pct = if stats.mem_total > 0 {
                 stats.mem_used as f64 / stats.mem_total as f64 * 100.0
             } else {
                 0.0
             };
-            push_history(&mem_history, mem_pct);
+            push_history(&mem_history, mem_pct.clamp(0.0, 100.0));
             let net_mbps = stats
                 .nets
                 .iter()
@@ -988,13 +1006,13 @@ fn main() {
                 .iter()
                 .map(|(_, active)| *active)
                 .fold(0.0f64, f64::max);
-            push_history(&disk_history, disk_active);
+            push_history(&disk_history, disk_active.clamp(0.0, 100.0));
             let mut cores = per_core_history.value().as_ref().clone();
             if cores.len() != stats.cpu.per_core_pct.len() {
                 cores = vec![Vec::new(); stats.cpu.per_core_pct.len()];
             }
             for (index, pct) in stats.cpu.per_core_pct.iter().enumerate() {
-                cores[index].push(*pct);
+                cores[index].push((*pct).clamp(0.0, 100.0));
                 if cores[index].len() > HISTORY {
                     cores[index].remove(0);
                 }

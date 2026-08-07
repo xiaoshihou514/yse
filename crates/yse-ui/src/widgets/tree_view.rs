@@ -72,6 +72,20 @@ impl TreeModel {
         self.state.bindings.borrow_mut().push(subscription);
     }
 
+    /// Imperatively replace the whole tree with flat `(parent, cells, icon)`
+    /// rows.
+    pub fn reset(&self, rows: impl IntoIterator<Item = (i32, Vec<String>, String)>) {
+        let rows: Vec<ffi::TreeRow> = rows
+            .into_iter()
+            .map(|(parent, cells, icon)| ffi::TreeRow {
+                parent,
+                cells,
+                icon,
+            })
+            .collect();
+        unsafe { ffi::tree_model_reset(self.state.tree, rows) };
+    }
+
     /// Replace the column headers.
     pub fn set_headers(&self, headers: impl IntoIterator<Item = String>) {
         unsafe {
@@ -224,6 +238,39 @@ impl TreeView {
     pub fn expand_all(&self, expand: bool) {
         if self.inner.is_alive() {
             unsafe { ffi::tree_view_expand_all(self.inner.raw(), expand) };
+        }
+    }
+
+    /// Flat rows that are currently expanded.
+    pub fn expanded_rows(&self) -> Vec<usize> {
+        unsafe { ffi::tree_view_expanded_rows(self.inner.raw()) }
+            .into_iter()
+            .map(|row| row as usize)
+            .collect()
+    }
+
+    /// Expand the given flat rows.
+    pub fn expand_rows(&self, rows: &[usize]) {
+        if self.inner.is_alive() {
+            unsafe {
+                ffi::tree_view_expand_rows(
+                    self.inner.raw(),
+                    rows.iter().map(|row| *row as i32).collect(),
+                )
+            };
+        }
+    }
+
+    /// The flat row currently scrolled to the top of the viewport, if any.
+    pub fn top_row(&self) -> Option<usize> {
+        let row = unsafe { ffi::tree_view_top_row(self.inner.raw()) };
+        (row >= 0).then_some(row as usize)
+    }
+
+    /// Scroll the viewport so `flat` is at the top.
+    pub fn scroll_to_flat(&self, flat: usize) {
+        if self.inner.is_alive() {
+            unsafe { ffi::tree_view_scroll_to_flat(self.inner.raw(), flat as i32) };
         }
     }
 

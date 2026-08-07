@@ -535,7 +535,7 @@ impl LinuxSampler {
                         total_delta = dt;
                     }
                     let pct = if dt > 0 {
-                        (dt - di) as f64 / dt as f64 * 100.0
+                        ((dt - di) as f64 / dt as f64 * 100.0).clamp(0.0, 100.0)
                     } else {
                         0.0
                     };

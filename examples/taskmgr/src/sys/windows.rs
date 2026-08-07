@@ -588,7 +588,7 @@ impl WindowsSampler {
                 let d_total = (cur.kernel + cur.user).saturating_sub(prev.kernel + prev.user);
                 let d_idle = cur.idle.saturating_sub(prev.idle);
                 let pct = if d_total > 0 {
-                    (d_total - d_idle) as f64 / d_total as f64 * 100.0
+                    ((d_total - d_idle) as f64 / d_total as f64 * 100.0).clamp(0.0, 100.0)
                 } else {
                     0.0
                 };
