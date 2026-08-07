@@ -254,6 +254,13 @@ void table_model_set_heat(TableModel* m, int column, rust::Vec<double> values)
   m->q->rustSetHeat(column, heat);
 }
 
+void table_model_set_column_alignment(TableModel* m, int column, int alignment)
+{
+  if (m->alive) {
+    m->q->rustSetColumnAlignment(column, alignment);
+  }
+}
+
 void tree_model_reset(TreeModel* m, rust::Vec<yse_ui::TreeRow> rows)
 {
   if (!m->alive) {
@@ -295,6 +302,13 @@ void tree_model_set_heat(TreeModel* m, int column, rust::Vec<double> values)
     heat.append(static_cast<qreal>(value));
   }
   m->q->rustTreeSetHeat(column, heat);
+}
+
+void tree_model_set_column_alignment(TreeModel* m, int column, int alignment)
+{
+  if (m->alive) {
+    m->q->rustTreeSetColumnAlignment(column, alignment);
+  }
 }
 
 int table_model_row_icon_count(TableModel* m)
@@ -436,6 +450,22 @@ void view_set_heat_delegate(Widget* view)
   if (view->alive && view->q != nullptr) {
     static_cast<QAbstractItemView*>(view->q)->setItemDelegate(
       new HeatDelegate(static_cast<QAbstractItemView*>(view->q)));
+  }
+}
+
+void view_set_sort_indicator(Widget* view, int column, bool ascending)
+{
+  if (view->alive && view->q != nullptr) {
+    QHeaderView* header = nullptr;
+    if (auto* table = qobject_cast<QTableView*>(view->q)) {
+      header = table->horizontalHeader();
+    } else if (auto* tree = qobject_cast<QTreeView*>(view->q)) {
+      header = tree->header();
+    }
+    if (header != nullptr) {
+      header->setSortIndicatorShown(true);
+      header->setSortIndicator(column, ascending ? Qt::AscendingOrder : Qt::DescendingOrder);
+    }
   }
 }
 

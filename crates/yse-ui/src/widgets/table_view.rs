@@ -3,7 +3,7 @@
 use crate::bridge as ffi;
 use crate::bridge::Void;
 use crate::component::Component;
-use crate::widgets::{IntoWidget, SelectionBridge};
+use crate::widgets::{IntoWidget, SelectionBridge, TextAlign};
 use std::cell::RefCell;
 use std::rc::Rc;
 use yse_model::{EventStream, ListChange, ListModel, Signal, Sink, Subscription};
@@ -168,6 +168,13 @@ impl StringTableModel {
         unsafe { ffi::table_model_row_icon_count(self.state.table) as usize }
     }
 
+    /// Set the horizontal alignment of `column`.
+    pub fn set_column_alignment(&self, column: usize, align: TextAlign) {
+        unsafe {
+            ffi::table_model_set_column_alignment(self.state.table, column as i32, align.as_int())
+        };
+    }
+
     /// Number of rows in the C++ mirror.
     pub fn row_count(&self) -> usize {
         unsafe { ffi::table_row_count(self.state.table) as usize }
@@ -324,6 +331,25 @@ impl TableView {
         if self.inner.is_alive() {
             unsafe { ffi::view_set_column_hidden(self.inner.raw(), column as i32, hidden) };
         }
+    }
+
+    /// Show the sort arrow on `column` in the given direction.
+    pub fn set_sort_indicator(&self, column: usize, ascending: bool) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_set_sort_indicator(self.inner.raw(), column as i32, ascending) };
+        }
+    }
+
+    /// Keep the sort arrow in sync with a signal of `(column, ascending)`,
+    /// so sorting state stays declarative instead of imperative.
+    pub fn bind_sort_indicator(&self, signal: &Signal<(usize, bool)>) {
+        let view = self.inner.raw();
+        self.inner
+            .owner
+            .borrow_mut()
+            .add(signal.observe(move |(column, ascending)| unsafe {
+                ffi::view_set_sort_indicator(view, *column as i32, *ascending);
+            }));
     }
 
     /// Let the last column fill the remaining view width.

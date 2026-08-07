@@ -14,6 +14,13 @@ fn parse_u64(text: &str) -> u64 {
     text.trim().parse().unwrap_or(0)
 }
 
+fn clock_tick_hz() -> f64 {
+    // SAFETY: `sysconf(_SC_CLK_TCK)` has no side effects; falls back to the
+    // conventional 100 Hz user-space clock tick when unavailable.
+    let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    if hz > 0 { hz as f64 } else { 100.0 }
+}
+
 /// All ticks of the CPU lines in /proc/stat: `(name, total, idle)`.
 fn cpu_ticks() -> Vec<(String, u64, u64)> {
     let mut lines = Vec::new();
@@ -593,7 +600,7 @@ impl LinuxSampler {
                     exe: process_exe(pid, &name, &mut self.exe_cache),
                     name,
                     threads: fields.threads,
-                    cpu_ticks: stat_ticks,
+                    cpu_seconds: stat_ticks as f64 / clock_tick_hz(),
                     start_time: fields.start_time,
                     priority: fields.priority,
                     group,

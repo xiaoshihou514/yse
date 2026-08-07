@@ -45,6 +45,15 @@ fn header_clicks_stream_and_survive_teardown() {
     model.push_row(vec![String::from("explorer"), String::from("3.2")]);
     let view = column.table_view(&model);
 
+    // Numeric columns can be right-aligned and the sort arrow shown without
+    // disturbing the cell data or the live row stream.
+    model.set_column_alignment(1, yse_ui::TextAlign::Right);
+    view.set_sort_indicator(1, false);
+    assert_eq!(model.cell(0, 1), "54.9", "alignment keeps cell text intact");
+    assert_eq!(model.cell(1, 0), "explorer", "text column untouched");
+    model.push_row(vec![String::from("code"), String::from("12.0")]);
+    assert_eq!(model.cell(2, 1), "12.0", "alignment survives row appends");
+
     let seen: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::new()));
     let seen_rc = seen.clone();
     let _sub = view
@@ -56,6 +65,8 @@ fn header_clicks_stream_and_survive_teardown() {
     view.click_header(0);
     assert_eq!(*seen.borrow(), vec![0, 1, 0]);
 
+    view.set_sort_indicator(0, true);
+    view.set_sort_indicator(1, false);
     drop(column);
     drop(window);
     // Clicking a destroyed table's header is a safe no-op.
@@ -91,13 +102,18 @@ fn reactive_bindings_drive_widgets() {
     let rows = Var::new(Vec::<Vec<String>>::new());
     let model = StringTableModel::new(2, vec![String::from("Name"), String::from("Score")]);
     model.bind_rows(&rows.signal());
-    let _view = column.table_view(&model);
+    let view = column.table_view(&model);
     rows.set(vec![
         vec![String::from("Ada"), String::from("92")],
         vec![String::from("Grace"), String::from("98")],
     ]);
     assert_eq!(model.row_count(), 2);
     assert_eq!(model.cell(1, 0), "Grace");
+
+    // Sort arrow driven declaratively from a signal.
+    let sort = Var::new((1usize, false));
+    view.bind_sort_indicator(&sort.signal());
+    sort.set((0, true));
 
     // Button label bound to a signal.
     let caption = Var::new(String::from("Go"));
@@ -244,6 +260,9 @@ fn tree_views_group_select_and_context_rows() {
     let model = yse_ui::TreeModel::new(2);
     model.set_headers([String::from("组"), String::from("值")]);
     let view = column.tree_view(&model);
+
+    model.set_column_alignment(1, yse_ui::TextAlign::Right);
+    view.set_sort_indicator(1, true);
 
     let rows = Var::new(vec![
         (

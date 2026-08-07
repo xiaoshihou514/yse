@@ -180,6 +180,11 @@ public:
         && flat < heatColumns_.at(index.column()).size()) {
       return heatColumns_.at(index.column()).at(flat);
     }
+    if (role == Qt::TextAlignmentRole
+        && index.column() < alignments_.size()
+        && alignments_.at(index.column()) != 0) {
+      return alignments_.at(index.column());
+    }
     if (role != Qt::DisplayRole) {
       return {};
     }
@@ -227,6 +232,17 @@ public:
     }
   }
 
+  void rustTreeSetColumnAlignment(int column, int alignment)
+  {
+    if (column < 0) {
+      return;
+    }
+    while (alignments_.size() <= static_cast<qsizetype>(column)) {
+      alignments_.append(0);
+    }
+    alignments_[column] = alignment;
+  }
+
   int rustFlatRowCount() const
   {
     return rows_.size();
@@ -255,6 +271,7 @@ private:
   QVector<RustTreeRow> rows_;
   QStringList headers_;
   QVector<QVector<qreal>> heatColumns_;
+  QVector<int> alignments_;
 };
 
 /// A QAbstractTableModel mirror with a fixed column count, headers, and
@@ -293,6 +310,11 @@ public:
         && index.column() < heatColumns_.size()
         && index.row() < heatColumns_.at(index.column()).size()) {
       return heatColumns_.at(index.column()).at(index.row());
+    }
+    if (role == Qt::TextAlignmentRole
+        && index.column() < alignments_.size()
+        && alignments_.at(index.column()) != 0) {
+      return alignments_.at(index.column());
     }
     if (role != Qt::DisplayRole) {
       return {};
@@ -400,6 +422,17 @@ public:
     }
   }
 
+  void rustSetColumnAlignment(int column, int alignment)
+  {
+    if (column < 0) {
+      return;
+    }
+    while (alignments_.size() <= static_cast<qsizetype>(column)) {
+      alignments_.append(0);
+    }
+    alignments_[column] = alignment;
+  }
+
   int rustRowCount() const
   {
     return rows_.size();
@@ -430,4 +463,5 @@ private:
   QStringList headers_;
   QVector<QIcon> icons_;
   QVector<QVector<qreal>> heatColumns_;
+  QVector<int> alignments_;
 };

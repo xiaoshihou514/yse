@@ -43,6 +43,27 @@ pub use dialogs::{FileDialog, MessageBox, MessageBoxButtons, MessageBoxResult};
 mod settings;
 pub use settings::Settings;
 
+/// Horizontal text alignment for a model column.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextAlign {
+    /// Inherit the view's default alignment.
+    Default,
+    Left,
+    Right,
+    Center,
+}
+
+impl TextAlign {
+    pub(crate) fn as_int(self) -> i32 {
+        match self {
+            TextAlign::Default => 0,
+            TextAlign::Left => 1,
+            TextAlign::Right => 2,
+            TextAlign::Center => 4,
+        }
+    }
+}
+
 pub trait IntoWidget {
     /// Access the underlying component.
     #[doc(hidden)]

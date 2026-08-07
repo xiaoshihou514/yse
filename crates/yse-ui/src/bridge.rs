@@ -163,11 +163,13 @@ mod bridge {
         unsafe fn table_model_set_row_icons(m: *mut TableModel, paths: Vec<String>);
         unsafe fn table_model_row_icon_count(m: *mut TableModel) -> i32;
         unsafe fn table_model_set_heat(m: *mut TableModel, column: i32, values: Vec<f64>);
+        unsafe fn table_model_set_column_alignment(m: *mut TableModel, column: i32, alignment: i32);
         unsafe fn tree_model_new(columns: i32) -> *mut TreeModel;
         unsafe fn tree_model_drop(m: *mut TreeModel);
         unsafe fn tree_model_reset(m: *mut TreeModel, rows: Vec<TreeRow>);
         unsafe fn tree_model_set_headers(m: *mut TreeModel, headers: Vec<String>);
         unsafe fn tree_model_set_heat(m: *mut TreeModel, column: i32, values: Vec<f64>);
+        unsafe fn tree_model_set_column_alignment(m: *mut TreeModel, column: i32, alignment: i32);
         unsafe fn table_row_count(m: *mut TableModel) -> i32;
         unsafe fn table_column_count(m: *mut TableModel) -> i32;
         unsafe fn table_text(m: *mut TableModel, row: i32, column: i32) -> String;
@@ -182,6 +184,7 @@ mod bridge {
         unsafe fn view_set_alternating_row_colors(view: *mut Widget, on: bool);
         unsafe fn view_set_heat_delegate(view: *mut Widget);
         unsafe fn view_set_column_hidden(view: *mut Widget, column: i32, hidden: bool);
+        unsafe fn view_set_sort_indicator(view: *mut Widget, column: i32, ascending: bool);
         unsafe fn tree_view_expand_all(view: *mut Widget, expand: bool);
         unsafe fn tree_view_set_column_width(view: *mut Widget, column: i32, width: i32);
         unsafe fn tree_view_stretch_last_section(view: *mut Widget, stretch: bool);

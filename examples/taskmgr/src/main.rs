@@ -12,16 +12,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use yse::{
     Application, MessageBox, MessageBoxButtons, MessageBoxResult, QtGuiScheduler, StringTableModel,
-    Subscription, TreeModel, Var, Window, clone,
+    Subscription, TextAlign, TreeModel, Var, Window, clone,
 };
 
 // 图表只保留最近一小段历史，避免长时间运行后堆积整段曲线。
 const HISTORY: usize = 30;
 const TITLES: [&str; 5] = ["CPU", "内存", "磁盘 0", "以太网", "GPU 0"];
-const PROCESS_COLUMNS: [&str; 8] = [
+const PROCESS_COLUMNS: [&str; 7] = [
     "名称",
     "类型",
-    "状态",
     "CPU",
     "内存",
     "磁盘",
@@ -138,7 +137,7 @@ fn compare_rows(
         3 => a.mem_bytes.cmp(&b.mem_bytes),
         4 => a.disk_bytes_per_s.cmp(&b.disk_bytes_per_s),
         5 => a.net_bytes_per_s.cmp(&b.net_bytes_per_s),
-        7 => a.power.cmp(&b.power),
+        6 => a.power.cmp(&b.power),
         _ => a
             .cpu
             .partial_cmp(&b.cpu)
@@ -185,8 +184,7 @@ fn process_cells(p: &sys::ProcessSample) -> Vec<String> {
     vec![
         friendly_name(&p.name),
         p.group.label().to_string(),
-        String::from("正在运行"),
-        format!("{:.1}%", p.cpu),
+        format!("{:.0}%", p.cpu),
         format_mb(p.mem_bytes),
         format_bytes_per_s(p.disk_bytes_per_s),
         format_bytes_per_s(p.net_bytes_per_s),
@@ -202,7 +200,7 @@ fn build_tree(data: &[sys::ProcessSample], sort: SortState) -> Vec<ProcessTreeRo
         sys::ProcessGroup::System,
     ] {
         let parent = rows.len() as i32;
-        let mut cells = vec![String::new(); 8];
+        let mut cells = vec![String::new(); 7];
         cells[0] = group.label().to_string();
         cells[1] = group.label().to_string();
         rows.push(ProcessTreeRow {
@@ -270,11 +268,10 @@ fn details_rows(stats: &sys::SystemStats) -> Vec<(Vec<String>, String)> {
                     p.name.clone(),
                     p.pid.to_string(),
                     p.parent_pid.to_string(),
-                    String::from("正在运行"),
                     format!("{:.1}%", p.cpu),
                     format_mb(p.mem_bytes),
                     p.threads.to_string(),
-                    format!("{:.0} 秒", p.cpu_ticks as f64 / 100.0),
+                    format_cpu_time(p.cpu_seconds),
                     p.priority.clone(),
                 ],
                 p.exe.clone(),
@@ -283,11 +280,22 @@ fn details_rows(stats: &sys::SystemStats) -> Vec<(Vec<String>, String)> {
         .collect()
 }
 
+fn format_cpu_time(seconds: f64) -> String {
+    let total = seconds.max(0.0) as u64;
+    let hours = total / 3600;
+    let minutes = (total % 3600) / 60;
+    let seconds = total % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
 fn format_mb(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_048_576.0)
 }
 
 fn format_bytes_per_s(bytes_per_s: u64) -> String {
+    if bytes_per_s == 0 {
+        return String::from("0");
+    }
     if bytes_per_s >= 1_000_000 {
         format!("{:.1} MB/秒", bytes_per_s as f64 / 1_000_000.0)
     } else {
@@ -355,13 +363,16 @@ fn main() {
     // --- 表格模型 ---
     let tree_model = TreeModel::new(PROCESS_COLUMNS.len());
     tree_model.set_headers(PROCESS_COLUMNS.iter().map(|h| (*h).to_string()));
+    // 数字列右对齐，文字列保持左对齐，提升扫读效率。
+    for column in [2usize, 3, 4, 5] {
+        tree_model.set_column_alignment(column, TextAlign::Right);
+    }
     let details_model = StringTableModel::new(
-        9,
+        8,
         vec![
             String::from("名称"),
             String::from("PID"),
             String::from("PPID"),
-            String::from("状态"),
             String::from("CPU"),
             String::from("内存"),
             String::from("线程数"),
@@ -369,6 +380,10 @@ fn main() {
             String::from("优先级"),
         ],
     );
+    // 数字列右对齐，文字列保持左对齐，提升扫读效率。
+    for column in [1usize, 2, 3, 4, 5, 6] {
+        details_model.set_column_alignment(column, TextAlign::Right);
+    }
     let services_model = StringTableModel::new(
         3,
         vec![
@@ -620,19 +635,19 @@ fn main() {
         }
     ));
     tree_model.bind_heat(
-        3,
+        2,
         &tree.map(|rows| rows.iter().map(|r| r.heat[0]).collect()),
     );
     tree_model.bind_heat(
-        4,
+        3,
         &tree.map(|rows| rows.iter().map(|r| r.heat[1]).collect()),
     );
     tree_model.bind_heat(
-        5,
+        4,
         &tree.map(|rows| rows.iter().map(|r| r.heat[2]).collect()),
     );
     tree_model.bind_heat(
-        6,
+        5,
         &tree.map(|rows| rows.iter().map(|r| r.heat[3]).collect()),
     );
 
@@ -698,6 +713,8 @@ fn main() {
     }));
 
     // --- 事件处理器：只修改状态 ---
+    // 排序箭头从 sort 状态派生，点击处理器只翻转状态，不直接操作控件。
+    process_view.bind_sort_indicator(&sort.signal().map(|s| (s.column, !s.descending)));
     process_view
         .header_clicked()
         .observe(clone!(sort => move |column| {
@@ -1119,11 +1136,11 @@ fn main() {
     details_view.select_rows(true);
     process_view.set_column_width(0, 230);
     process_view.set_column_width(1, 90);
-    process_view.set_column_width(3, 70);
-    process_view.set_column_width(4, 110);
+    process_view.set_column_width(2, 70);
+    process_view.set_column_width(3, 110);
+    process_view.set_column_width(4, 90);
     process_view.set_column_width(5, 90);
-    process_view.set_column_width(6, 90);
-    process_view.set_column_width(7, 110);
+    process_view.set_column_width(6, 110);
     process_view.stretch_last_section(true);
 
     // Headless smoke run: drive sorting, selection, the details toggle, and

@@ -236,7 +236,7 @@ fn process_table(
             power: PowerLevel::from_cpu(cpu),
             parent_pid: entry.th32ParentProcessID,
             threads: entry.cntThreads,
-            cpu_ticks: ticks,
+            cpu_seconds: ticks as f64 / 10_000_000.0,
             start_time,
             priority: priority_class(entry.pcPriClassBase),
             group,

@@ -70,8 +70,8 @@ pub struct ProcessSample {
     /// Absolute path of the executable, when resolvable.
     pub exe: String,
     pub threads: u32,
-    /// Accumulated CPU time in clock ticks (process-specific granularity).
-    pub cpu_ticks: u64,
+    /// Accumulated CPU time in seconds.
+    pub cpu_seconds: f64,
     /// Process start identity (creation time) used to guard async actions
     /// such as terminating a process after a confirmation dialog.
     pub start_time: u64,
