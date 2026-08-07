@@ -98,8 +98,10 @@ into `yse-ui`.
 `gansi` generates a buildable CXX-Qt project with pinned
 configuration (`yse.toml`), an icon, and a release guide.
 `setup` installs Qt 6 automatically (apt-get on Linux, `aqt` via `uv` on
-Windows, Homebrew on macOS), and `dev`/`test`/`bundle` wrap Cargo and Qt
-deployment tooling.
+Windows, Homebrew on macOS), `doctor` reports the environment health, and
+`dev`/`test`/`bundle` wrap Cargo and Qt deployment tooling. Generated
+projects include a three-platform CI workflow using the same Qt install
+flows.
 
 ## Testing strategy
 

@@ -4,10 +4,12 @@
 //!
 //! - `gansi new <name>` — generate a new Yse desktop application.
 //! - `gansi setup` — install Qt 6 automatically (no manual setup).
+//! - `gansi doctor` — check the Rust/Qt/CMake environment.
 //! - `gansi dev` — build and run the current project.
 //! - `gansi test` — run the project's tests.
 //! - `gansi bundle` — build a release and produce a platform bundle.
 
+mod doctor;
 mod project;
 mod qt;
 mod template;
@@ -24,6 +26,7 @@ fn main() {
     let result = match command {
         "new" => command_new(&args[1..]),
         "setup" => command_setup(&args[1..]),
+        "doctor" => command_doctor(&args[1..]),
         "dev" => command_dev(&args[1..]),
         "test" => command_test(&args[1..]),
         "bundle" => command_bundle(&args[1..]),
@@ -54,11 +57,18 @@ fn print_help() {
          \x20   gansi new --local <yse-path> <name>\n\
          \x20                              Generate against a local Yse checkout (facade)\n\
          \x20   gansi setup                Install Qt 6 automatically\n\
+         \x20   gansi doctor               Check the Rust/Qt/CMake environment\n\
          \x20   gansi dev                  Build and run the current project\n\
          \x20   gansi test                 Run the current project's tests\n\
          \x20   gansi bundle               Build a release and produce a platform bundle\n\
          \x20   gansi version              Print the version\n"
     );
+}
+
+fn command_doctor(_args: &[String]) -> Result<(), String> {
+    let base =
+        env::current_dir().map_err(|error| format!("cannot read current directory: {error}"))?;
+    doctor::run(&base)
 }
 
 fn command_setup(_args: &[String]) -> Result<(), String> {

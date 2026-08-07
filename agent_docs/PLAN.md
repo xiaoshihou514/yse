@@ -206,6 +206,7 @@ Make the supported path easy to create, test, package, and release.
 ```text
 gansi new <name>
 gansi setup
+gansi doctor
 gansi dev
 gansi test
 gansi bundle

@@ -110,6 +110,10 @@ pub fn write_project(project: &Project, target: &Path) -> Result<(), String> {
             "src/spike.cpp",
             template::render(template::SPIKE_CPP, project),
         ),
+        (
+            ".github/workflows/ci.yml",
+            template::render(template::CI_WORKFLOW, project),
+        ),
     ];
     for (relative, content) in files {
         let path = target.join(relative);
@@ -282,11 +286,23 @@ mod tests {
             "src/bridge.rs",
             "src/spike.h",
             "src/spike.cpp",
+            ".github/workflows/ci.yml",
         ] {
             assert!(dir.join(file).exists(), "missing generated file {file}");
         }
         let cargo_toml = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
         assert!(cargo_toml.contains("name = \"smoke-app\""));
+        let workflow = fs::read_to_string(dir.join(".github/workflows/ci.yml")).unwrap();
+        for platform in ["ubuntu-latest", "windows-latest", "macos-latest"] {
+            assert!(
+                workflow.contains(platform),
+                "CI workflow must cover {platform}"
+            );
+        }
+        assert!(
+            workflow.contains("aqt install-qt"),
+            "Windows job must download Qt via aqt"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

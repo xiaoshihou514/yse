@@ -92,6 +92,7 @@ gansi new hello            # generate a project (buildable CXX-Qt template)
 gansi new --local /path/to/yse hello-facade  # generate against a local Yse checkout
 cd hello
 gansi setup                # install Qt 6 automatically (first time only)
+gansi doctor               # check the Rust/Qt/CMake environment
 gansi dev                  # build and run
 gansi test                 # run tests
 gansi bundle               # release build + platform bundle (windeployqt/macdeployqt when present)
@@ -104,9 +105,11 @@ installer needed. The discovered Qt prefix is recorded in `.gansi/config.toml`
 and reused by later commands.
 
 Generated projects pin the Qt version, compiler family, and target
-architecture in `yse.toml`, include a three-platform CI workflow, an icon
-placeholder, and a `RELEASE.md` guide that lists what stays application-specific
-(code signing, notarization, store submissions, native dependencies).
+architecture in `yse.toml`, ship with a three-platform CI workflow
+(`.github/workflows/ci.yml` that installs Qt the same way `gansi` does), an
+icon placeholder, and a `RELEASE.md` guide that lists what stays
+application-specific (code signing, notarization, store submissions, native
+dependencies).
 The `--local` variant depends on the `yse` facade crate from your checkout,
 so generated apps exercise the full framework without a C++ shim.
 Run its lifecycle tests and the headless settings-form demo with:
