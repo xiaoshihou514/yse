@@ -61,9 +61,8 @@ impl Project {
 
     /// Read the pinned project configuration from `yse.toml`.
     pub fn from_manifest(path: &str) -> Result<Self, String> {
-        let content = fs::read_to_string(path).map_err(|error| {
-            format!("cannot read `{path}` (run `cargo yse new` first): {error}")
-        })?;
+        let content = fs::read_to_string(path)
+            .map_err(|error| format!("cannot read `{path}` (run `gansi new` first): {error}"))?;
         let name = content
             .lines()
             .find_map(|line| line.trim().strip_prefix("name = "))

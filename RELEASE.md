@@ -24,7 +24,7 @@ cargo fmt --check
 
 No CI workflows are committed (Actions quota is reserved). Validate locally
 with the gate above, and add platform CI only when your quota allows.
-`cargo yse bundle` still produces a Linux release bundle on demand.
+`gansi bundle` still produces a Linux release bundle on demand.
 
 ## What stays application-specific
 
@@ -35,5 +35,5 @@ Yse cannot automate these; they require your credentials and accounts:
 - Store submissions (Microsoft Store, App Store, Sparkle).
 - Third-party native dependencies beyond Qt.
 
-See the generated `RELEASE.md` inside any `cargo yse new` project for the
+See the generated `RELEASE.md` inside any `gansi new` project for the
 application-side checklist.

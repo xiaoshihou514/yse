@@ -10,7 +10,7 @@ owns reactive state, widget composition, and developer tooling.
 crates/yse        Convenience facade: re-exports yse-model + yse-ui
 crates/yse-model  Pure-Rust reactive runtime (no Qt, no unsafe)
 crates/yse-ui     Reactive Qt Widgets layer (CXX bridge + C++ shim)
-crates/yse-tool   Developer toolchain (`cargo yse new/dev/test/bundle`)
+crates/yse-tool   Developer toolchain (`gansi new/setup/dev/test/bundle`)
 ```
 
 Dependency direction: `yse -> yse-ui -> yse-model`. `yse-tool`, examples, and
@@ -95,9 +95,11 @@ into `yse-ui`.
 
 ## Toolchain (`yse-tool`)
 
-`cargo yse new` generates a buildable CXX-Qt project with pinned
+`gansi` generates a buildable CXX-Qt project with pinned
 configuration (`yse.toml`), an icon, and a release guide.
-`dev`/`test`/`bundle` wrap Cargo and Qt deployment tooling.
+`setup` installs Qt 6 automatically (apt-get on Linux, `aqt` via `uv` on
+Windows, Homebrew on macOS), and `dev`/`test`/`bundle` wrap Cargo and Qt
+deployment tooling.
 
 ## Testing strategy
 
@@ -121,5 +123,5 @@ configuration (`yse.toml`), an icon, and a release guide.
   through a scheduler.
 - Windows/macOS builds are only verified from this development machine;
   platform CI can be added later when quota allows.
-- The crates are not yet published; `cargo yse new` templates therefore use
+- The crates are not yet published; `gansi new` templates therefore use
   the standalone CXX-Qt shape rather than depending on the facade.

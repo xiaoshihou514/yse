@@ -77,7 +77,7 @@ QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 cargo run -p yse-ui --example data_browser
 It prints `status`, visible row count, active filter, and the first visible
 row after driving the whole flow.
 
-## Developer toolchain (`cargo yse`)
+## Developer toolchain (`gansi`)
 
 [`yse-tool`](crates/yse-tool) is the Phase 4 developer CLI. Install it with:
 
@@ -88,13 +88,20 @@ cargo install --path crates/yse-tool
 Then:
 
 ```sh
-cargo yse new hello        # generate a project (buildable CXX-Qt template)
-cargo yse new --local /path/to/yse hello-facade  # generate against a local Yse checkout
+gansi new hello            # generate a project (buildable CXX-Qt template)
+gansi new --local /path/to/yse hello-facade  # generate against a local Yse checkout
 cd hello
-cargo yse dev              # build and run
-cargo yse test             # run tests
-cargo yse bundle           # release build + platform bundle (windeployqt/macdeployqt when present)
+gansi setup                # install Qt 6 automatically (first time only)
+gansi dev                  # build and run
+gansi test                 # run tests
+gansi bundle               # release build + platform bundle (windeployqt/macdeployqt when present)
 ```
+
+`gansi` owns Qt 6 acquisition: on Linux it installs the distribution's Qt 6
+development packages via `apt-get`, on Windows it downloads prebuilt Qt 6 with
+`aqt` (installed through `uv`), and on macOS it uses Homebrew — no manual Qt
+installer needed. The discovered Qt prefix is recorded in `.gansi/config.toml`
+and reused by later commands.
 
 Generated projects pin the Qt version, compiler family, and target
 architecture in `yse.toml`, include a three-platform CI workflow, an icon

@@ -201,13 +201,14 @@ menu shortcuts.
 
 Make the supported path easy to create, test, package, and release.
 
-### `yse-tool` commands
+### `gansi` commands
 
 ```text
-cargo yse new <name>
-cargo yse dev
-cargo yse test
-cargo yse bundle
+gansi new <name>
+gansi setup
+gansi dev
+gansi test
+gansi bundle
 ```
 
 ### Responsibilities

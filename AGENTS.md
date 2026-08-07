@@ -11,7 +11,7 @@ benchmarks live in each crate's `examples/` directory.
 crates/yse        Facade: re-exports yse-model + yse-ui
 crates/yse-model  Pure-Rust reactive runtime (no Qt, no unsafe)
 crates/yse-ui     Qt Widgets layer (cxx bridge + C++ shim in src/*.cpp)
-crates/yse-tool   Developer CLI (cargo yse new/dev/test/bundle)
+crates/yse-tool   Developer CLI (`gansi` new/setup/dev/test/bundle)
 spike             Phase 0 CXX-Qt feasibility spike
 docs/             Architecture notes
 ```

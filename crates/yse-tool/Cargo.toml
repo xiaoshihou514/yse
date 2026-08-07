@@ -2,9 +2,9 @@
 name = "yse-tool"
 version = "0.1.0"
 edition = "2024"
-description = "Developer toolchain for Yse: cargo yse new/dev/test/bundle"
+description = "Gansi — the Yse developer toolchain: new/dev/test/bundle/setup"
 license = "MIT OR Apache-2.0"
 
 [[bin]]
-name = "cargo-yse"
+name = "gansi"
 path = "src/main.rs"
