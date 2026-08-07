@@ -30,78 +30,10 @@ const PROCESS_COLUMNS: [&str; 7] = [
 
 // Quiet chrome, data-forward theme: no boxes around the table, tree, or
 // charts; hierarchy comes from typography and weight rather than borders.
-// The same structure drives light and dark palettes.
-const LIGHT_QSS: &str = r#"
-* { font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 13px; }
-QMainWindow { background: #f5f6f8; }
-QHeaderView::section { background: transparent; border: none; border-bottom: 1px solid rgba(31, 35, 40, 0.08); padding: 6px 10px; font-weight: 500; color: #6b7280; }
-QTableView, QTreeView { background: transparent; border: none; gridline-color: transparent; selection-background-color: rgba(0, 120, 212, 0.10); selection-color: #1f2328; show-decoration-selected: 1; outline: none; }
-QTableView::item:hover, QTreeView::item:hover { background: rgba(0, 120, 212, 0.06); }
-QTreeView::branch { background: transparent; }
-QPushButton { padding: 6px 14px; border: none; border-radius: 6px; background: transparent; color: #1f2328; }
-QPushButton:hover { background: rgba(31, 35, 40, 0.06); }
-QPushButton:pressed { background: rgba(31, 35, 40, 0.10); }
-QPushButton:disabled { color: #a6adb5; }
-QPushButton[yseClass="accent"] { background: #0078d4; color: #ffffff; }
-QPushButton[yseClass="accent"]:hover { background: #0067b8; }
-QPushButton[yseClass="quiet"], QPushButton[yseClass="nav"] { background: transparent; text-align: left; padding: 6px 10px; border-radius: 6px; }
-QPushButton[yseClass="nav"]:hover { background: rgba(0, 120, 212, 0.06); }
-QPushButton[yseClass="navSelected"] { background: rgba(0, 120, 212, 0.12); color: #0067b8; font-weight: 600; text-align: left; border-radius: 6px; padding: 6px 10px; }
-QLabel { background: transparent; }
-QLabel[yseClass="muted"] { color: #6b7280; }
-QLabel[yseClass="title"] { font-size: 15px; font-weight: 600; color: #1f2328; }
-QLabel[yseClass="primary"] { font-size: 34px; font-weight: 600; color: #1f2328; }
-QLabel[yseClass="secondary"] { font-size: 15px; font-weight: 500; color: #1f2328; }
-QLineEdit { border: 1px solid rgba(31, 35, 40, 0.15); border-radius: 6px; padding: 5px 8px; background: #ffffff; }
-QLineEdit:focus { border-color: #0078d4; }
-QProgressBar { border: none; border-radius: 4px; background: #eceef1; text-align: center; color: transparent; }
-QProgressBar::chunk { border-radius: 4px; background: #0078d4; }
-QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
-QScrollBar::handle:vertical { background: #d7dbe0; border-radius: 5px; min-height: 30px; }
-QScrollBar::handle:vertical:hover { background: #b6bdc7; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
-QMenu { background: #ffffff; border: 1px solid rgba(31, 35, 40, 0.12); border-radius: 6px; padding: 4px; }
-QMenu::item { padding: 6px 22px 6px 12px; border-radius: 4px; }
-QMenu::item:selected { background: rgba(0, 120, 212, 0.10); }
-QMenu::separator { height: 1px; background: #e5e7eb; margin: 4px 8px; }
-QToolTip { background: #ffffff; color: #1f2328; border: 1px solid rgba(31, 35, 40, 0.12); }
-"#;
-
-const DARK_QSS: &str = r#"
-* { font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 13px; }
-QMainWindow { background: #1e1f22; }
-QHeaderView::section { background: transparent; border: none; border-bottom: 1px solid rgba(230, 230, 230, 0.08); padding: 6px 10px; font-weight: 500; color: #9d9d9d; }
-QTableView, QTreeView { background: transparent; border: none; gridline-color: transparent; selection-background-color: rgba(77, 163, 255, 0.16); selection-color: #e6e6e6; show-decoration-selected: 1; outline: none; }
-QTableView::item:hover, QTreeView::item:hover { background: rgba(77, 163, 255, 0.08); }
-QTreeView::branch { background: transparent; }
-QPushButton { padding: 6px 14px; border: none; border-radius: 6px; background: transparent; color: #e6e6e6; }
-QPushButton:hover { background: rgba(230, 230, 230, 0.08); }
-QPushButton:pressed { background: rgba(230, 230, 230, 0.14); }
-QPushButton:disabled { color: #6f7076; }
-QPushButton[yseClass="accent"] { background: #4da3ff; color: #101418; }
-QPushButton[yseClass="accent"]:hover { background: #6cb2ff; }
-QPushButton[yseClass="quiet"], QPushButton[yseClass="nav"] { background: transparent; text-align: left; padding: 6px 10px; border-radius: 6px; }
-QPushButton[yseClass="nav"]:hover { background: rgba(77, 163, 255, 0.08); }
-QPushButton[yseClass="navSelected"] { background: rgba(77, 163, 255, 0.16); color: #8fc1ff; font-weight: 600; text-align: left; border-radius: 6px; padding: 6px 10px; }
-QLabel { background: transparent; }
-QLabel[yseClass="muted"] { color: #9d9d9d; }
-QLabel[yseClass="title"] { font-size: 15px; font-weight: 600; color: #e6e6e6; }
-QLabel[yseClass="primary"] { font-size: 34px; font-weight: 600; color: #e6e6e6; }
-QLabel[yseClass="secondary"] { font-size: 15px; font-weight: 500; color: #e6e6e6; }
-QLineEdit { border: 1px solid rgba(230, 230, 230, 0.15); border-radius: 6px; padding: 5px 8px; background: #26272a; }
-QLineEdit:focus { border-color: #4da3ff; }
-QProgressBar { border: none; border-radius: 4px; background: #3a3c42; text-align: center; color: transparent; }
-QProgressBar::chunk { border-radius: 4px; background: #4da3ff; }
-QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
-QScrollBar::handle:vertical { background: #45464b; border-radius: 5px; min-height: 30px; }
-QScrollBar::handle:vertical:hover { background: #55565c; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
-QMenu { background: #26272a; border: 1px solid rgba(230, 230, 230, 0.12); border-radius: 6px; padding: 4px; }
-QMenu::item { padding: 6px 22px 6px 12px; border-radius: 4px; }
-QMenu::item:selected { background: rgba(77, 163, 255, 0.16); }
-QMenu::separator { height: 1px; background: #3f3f46; margin: 4px 8px; }
-QToolTip { background: #26272a; color: #e6e6e6; border: 1px solid rgba(230, 230, 230, 0.12); }
-"#;
+// The same structure drives light and dark palettes; the sheets live in
+// `assets/` and are embedded at compile time.
+const LIGHT_QSS: &str = include_str!("../assets/light.qss");
+const DARK_QSS: &str = include_str!("../assets/dark.qss");
 
 /// Follow the system color scheme and apply the matching stylesheet.
 fn apply_theme(app: &Application) -> bool {
