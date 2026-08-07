@@ -28,6 +28,10 @@ const PROCESS_COLUMNS: [&str; 7] = [
     "电源使用情况",
 ];
 
+fn all_process_columns() -> Vec<usize> {
+    (0..PROCESS_COLUMNS.len()).collect()
+}
+
 // Quiet chrome, data-forward theme: no boxes around the table, tree, or
 // charts; hierarchy comes from typography and weight rather than borders.
 // The same structure drives light and dark palettes; the sheets live in
@@ -77,29 +81,6 @@ fn compare_rows(
     }
 }
 
-/// A small friendly-name map for well-known processes; the executable name is
-/// the fallback.
-fn friendly_name(name: &str) -> String {
-    const FRIENDLY: &[(&str, &str)] = &[
-        ("systemd", "系统服务管理器"),
-        ("explorer", "Windows 资源管理器"),
-        ("svchost", "Windows 服务主机"),
-        ("firefox", "Firefox"),
-        ("code", "Visual Studio Code"),
-        ("Code", "Visual Studio Code"),
-        ("chrome", "Chrome"),
-        ("msedgewebview2", "Microsoft Edge WebView2"),
-        ("yse-taskmgr", "任务管理器"),
-        ("yse-taskmgr.exe", "任务管理器"),
-    ];
-    for (key, display) in FRIENDLY {
-        if name.starts_with(key) {
-            return (*display).to_string();
-        }
-    }
-    name.to_string()
-}
-
 /// One row of the grouped process tree: group roots have `parent == -1` and
 /// no pid; children carry their pid, icon path, and per-column heat values.
 #[derive(Clone, PartialEq)]
@@ -114,7 +95,7 @@ struct ProcessTreeRow {
 
 fn process_cells(p: &sys::ProcessSample) -> Vec<String> {
     vec![
-        friendly_name(&p.name),
+        p.name.clone(),
         p.group.label().to_string(),
         format!("{:.0}%", p.cpu),
         format_mb(p.mem_bytes),
@@ -268,29 +249,32 @@ fn main() {
     window.set_size(960, 620);
 
     // --- 状态：全部放在 Var 中，UI 通过绑定消费这些信号 ---
-    let process_data = Var::new(Vec::<sys::ProcessSample>::new());
-    let sort = Var::new(SortState::default());
-    let visible_columns = Var::new((0..PROCESS_COLUMNS.len()).collect::<Vec<usize>>());
-    let selected_pid = Var::new(None::<(u32, u64)>);
-    let details_open = Var::new(false);
-    let resource = Var::new(0usize);
-    let cpu_history = Var::new(Vec::<f64>::new());
-    let mem_history = Var::new(Vec::<f64>::new());
-    let net_history = Var::new(Vec::<f64>::new());
-    let disk_history = Var::new(Vec::<f64>::new());
-    let per_core_history = Var::new(Vec::<Vec<f64>>::new());
-    let usage_text = Var::new(String::new());
-    let speed_text = Var::new(String::new());
-    let detail_text = Var::new(String::new());
-    let status_text = Var::new(String::new());
-    let stats_text = Var::new(String::new());
-    let resource_texts = Var::new(vec![String::new(); 5]);
-    let mem_percent = Var::new(0i32);
-    let mem_label_text = Var::new(String::new());
-    let details_rows_var = Var::new(Vec::<(Vec<String>, String)>::new());
-    let services_rows = Var::new(Vec::<Vec<String>>::new());
-    let startup_rows = Var::new(Vec::<Vec<String>>::new());
-    let users_rows = Var::new(Vec::<Vec<String>>::new());
+    let process_data: Var<Vec<sys::ProcessSample>> = Var::default();
+    let sort = Var::default();
+    let visible_columns = Var::new(all_process_columns());
+    let selected_pid: Var<Option<(u32, u64)>> = Var::default();
+    let details_open: Var<bool> = Var::default();
+    let resource: Var<usize> = Var::default();
+    let cpu_history: Var<Vec<f64>> = Var::default();
+    let mem_history: Var<Vec<f64>> = Var::default();
+    let net_history: Var<Vec<f64>> = Var::default();
+    let disk_history: Var<Vec<f64>> = Var::default();
+    let per_core_history: Var<Vec<Vec<f64>>> = Var::default();
+    let usage_text: Var<String> = Var::default();
+    let speed_text: Var<String> = Var::default();
+    let detail_text: Var<String> = Var::default();
+    let status_text: Var<String> = Var::default();
+    let stats_text: Var<String> = Var::default();
+    // 5 个资源页（CPU/内存/磁盘/网络/GPU）；初始为空串，避免默认 0 索引越界。
+    let resource_texts: Var<Vec<String>> = Var::new(vec![String::new(); 5]);
+    let mem_percent: Var<i32> = Var::default();
+    let mem_label_text: Var<String> = Var::default();
+    let details_rows_var: Var<Vec<(Vec<String>, String)>> = Var::default();
+    let services_rows: Var<Vec<Vec<String>>> = Var::default();
+    let startup_rows: Var<Vec<Vec<String>>> = Var::default();
+    let users_rows: Var<Vec<Vec<String>>> = Var::default();
+    // 左侧导航当前页面：按钮高亮与内容页都从它派生。
+    let page_index: Var<usize> = Var::default();
 
     // --- 表格模型 ---
     let tree_model = TreeModel::new(PROCESS_COLUMNS.len());
@@ -407,7 +391,6 @@ fn main() {
                 side.spacer();
                 buttons
             });
-            rail.first().unwrap().set_style_class("navSelected");
 
             let stack = row.stacked_widget();
 
@@ -524,13 +507,18 @@ fn main() {
     detail_stats_label.set_style_class("muted");
     perf_stats_label.set_style_class("muted");
 
-    // 左侧导航：切换页面并高亮当前项。
+    // 左侧导航：按钮高亮从 page_index 派生，点击只改状态。
     for (index, button) in rail.iter().enumerate() {
-        button.on_click(clone!(rail, stack => move |_| {
-            stack.set_current(index);
-            for (i, nav) in rail.iter().enumerate() {
-                nav.set_style_class(if i == index { "navSelected" } else { "nav" });
+        button.bind_style_class(&page_index.signal().map(move |current| {
+            if *current == index {
+                String::from("navSelected")
+            } else {
+                String::from("nav")
             }
+        }));
+        button.on_click(clone!(page_index, stack => move |_| {
+            page_index.set(index);
+            stack.set_current(index);
         }));
     }
 
@@ -615,7 +603,7 @@ fn main() {
         });
     chart.bind_series(&chart_series);
     cores_chart.bind_series_multi(&per_core_history.signal());
-    // 逻辑处理器图表仅在数据可用时显示（Linux 提供，Windows 显示不可用）。
+
     let cores_empty = per_core_history.signal().map(|cores| cores.is_empty());
     cores_chart.bind_visible(
         &resource
@@ -675,16 +663,15 @@ fn main() {
 
     let resource_buttons = [cpu_btn, mem_btn, disk_btn, net_btn, gpu_btn];
     for (index, button) in resource_buttons.iter().enumerate() {
-        button.on_click(clone!(resource => move |_| resource.set(index)));
-    }
-    // 资源导航按钮同样用“选中”样式，随 resource 状态切换。
-    let _resource_nav = resource
-        .signal()
-        .observe(clone!(resource_buttons => move |selected| {
-            for (index, button) in resource_buttons.iter().enumerate() {
-                button.set_style_class(if index == *selected { "navSelected" } else { "nav" });
+        button.bind_style_class(&resource.signal().map(move |selected| {
+            if *selected == index {
+                String::from("navSelected")
+            } else {
+                String::from("nav")
             }
         }));
+        button.on_click(clone!(resource => move |_| resource.set(index)));
+    }
 
     let kill_subs: Rc<RefCell<Vec<Subscription>>> = Rc::new(RefCell::new(Vec::new()));
     // 结束进程（或整棵进程树）并给出明确反馈。
@@ -1056,7 +1043,7 @@ fn main() {
     // 列选择器通过隐藏表头列生效，模型布局与热力列位置保持稳定。
     let _column_visibility = visible_columns.signal().observe(clone!(
         process_view => move |visible| {
-            for column in 0..PROCESS_COLUMNS.len() {
+            for column in all_process_columns() {
                 process_view.set_column_hidden(column, !visible.contains(&column));
             }
         }

@@ -10,8 +10,9 @@ mod linux;
 mod windows;
 
 /// Estimated power draw of a process, derived from CPU usage.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum PowerLevel {
+    #[default]
     Low,
     Medium,
     High,
@@ -43,8 +44,9 @@ impl PowerLevel {
 }
 
 /// Task-Manager-style grouping of a process.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum ProcessGroup {
+    #[default]
     App,
     Background,
     System,
@@ -62,7 +64,7 @@ impl ProcessGroup {
 }
 
 /// One row of the process table.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 pub struct ProcessSample {
     pub pid: u32,
     pub parent_pid: u32,

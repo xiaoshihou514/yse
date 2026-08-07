@@ -122,28 +122,27 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            qt: apt
+            aqt-host: linux
+            aqt-arch: linux_gcc_64
+            qt-prefix: qt/6.8.3/linux_gcc_64
           - os: windows-latest
-            qt: aqt
+            aqt-host: windows
+            aqt-arch: win64_msvc2022_64
+            qt-prefix: qt/6.8.3/win64_msvc2022_64
           - os: macos-latest
-            qt: brew
+            aqt-host: mac
+            aqt-arch: macos_x86_64
+            qt-prefix: qt/6.8.3/macos_x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Qt 6 (Linux)
-        if: matrix.qt == 'apt'
-        run: sudo apt-get install -y --no-install-recommends qt6-base-dev libgl1-mesa-dev ninja-build libfontconfig1-dev libfreetype-dev libxkbcommon-dev
-      - name: Install Qt 6 (Windows)
-        if: matrix.qt == 'aqt'
+      - name: Install Qt 6 (aqt)
         run: |
           pip install aqtinstall
-          aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtbase -O qt
-          echo "CMAKE_PREFIX_PATH=$(pwd)/qt/6.8.3/win64_msvc2022_64" >> "$GITHUB_ENV"
+          aqt install-qt ${{ matrix.aqt-host }} desktop 6.8.3 ${{ matrix.aqt-arch }} -m qtbase -O qt
+          echo "CMAKE_PREFIX_PATH=$(pwd)/${{ matrix.qt-prefix }}" >> "$GITHUB_ENV"
         shell: bash
-      - name: Install Qt 6 (macOS)
-        if: matrix.qt == 'brew'
-        run: brew install qt
       - name: Test
         run: cargo test
       - name: Bundle

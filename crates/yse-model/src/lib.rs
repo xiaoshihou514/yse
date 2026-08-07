@@ -27,6 +27,21 @@ mod nodes;
 mod timing;
 mod undo;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn var_default_matches_new_of_default() {
+        let a = Var::<Vec<u32>>::default();
+        let b = Var::new(Vec::<u32>::new());
+        assert_eq!(*a.value(), *b.value());
+
+        let flag = Var::<bool>::default();
+        assert!(!*flag.value());
+    }
+}
+
 pub use diagnostics::{DiagnosticEvent, Diagnostics, LogLevel, LogRecord, Logger};
 pub use diagnostics::{log, log_debug, log_error, log_info, log_warn};
 use graph::{Node, connect, resync_signal_ancestors, write_node};
@@ -130,6 +145,12 @@ impl<T> Clone for Var<T> {
         Self {
             node: self.node.clone(),
         }
+    }
+}
+
+impl<T: Default + 'static + PartialEq> Default for Var<T> {
+    fn default() -> Self {
+        Self::new(T::default())
     }
 }
 

@@ -129,6 +129,20 @@ macro_rules! widget_wrapper {
                     unsafe { ffi::widget_set_style_class(self.inner.raw(), style_class.as_ref()) };
                 }
             }
+
+            /// Bind the style class to a signal, keeping the class derived
+            /// from state instead of toggled imperatively.
+            pub fn bind_style_class(&self, signal: &Signal<String>) {
+                let weak = Rc::downgrade(&self.inner);
+                let subscription = signal.observe(move |style_class| {
+                    if let Some(this) = weak.upgrade() {
+                        unsafe {
+                            ffi::widget_set_style_class(this.raw(), style_class.as_str());
+                        }
+                    }
+                });
+                self.inner.owner.borrow_mut().add(subscription);
+            }
         }
 
         impl IntoWidget for $name {

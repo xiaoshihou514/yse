@@ -2,13 +2,8 @@
 //!
 //! `gansi` should not require the user to install Qt by hand. This module
 //! detects an existing Qt 6 development installation, and when none is found
-//! installs one through the platform's native package flow:
-//!
-//! - Linux: `apt-get install` the Qt 6 development packages (the same
-//!   non-interactive style as `apt-get install -y --no-install-recommends`).
-//! - Windows: `uv tool install aqtinstall` + `aqt` to download prebuilt Qt 6
-//!   binaries into the project's `.gansi/qt`.
-//! - macOS: Homebrew (`brew install qt`).
+//! downloads prebuilt Qt 6 binaries with `aqt` (installed through `uv`) into
+//! the project's `.gansi/qt` — the same flow on every platform.
 //!
 //! The discovered Qt prefix is recorded in `.gansi/config.toml` so
 //! `gansi dev/test/bundle` can point the build at it without any manual
@@ -20,14 +15,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Preferred Qt 6 version used by the Windows `aqt` download.
-#[cfg(target_os = "windows")]
+/// Preferred Qt 6 version used by the `aqt` download.
 const QT_VERSION: &str = "6.8.3";
-/// Qt host/build architecture used by the Windows `aqt` download.
-#[cfg(target_os = "windows")]
-const QT_ARCH: &str = "win64_msvc2022_64";
 /// Modules needed by a Yse Widgets application.
-#[cfg(target_os = "windows")]
 const QT_MODULES: &str = "qtbase";
 
 const CONFIG_DIR: &str = ".gansi";
@@ -105,18 +95,10 @@ fn qmake_name() -> &'static str {
 }
 
 /// Install Qt 6 using the platform's native flow.
-fn install_qt(_base: &Path) -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
+fn install_qt(base: &Path) -> Result<PathBuf, String> {
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     {
-        install_qt_windows(base)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        install_qt_macos()
-    }
-    #[cfg(target_os = "linux")]
-    {
-        install_qt_linux()
+        install_qt_with_aqt(base)
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
@@ -128,53 +110,21 @@ fn install_qt(_base: &Path) -> Result<PathBuf, String> {
     }
 }
 
-/// Linux: install the distribution's Qt 6 development packages. Mirrors the
-/// `apt-get install -y --no-install-recommends` style used by other tooling.
-#[cfg(target_os = "linux")]
-fn install_qt_linux() -> Result<PathBuf, String> {
-    let packages = [
-        "qt6-base-dev",
-        "libgl1-mesa-dev",
-        "ninja-build",
-        "libfontconfig1-dev",
-        "libfreetype-dev",
-        "libxkbcommon-dev",
-    ];
-    let mut apt = Command::new("sudo");
-    apt.arg("apt-get")
-        .arg("install")
-        .arg("-y")
-        .arg("--no-install-recommends");
-    for package in packages {
-        apt.arg(package);
-    }
-    let status = apt
-        .status()
-        .map_err(|error| format!("cannot run apt-get: {error}"))?;
-    if !status.success() {
-        return Err("apt-get failed to install Qt 6 development packages".into());
-    }
-    // apt installs into the standard prefix; locate it for recording.
-    find_system_qt().ok_or_else(|| {
-        "Qt 6 was installed but could not be located; ensure qmake6 is on PATH".into()
-    })
-}
-
-/// Windows: install `aqtinstall` through `uv`, then download prebuilt Qt 6
-/// binaries into `.gansi/qt` — no admin rights and no manual installer.
-#[cfg(target_os = "windows")]
-fn install_qt_windows(base: &Path) -> Result<PathBuf, String> {
+/// Install prebuilt Qt 6 binaries with `aqt` into `.gansi/qt` — the same
+/// flow on every platform, no admin rights and no manual installer.
+fn install_qt_with_aqt(base: &Path) -> Result<PathBuf, String> {
     let tool = ensure_uv_tool("aqtinstall", "aqt")?;
     let dest = state_dir(base).join("qt");
-    let arch = if env::var("PROCESSOR_ARCHITECTURE").as_deref() == Ok("ARM64") {
-        "win64_arm64"
-    } else {
-        QT_ARCH
-    };
+    let (host, arch) = aqt_host_and_arch();
+    let version_dir = dest.join(QT_VERSION).join(arch);
+    if version_dir.join("bin").join(qmake_name()).exists() {
+        // Already downloaded by an earlier interrupted run; skip re-download.
+        return Ok(version_dir);
+    }
     let output = Command::new(&tool)
         .args([
             "install-qt",
-            "windows",
+            host,
             "desktop",
             QT_VERSION,
             arch,
@@ -191,57 +141,55 @@ fn install_qt_windows(base: &Path) -> Result<PathBuf, String> {
             String::from_utf8_lossy(&output.stderr)
         ));
     }
-    Ok(dest.join(QT_VERSION).join(arch))
+    Ok(version_dir)
 }
 
-/// macOS: install Qt 6 through Homebrew when present, otherwise fall back to
-/// `aqt` into `.gansi/qt`.
-#[cfg(target_os = "macos")]
-fn install_qt_macos() -> Result<PathBuf, String> {
-    let brew = Command::new("brew")
-        .arg("install")
-        .arg("qt")
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
-    if brew {
-        return find_system_qt().ok_or_else(|| "brew installed Qt but qmake was not found".into());
+/// The aqt `install-qt` host/arch pair for the current platform and CPU.
+fn aqt_host_and_arch() -> (&'static str, &'static str) {
+    #[cfg(target_os = "windows")]
+    {
+        let arm64 = env::var("PROCESSOR_ARCHITECTURE").as_deref() == Ok("ARM64");
+        (
+            "windows",
+            if arm64 {
+                "win64_arm64"
+            } else {
+                "win64_msvc2022_64"
+            },
+        )
     }
-    let tool = ensure_uv_tool("aqtinstall", "aqt")?;
-    let dest = env::current_dir()
-        .map_err(|error| format!("cannot read current directory: {error}"))?
-        .join(".gansi")
-        .join("qt");
-    let arch = if env::consts::ARCH == "aarch64" {
-        "macos_arm64"
-    } else {
-        "macos_x86_64"
-    };
-    let output = Command::new(&tool)
-        .args([
-            "install-qt",
+    #[cfg(target_os = "macos")]
+    {
+        (
             "mac",
-            "desktop",
-            QT_VERSION,
-            arch,
-            "-m",
-            QT_MODULES,
-            "-O",
-        ])
-        .arg(&dest)
-        .output()
-        .map_err(|error| format!("failed to run aqt: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "aqt install-qt failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+            if env::consts::ARCH == "aarch64" {
+                "macos_arm64"
+            } else {
+                "macos_x86_64"
+            },
+        )
     }
-    Ok(dest.join(QT_VERSION).join(arch))
+    #[cfg(target_os = "linux")]
+    {
+        (
+            "linux",
+            if env::consts::ARCH == "x86_64" {
+                "linux_gcc_64"
+            } else if env::consts::ARCH == "aarch64" {
+                "linux_arm64"
+            } else {
+                "linux_gcc_64"
+            },
+        )
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        ("", "")
+    }
 }
 
 /// Install a `uv` tool if it is missing, returning the executable name.
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn ensure_uv_tool(tool_package: &str, tool_name: &str) -> Result<String, String> {
     let visible = Command::new(tool_name)
         .arg("--version")
@@ -310,6 +258,17 @@ mod tests {
             qt_prefix(&base),
             Some(prefix),
             "a recorded install wins over system lookup"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn aqt_host_is_linux() {
+        let (host, arch) = aqt_host_and_arch();
+        assert_eq!(host, "linux");
+        assert!(
+            arch == "linux_gcc_64" || arch == "linux_arm64",
+            "unexpected aqt arch: {arch}"
         );
     }
 

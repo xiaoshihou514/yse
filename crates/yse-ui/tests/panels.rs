@@ -130,6 +130,27 @@ fn reactive_bindings_drive_widgets() {
     visible.set(true);
     visible.set(false);
 
+    // Style class bound to a signal: the selected nav button is derived from
+    // state, not toggled by the click handler.
+    let selected = Var::new(0usize);
+    let a = column.button("A");
+    let b = column.button("B");
+    a.bind_style_class(&selected.signal().map(|i| {
+        if *i == 0 {
+            String::from("navSelected")
+        } else {
+            String::from("nav")
+        }
+    }));
+    b.bind_style_class(&selected.signal().map(|i| {
+        if *i == 1 {
+            String::from("navSelected")
+        } else {
+            String::from("nav")
+        }
+    }));
+    selected.set(1);
+
     // Chart series bound to signals (single and multi).
     let series = Var::new(vec![1.0, 2.0, 3.0]);
     let chart = column.line_chart();

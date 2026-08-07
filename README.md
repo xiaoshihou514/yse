@@ -98,11 +98,10 @@ gansi test                 # run tests
 gansi bundle               # release build + platform bundle (windeployqt/macdeployqt when present)
 ```
 
-`gansi` owns Qt 6 acquisition: on Linux it installs the distribution's Qt 6
-development packages via `apt-get`, on Windows it downloads prebuilt Qt 6 with
-`aqt` (installed through `uv`), and on macOS it uses Homebrew — no manual Qt
-installer needed. The discovered Qt prefix is recorded in `.gansi/config.toml`
-and reused by later commands.
+`gansi` owns Qt 6 acquisition: on every platform it downloads prebuilt Qt 6
+binaries with `aqt` (installed through `uv` when missing) into the project's
+`.gansi/qt` — no manual Qt installer needed. The discovered Qt prefix is
+recorded in `.gansi/config.toml` and reused by later commands.
 
 Generated projects pin the Qt version, compiler family, and target
 architecture in `yse.toml`, ship with a three-platform CI workflow
@@ -150,7 +149,8 @@ it headless with
 - Rust toolchain (edition 2024)
 - C++17 compiler and CMake
 - Qt 6 with the Widgets module:
-  `sudo apt install -y qt6-base-dev ninja-build libgl1-mesa-dev`
+  `gansi setup` (downloads prebuilt Qt 6 via `aqt`), or system packages such
+  as `sudo apt install -y qt6-base-dev ninja-build libgl1-mesa-dev`
 
 ## Build and run
 
