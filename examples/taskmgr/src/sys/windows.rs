@@ -1,8 +1,10 @@
 //! Windows backend: `windows-sys` FFI over Toolhelp / PSAPI / IP Helper /
 //! the registry. Rate counters are diffed against the previous tick.
 
-use crate::sys::{CpuInfo, NetRate, PowerLevel, ProcessSample, SystemStats};
+use crate::sys::{CpuInfo, NetRate, PowerLevel, ProcessGroup, ProcessSample, SystemStats};
 use std::collections::HashMap;
+use std::collections::HashSet;
+use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_INSUFFICIENT_BUFFER, FILETIME, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
 };
@@ -30,6 +32,10 @@ use windows_sys::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, QueryFullProcessImageNameW,
     TerminateProcess,
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
+};
+use windows_sys::core::BOOL;
 
 fn filetime_to_u64(ft: &FILETIME) -> u64 {
     ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64
@@ -88,6 +94,61 @@ fn process_exe_path(handle: HANDLE) -> String {
     }
 }
 
+fn visible_window_pids() -> HashSet<u32> {
+    let mut pids = HashSet::new();
+    // SAFETY: the callback writes only into `pids`, whose address is passed as
+    // LPARAM; the enumeration runs synchronously on this thread.
+    unsafe extern "system" fn collect(window: HWND, lparam: isize) -> BOOL {
+        if IsWindowVisible(window) != 0 {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(window, &mut pid);
+            let pids = &mut *(lparam as *mut HashSet<u32>);
+            pids.insert(pid);
+        }
+        1
+    }
+    unsafe {
+        EnumWindows(Some(collect), &mut pids as *mut HashSet<u32> as isize);
+    }
+    pids
+}
+
+fn process_group(pid: u32, name: &str, windows: &HashSet<u32>) -> ProcessGroup {
+    const SYSTEM_NAMES: &[&str] = &[
+        "[System Process]",
+        "System",
+        "Registry",
+        "smss.exe",
+        "csrss.exe",
+        "wininit.exe",
+        "winlogon.exe",
+        "services.exe",
+        "lsass.exe",
+        "svchost.exe",
+        "fontdrvhost.exe",
+        "dwm.exe",
+        "conhost.exe",
+    ];
+    if SYSTEM_NAMES.contains(&name) {
+        ProcessGroup::System
+    } else if windows.contains(&pid) {
+        ProcessGroup::App
+    } else {
+        ProcessGroup::Background
+    }
+}
+
+fn priority_class(priority: i32) -> String {
+    match priority {
+        0x100 => String::from("实时"),
+        0x80 => String::from("高"),
+        0x8000 => String::from("高于正常"),
+        0x20 => String::from("普通"),
+        0x4000 => String::from("低于正常"),
+        _ => String::from("低"),
+    }
+}
+
 /// Returns `(working set bytes, io bytes, kernel+user ticks, exe path)`.
 fn process_details(pid: u32) -> (u64, u64, u64, String) {
     // SAFETY: OpenProcess with a valid access mask and pid.
@@ -124,7 +185,11 @@ fn process_details(pid: u32) -> (u64, u64, u64, String) {
     (mem, io_bytes, ticks, exe)
 }
 
-fn process_table(prev: &mut HashMap<u32, ProcTick>, total_delta: u64) -> Vec<ProcessSample> {
+fn process_table(
+    prev: &mut HashMap<u32, ProcTick>,
+    total_delta: u64,
+    windows: &HashSet<u32>,
+) -> Vec<ProcessSample> {
     let mut processes = Vec::new();
     // SAFETY: standard Toolhelp snapshot pattern; entries are initialized
     // before use and the snapshot handle is closed on every path.
@@ -150,6 +215,7 @@ fn process_table(prev: &mut HashMap<u32, ProcTick>, total_delta: u64) -> Vec<Pro
             .map(|p| io_bytes.saturating_sub(p.io_bytes))
             .unwrap_or(0);
         prev.insert(pid, ProcTick { ticks, io_bytes });
+        let group = process_group(pid, &name, windows);
         processes.push(ProcessSample {
             pid,
             name,
@@ -159,6 +225,11 @@ fn process_table(prev: &mut HashMap<u32, ProcTick>, total_delta: u64) -> Vec<Pro
             disk_bytes_per_s: disk,
             net_bytes_per_s: 0,
             power: PowerLevel::from_cpu(cpu),
+            parent_pid: entry.th32ParentProcessID,
+            threads: entry.cntThreads,
+            cpu_ticks: ticks,
+            priority: priority_class(entry.pcPriClassBase),
+            group,
         });
         ok = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
     }
@@ -436,6 +507,7 @@ impl WindowsSampler {
     }
 
     pub fn sample(&mut self) -> SystemStats {
+        let windows = visible_window_pids();
         let current = system_times();
         let (cpu_pct, total_delta) = match (&self.prev_system, &current) {
             (Some(prev), Some(cur)) => {
@@ -451,7 +523,7 @@ impl WindowsSampler {
             _ => (0.0, 0),
         };
         self.prev_system = current;
-        let processes = process_table(&mut self.prev_proc, total_delta);
+        let processes = process_table(&mut self.prev_proc, total_delta, &windows);
         let (mem_total, mem_used) = memory_status();
         let (process_count, thread_count, handle_count) = performance_counts();
         let nets = net_rates(&mut self.prev_nets);

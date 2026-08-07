@@ -19,14 +19,14 @@ graphs, and the process-management actions.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Parity baseline, capability matrix, keyboard/menu inventory | In progress |
-| 1 | Provider/snapshot separation, background sampling, update speed, settings, benchmarks | In progress |
+| 1 | Provider/snapshot separation, background sampling, update speed, settings, benchmarks | Partially done (worker-thread sampling via `spawn_interval`, High/Normal/Low/Paused, coalescing) |
 | 2 | Theme tokens, responsive shell, shared table/graph widgets, DPI | Partially done (theme + shell live) |
-| 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | In progress |
+| 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Partially done (App/Background/System grouping, friendly names, icons, resource columns, end task/tree, open location) |
 | 4 | Performance parity: CPU/memory/disk/network/GPU detail pages | CPU + memory done; disk/network/GPU partial |
-| 5 | Details + Services | Details partial; Services pending |
+| 5 | Details + Services | Details partial (PID/PPID/threads/CPU time/priority); Services pending |
 | 6 | Startup + Users | Pending |
 | 7 | App history | Pending (platform-specific, degrade gracefully) |
-| 8 | Menus/commands/keyboard parity | In progress (update speed, pause) |
+| 8 | Menus/commands/keyboard parity | Partially done (update speed, pause, group toggle, submenus, checkable actions) |
 | 9 | Accessibility, reliability, polish | Pending |
 | 10 | Release hardening | Pending |
 
@@ -36,9 +36,11 @@ graphs, and the process-management actions.
 - System light/dark following, Fusion + stylesheet theme, per-process icons.
 - Table header sorting, row selection, alternating rows, column widths,
   right-click context menu (end task), background-thread sampling with
-  High/Normal/Low/Paused update speeds, process grouping by
+  High/Normal/Low/Paused update speeds and coalescing, process grouping by
   Apps/Background/System, friendly names, group-aware sorting, process-tree
-  termination, open-file-location, extended Details columns.
+  termination, open-file-location, extended Details columns (PPID, threads,
+  CPU time, priority), composable popup context menus, and checkable/submenu
+  menu actions.
 
 ## Next
 

@@ -1,6 +1,6 @@
 //! Linux backend: pure-`std` readers over `/proc` and `/sys`.
 
-use crate::sys::{CpuInfo, NetRate, PowerLevel, ProcessSample, SystemStats};
+use crate::sys::{CpuInfo, NetRate, PowerLevel, ProcessGroup, ProcessSample, SystemStats};
 use std::collections::HashMap;
 
 fn read(path: &str) -> Option<String> {
@@ -126,6 +126,54 @@ fn process_exe(pid: u32, name: &str) -> String {
         return path;
     }
     String::new()
+}
+
+fn process_group(pid: u32, name: &str) -> ProcessGroup {
+    const SYSTEM_NAMES: &[&str] = &[
+        "systemd",
+        "systemd-journald",
+        "systemd-logind",
+        "systemd-udevd",
+        "systemd-resolved",
+        "systemd-timesyncd",
+        "systemd-networkd",
+        "dbus-daemon",
+        "dbus-broker",
+        "cron",
+        "atd",
+        "sshd",
+        "polkitd",
+        "NetworkManager",
+        "agetty",
+        "login",
+        "init",
+        "kthreadd",
+        "ksoftirqd",
+        "kworker",
+        "rcu",
+        "irq",
+        "watchdog",
+        "migration",
+        "cpuhp",
+        "kcompactd",
+        "khugepaged",
+        "kswapd",
+        "kdevtmpfs",
+        "bdi-default",
+        "jbd2",
+        "xfs",
+        "ext4",
+    ];
+    if name.starts_with('[') || SYSTEM_NAMES.contains(&name) {
+        return ProcessGroup::System;
+    }
+    // A process that inherited a display connection is a user application.
+    if read(&format!("/proc/{pid}/environ"))
+        .is_some_and(|environ| environ.contains("WAYLAND_DISPLAY=") || environ.contains("DISPLAY="))
+    {
+        return ProcessGroup::App;
+    }
+    ProcessGroup::Background
 }
 
 struct ProcFields {
@@ -385,6 +433,7 @@ impl LinuxSampler {
                 thread_count += fields.threads;
                 process_count += 1;
                 let name = fields.name;
+                let group = process_group(pid, &name);
                 processes.push(ProcessSample {
                     pid,
                     parent_pid: fields.parent_pid,
@@ -393,6 +442,7 @@ impl LinuxSampler {
                     threads: fields.threads,
                     cpu_ticks: stat_ticks,
                     priority: fields.priority,
+                    group,
                     cpu,
                     mem_bytes: fields.rss_bytes,
                     disk_bytes_per_s: disk_bps,

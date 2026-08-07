@@ -625,6 +625,13 @@ void menu_popup(Widget* menu)
   }
 }
 
+Widget* menu_add_submenu(Widget* menu, rust::Str title)
+{
+  auto* submenu = static_cast<QMenu*>(menu->q)->addMenu(
+    QString::fromUtf8(title.data(), title.size()));
+  return new_widget(submenu, false);
+}
+
 void menu_add_separator(Widget* menu)
 {
   if (menu->alive && menu->q != nullptr) {

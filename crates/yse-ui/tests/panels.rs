@@ -203,6 +203,31 @@ fn color_scheme_and_table_polish() {
     drop(window);
 }
 
+fn menus_support_submenus_and_checkable_actions() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let menubar = window.menu_bar();
+    let (speed, group) = menubar.menu_with("查看", |m| {
+        let speed = m.menu("更新速度");
+        let high = speed.action("高");
+        let low = speed.action("低");
+        high.set_checkable(true);
+        low.set_checkable(true);
+        high.set_checked(true);
+        assert!(high.checked());
+        assert!(!low.checked());
+        let group = m.action("按类型分组");
+        group.set_checkable(true);
+        group.set_checked(true);
+        (speed, group)
+    });
+    let _ = &speed;
+    assert!(group.checked());
+    drop(window);
+}
+
 // Qt permits one QApplication per process and binds it to its creating
 // thread. Keeping this integration binary to one test prevents Rust's test
 // harness from running the cases on different worker threads.
@@ -214,4 +239,5 @@ fn panel_cases_share_one_qt_thread() {
     reactive_bindings_drive_widgets();
     context_menu_reports_the_row();
     color_scheme_and_table_polish();
+    menus_support_submenus_and_checkable_actions();
 }

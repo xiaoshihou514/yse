@@ -8,9 +8,11 @@ mod sys;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use yse::{
-    Application, MessageBox, MessageBoxButtons, MessageBoxResult, StringTableModel, Subscription,
-    Timer, Var, Window, clone,
+    Application, MessageBox, MessageBoxButtons, MessageBoxResult, QtGuiScheduler, StringTableModel,
+    Subscription, Var, Window, clone,
 };
 
 const HISTORY: usize = 60;
@@ -60,6 +62,8 @@ fn apply_theme(app: &Application) -> bool {
 struct SortState {
     column: usize,
     descending: bool,
+    /// Sort by group (应用/后台进程/系统进程) first, then by `column`.
+    group_primary: bool,
 }
 
 impl Default for SortState {
@@ -67,6 +71,7 @@ impl Default for SortState {
         Self {
             column: 2, // CPU
             descending: true,
+            group_primary: true,
         }
     }
 }
@@ -78,10 +83,11 @@ fn compare_rows(
 ) -> std::cmp::Ordering {
     match column {
         0 => a.name.cmp(&b.name),
+        1 => a.group.cmp(&b.group),
         3 => a.mem_bytes.cmp(&b.mem_bytes),
         4 => a.disk_bytes_per_s.cmp(&b.disk_bytes_per_s),
         5 => a.net_bytes_per_s.cmp(&b.net_bytes_per_s),
-        8 => a.power.cmp(&b.power),
+        9 => a.power.cmp(&b.power),
         _ => a
             .cpu
             .partial_cmp(&b.cpu)
@@ -89,10 +95,39 @@ fn compare_rows(
     }
 }
 
+/// A small friendly-name map for well-known processes; the executable name is
+/// the fallback.
+fn friendly_name(name: &str) -> String {
+    const FRIENDLY: &[(&str, &str)] = &[
+        ("systemd", "系统服务管理器"),
+        ("explorer", "Windows 资源管理器"),
+        ("svchost", "Windows 服务主机"),
+        ("firefox", "Firefox"),
+        ("code", "Visual Studio Code"),
+        ("Code", "Visual Studio Code"),
+        ("chrome", "Chrome"),
+        ("msedgewebview2", "Microsoft Edge WebView2"),
+        ("yse-taskmgr", "任务管理器"),
+        ("yse-taskmgr.exe", "任务管理器"),
+    ];
+    for (key, display) in FRIENDLY {
+        if name.starts_with(key) {
+            return (*display).to_string();
+        }
+    }
+    name.to_string()
+}
+
 fn sorted_table(data: &[sys::ProcessSample], sort: SortState) -> Vec<(Vec<String>, String)> {
     let mut rows: Vec<&sys::ProcessSample> = data.iter().collect();
     rows.sort_by(|a, b| {
-        let ordering = compare_rows(a, b, sort.column);
+        let ordering = if sort.group_primary && sort.column != 1 {
+            a.group
+                .cmp(&b.group)
+                .then_with(|| compare_rows(a, b, sort.column))
+        } else {
+            compare_rows(a, b, sort.column)
+        };
         if sort.descending {
             ordering.reverse()
         } else {
@@ -103,7 +138,8 @@ fn sorted_table(data: &[sys::ProcessSample], sort: SortState) -> Vec<(Vec<String
         .map(|p| {
             (
                 vec![
-                    p.name.clone(),
+                    friendly_name(&p.name),
+                    p.group.label().to_string(),
                     String::from("正在运行"),
                     format!("{:.1}%", p.cpu),
                     format_mb(p.mem_bytes),
@@ -128,9 +164,13 @@ fn details_rows(stats: &sys::SystemStats) -> Vec<(Vec<String>, String)> {
                 vec![
                     p.name.clone(),
                     p.pid.to_string(),
+                    p.parent_pid.to_string(),
                     String::from("正在运行"),
                     format!("{:.1}%", p.cpu),
                     format_mb(p.mem_bytes),
+                    p.threads.to_string(),
+                    format!("{:.0} 秒", p.cpu_ticks as f64 / 100.0),
+                    p.priority.clone(),
                 ],
                 p.exe.clone(),
             )
@@ -201,9 +241,10 @@ fn main() {
 
     // --- 表格模型 ---
     let process_model = StringTableModel::new(
-        9,
+        10,
         vec![
             String::from("名称"),
+            String::from("类型"),
             String::from("状态"),
             String::from("CPU"),
             String::from("内存"),
@@ -215,13 +256,17 @@ fn main() {
         ],
     );
     let details_model = StringTableModel::new(
-        5,
+        9,
         vec![
             String::from("名称"),
             String::from("PID"),
+            String::from("PPID"),
             String::from("状态"),
             String::from("CPU"),
             String::from("内存"),
+            String::from("线程数"),
+            String::from("CPU 时间"),
+            String::from("优先级"),
         ],
     );
 
@@ -231,6 +276,22 @@ fn main() {
         (m.action("退出").shortcut("Ctrl+Q"), m.action("立即刷新"))
     });
     let about_action = menubar.menu_with("选项", |m| m.action("关于"));
+    let (high_action, normal_action, low_action, pause_action, group_action) =
+        menubar.menu_with("查看", |m| {
+            let speed = m.menu("更新速度");
+            let high = speed.action("高（500 毫秒）");
+            let normal = speed.action("普通（1 秒）");
+            let low = speed.action("低（4 秒）");
+            let pause = speed.action("暂停");
+            for action in [&high, &normal, &low, &pause] {
+                action.set_checkable(true);
+            }
+            normal.set_checked(true);
+            let group = m.action("按类型分组");
+            group.set_checkable(true);
+            group.set_checked(true);
+            (high, normal, low, pause, group)
+        });
     let about_box = MessageBox::new(
         &window,
         "关于",
@@ -439,27 +500,54 @@ fn main() {
     }
 
     let kill_subs: Rc<RefCell<Vec<Subscription>>> = Rc::new(RefCell::new(Vec::new()));
-    let confirm_kill: Rc<dyn Fn(u32)> = Rc::new(
-        clone!(process_data, status_text, window, kill_subs => move |pid| {
+    // 结束进程（或整棵进程树）并给出明确反馈。
+    let confirm_kill: Rc<dyn Fn(u32, bool)> = Rc::new(
+        clone!(process_data, status_text, window, kill_subs => move |pid, tree| {
             let name = process_data
                 .value()
                 .iter()
                 .find(|p| p.pid == pid)
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
+            let pids: Vec<u32> = if tree {
+                let mut queue = vec![pid];
+                let mut seen = std::collections::HashSet::from([pid]);
+                while let Some(current) = queue.pop() {
+                    for process in process_data.value().iter() {
+                        if process.parent_pid == current && seen.insert(process.pid) {
+                            queue.push(process.pid);
+                        }
+                    }
+                }
+                seen.into_iter().collect()
+            } else {
+                vec![pid]
+            };
             let confirm = MessageBox::new(
                 &window,
-                "结束任务",
-                format!("确定要结束“{name}”(PID {pid})吗？"),
+                if tree { "结束进程树" } else { "结束任务" },
+                if tree {
+                    format!("确定要结束“{name}”(PID {pid})及其 {} 个子进程吗？", pids.len() - 1)
+                } else {
+                    format!("确定要结束“{name}”(PID {pid})吗？")
+                },
                 MessageBoxButtons::OkCancel,
             );
-            let sub = confirm.result().observe(clone!(pid, name, status_text => move |result| {
+            let sub = confirm.result().observe(clone!(pids, name, status_text => move |result| {
                 if *result == MessageBoxResult::Ok {
-                    let ok = sys::kill_process(pid);
-                    status_text.set(if ok {
-                        format!("已结束 {name} (PID {pid})")
+                    let mut failed = 0;
+                    let mut ok = 0;
+                    for pid in &pids {
+                        if sys::kill_process(*pid) {
+                            ok += 1;
+                        } else {
+                            failed += 1;
+                        }
+                    }
+                    status_text.set(if failed == 0 {
+                        format!("已结束 {name}（{ok} 个进程）")
                     } else {
-                        format!("无法结束 {name} (PID {pid})")
+                        format!("无法结束 {name}：{ok} 成功，{failed} 失败")
                     });
                 }
             }));
@@ -469,29 +557,76 @@ fn main() {
     );
     end_task.on_click(clone!(selected_pid, confirm_kill => move |_| {
         if let Some(pid) = *selected_pid.value() {
-            confirm_kill(pid);
+            confirm_kill(pid, false);
         }
     }));
-    // 右键菜单“结束任务”：与底部按钮走同一条确认流程。
-    process_view.context_menu().observe(
-        clone!(process_data, sort, selected_pid, confirm_kill => move |row| {
-            let data = process_data.value();
-            let s = *sort.value();
-            let mut ordered: Vec<&sys::ProcessSample> = data.iter().collect();
-            ordered.sort_by(|a, b| {
-                let ordering = compare_rows(a, b, s.column);
-                if s.descending {
-                    ordering.reverse()
-                } else {
-                    ordering
-                }
-            });
-            if let Some(process) = ordered.get(*row) {
-                selected_pid.set(Some(process.pid));
-                confirm_kill(process.pid);
+
+    // 打开进程可执行文件的位置。
+    let open_location: Rc<dyn Fn(u32)> = Rc::new(clone!(process_data, status_text => move |pid| {
+        let Some(exe) = process_data
+            .value()
+            .iter()
+            .find(|p| p.pid == pid)
+            .map(|p| p.exe.clone())
+            .filter(|exe| !exe.is_empty())
+        else {
+            status_text.set(String::from("无法定位该进程的可执行文件"));
+            return;
+        };
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("explorer")
+                .args(["/select,", &exe])
+                .spawn();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Some(dir) = std::path::Path::new(&exe).parent() {
+                let _ = std::process::Command::new("xdg-open")
+                    .arg(dir)
+                    .spawn();
             }
-        }),
-    );
+        }
+    }));
+
+    // 右键菜单：结束任务 / 结束进程树 / 打开文件位置。
+    let context_menu_holder: Rc<RefCell<Option<yse::Menu>>> = Rc::new(RefCell::new(None));
+    process_view.context_menu().observe(clone!(
+        process_data, sort, selected_pid, confirm_kill, open_location, window,
+        context_menu_holder
+    => move |row| {
+        let data = process_data.value();
+        let s = *sort.value();
+        let mut ordered: Vec<&sys::ProcessSample> = data.iter().collect();
+        ordered.sort_by(|a, b| {
+            let ordering = if s.group_primary && s.column != 1 {
+                a.group
+                    .cmp(&b.group)
+                    .then_with(|| compare_rows(a, b, s.column))
+            } else {
+                compare_rows(a, b, s.column)
+            };
+            if s.descending {
+                ordering.reverse()
+            } else {
+                ordering
+            }
+        });
+        if let Some(process) = ordered.get(*row) {
+            selected_pid.set(Some(process.pid));
+            let pid = process.pid;
+            let menu = window.menu("");
+            let end = menu.action("结束任务");
+            end.on_trigger(clone!(confirm_kill => move |_| confirm_kill(pid, false)));
+            let tree = menu.action("结束进程树");
+            tree.on_trigger(clone!(confirm_kill => move |_| confirm_kill(pid, true)));
+            menu.separator();
+            let location = menu.action("打开文件位置");
+            location.on_trigger(clone!(open_location => move |_| open_location(pid)));
+            *context_menu_holder.borrow_mut() = Some(menu);
+            context_menu_holder.borrow().as_ref().unwrap().popup();
+        }
+    }));
 
     resmon.on_click(clone!(window => move |_| {
         #[cfg(target_os = "windows")]
@@ -514,8 +649,8 @@ fn main() {
     quit_action.on_trigger(move |_| std::process::exit(0));
 
     // --- 刷新循环：采样并更新状态，UI 自动跟随 ---
-    let sampler = Rc::new(RefCell::new(sys::Sampler::new()));
-    let refresh: Rc<dyn Fn()> = Rc::new(clone!(
+    // 将一次采样结果应用到全部状态（在 GUI 线程运行）。
+    let apply: Rc<dyn Fn(&sys::SystemStats)> = Rc::new(clone!(
         process_data,
         details_rows_var,
         metrics_text,
@@ -526,15 +661,10 @@ fn main() {
         mem_history,
         per_core_history,
         mem_percent,
-        mem_label_text,
-        sampler,
-        app
-        => move || {
-            apply_theme(&app);
-            let stats = sampler.borrow_mut().sample();
-
+        mem_label_text
+        => move |stats: &sys::SystemStats| {
             process_data.set(stats.processes.clone());
-            details_rows_var.set(details_rows(&stats));
+            details_rows_var.set(details_rows(stats));
 
             let cpu = &stats.cpu;
             let virtualized = if cpu.virtualization { "已启用" } else { "未启用" };
@@ -622,29 +752,64 @@ fn main() {
         }
     ));
 
-    refresh_action.on_trigger(clone!(refresh => move |_| refresh()));
+    // 采样在后台线程进行（500ms 一次），GUI 按所选更新速度应用，且采样
+    // 永不堆积（spawn_interval 自带合并）。
+    let last_stats = Rc::new(RefCell::new(None::<sys::SystemStats>));
+    let last_applied = Rc::new(RefCell::new(Instant::now()));
+    let mode = Rc::new(RefCell::new((Duration::from_millis(1000), false)));
 
-    // 立即刷新一次，然后每秒刷新。
-    refresh();
-    struct Tick {
-        refresh: Rc<dyn Fn()>,
-        timer: Rc<yse::QtTimer>,
-    }
-    impl Tick {
-        fn run(self: &Rc<Self>) {
-            (self.refresh)();
-            let this = self.clone();
-            self.timer
-                .schedule_after(std::time::Duration::from_secs(1), {
-                    Box::new(move || this.run())
-                });
+    // 启动时立即应用一次初始采样，避免空白窗口。
+    let mut initial_sampler = sys::Sampler::new();
+    let initial = initial_sampler.sample();
+    apply(&initial);
+    *last_stats.borrow_mut() = Some(initial);
+
+    let interval = yse::spawn_interval(
+        Arc::new(QtGuiScheduler),
+        Duration::from_millis(500),
+        move |_token| initial_sampler.sample(),
+    );
+    let _sample_sub = interval.results().observe(clone!(
+        apply, mode, last_applied, last_stats, app => move |stats| {
+            let (interval_ms, paused) = *mode.borrow();
+            if paused {
+                return;
+            }
+            if last_applied.borrow().elapsed() >= interval_ms {
+                *last_applied.borrow_mut() = Instant::now();
+                apply_theme(&app);
+                apply(stats);
+                *last_stats.borrow_mut() = Some((*stats).clone());
+            }
         }
-    }
-    let tick = Rc::new(Tick {
-        refresh,
-        timer: Rc::new(yse::QtTimer),
-    });
-    tick.run();
+    ));
+
+    refresh_action.on_trigger(clone!(apply, last_stats, app => move |_| {
+        if let Some(stats) = last_stats.borrow().as_ref() {
+            apply_theme(&app);
+            apply(stats);
+        }
+    }));
+
+    // 更新速度 / 暂停。
+    let set_mode: Rc<dyn Fn(u64, bool)> = Rc::new(clone!(
+        mode, high_action, normal_action, low_action, pause_action => move |ms, paused| {
+            *mode.borrow_mut() = (Duration::from_millis(ms), paused);
+            high_action.set_checked(ms == 500 && !paused);
+            normal_action.set_checked(ms == 1000 && !paused);
+            low_action.set_checked(ms == 4000 && !paused);
+            pause_action.set_checked(paused);
+        }
+    ));
+    high_action.on_trigger(clone!(set_mode => move |_| set_mode(500, false)));
+    normal_action.on_trigger(clone!(set_mode => move |_| set_mode(1000, false)));
+    low_action.on_trigger(clone!(set_mode => move |_| set_mode(4000, false)));
+    pause_action.on_trigger(clone!(set_mode => move |_| set_mode(1000, true)));
+    group_action.on_trigger(clone!(sort => move |_| {
+        let mut next = *sort.value();
+        next.group_primary = !next.group_primary;
+        sort.set(next);
+    }));
 
     // 表格布局与外观（一次性配置）。
     process_view.select_rows(true);
@@ -652,13 +817,14 @@ fn main() {
     details_view.select_rows(true);
     details_view.set_alternating_row_colors(true);
     process_view.set_column_width(0, 230);
-    process_view.set_column_width(2, 70);
-    process_view.set_column_width(3, 110);
-    process_view.set_column_width(4, 90);
+    process_view.set_column_width(1, 90);
+    process_view.set_column_width(3, 70);
+    process_view.set_column_width(4, 110);
     process_view.set_column_width(5, 90);
-    process_view.set_column_width(6, 70);
-    process_view.set_column_width(7, 90);
-    process_view.set_column_width(8, 110);
+    process_view.set_column_width(6, 90);
+    process_view.set_column_width(7, 70);
+    process_view.set_column_width(8, 90);
+    process_view.set_column_width(9, 110);
     process_view.stretch_last_section(true);
 
     // Headless smoke run: drive sorting, selection, the details toggle, and
@@ -668,8 +834,8 @@ fn main() {
         app.after(
             700,
             clone!(process_view, toggle, tabs => move || {
-                process_view.click_header(2); // sort by CPU
-                process_view.click_header(2); // toggle direction
+                process_view.click_header(3); // sort by CPU
+                process_view.click_header(3); // toggle direction
                 process_view.select(0);
                 toggle.click();
                 tabs.set_current(1);

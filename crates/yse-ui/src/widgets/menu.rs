@@ -178,6 +178,18 @@ impl Menu {
         self
     }
 
+    /// Create a nested submenu in this menu.
+    pub fn menu(&self, title: impl Into<String>) -> Menu {
+        Menu {
+            inner: unsafe {
+                Component::from_raw_child(
+                    ffi::menu_add_submenu(self.inner.raw(), &title.into()),
+                    &self.inner,
+                )
+            },
+        }
+    }
+
     /// Open the menu as a popup at the current cursor position. The menu
     /// stays open until dismissed; keep a handle alive while it is shown.
     pub fn popup(&self) {

@@ -42,6 +42,25 @@ impl PowerLevel {
     }
 }
 
+/// Task-Manager-style grouping of a process.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ProcessGroup {
+    App,
+    Background,
+    System,
+}
+
+impl ProcessGroup {
+    /// The Chinese label shown in the 类型 column.
+    pub fn label(self) -> &'static str {
+        match self {
+            ProcessGroup::App => "应用",
+            ProcessGroup::Background => "后台进程",
+            ProcessGroup::System => "系统进程",
+        }
+    }
+}
+
 /// One row of the process table.
 #[derive(Clone, PartialEq)]
 pub struct ProcessSample {
@@ -55,6 +74,7 @@ pub struct ProcessSample {
     pub cpu_ticks: u64,
     /// Human-readable priority class (高/普通/低/…).
     pub priority: String,
+    pub group: ProcessGroup,
     /// CPU usage as a percentage of total machine capacity (0..100).
     pub cpu: f64,
     pub mem_bytes: u64,

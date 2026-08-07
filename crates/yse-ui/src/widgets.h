@@ -168,6 +168,7 @@ Widget* widget_new_menubar(Widget* window);
 Widget* widget_new_toolbar(Widget* window);
 Widget* menu_new(rust::Str title, Widget* menubar);
 Widget* window_menu_new(rust::Str title, Widget* window);
+Widget* menu_add_submenu(Widget* menu, rust::Str title);
 void menu_popup(Widget* menu);
 void menu_add_separator(Widget* menu);
 void toolbar_add_action(Widget* toolbar, Action* action);

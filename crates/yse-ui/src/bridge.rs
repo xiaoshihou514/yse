@@ -69,6 +69,7 @@ mod bridge {
         unsafe fn widget_new_toolbar(window: *mut Widget) -> *mut Widget;
         unsafe fn menu_new(title: &str, menubar: *mut Widget) -> *mut Widget;
         unsafe fn window_menu_new(title: &str, window: *mut Widget) -> *mut Widget;
+        unsafe fn menu_add_submenu(menu: *mut Widget, title: &str) -> *mut Widget;
         unsafe fn menu_popup(menu: *mut Widget);
         unsafe fn menu_add_separator(menu: *mut Widget);
         unsafe fn toolbar_add_action(toolbar: *mut Widget, action: *mut Action);
