@@ -392,9 +392,8 @@ fn main() {
     }
 
     let kill_subs: Rc<RefCell<Vec<Subscription>>> = Rc::new(RefCell::new(Vec::new()));
-    end_task.on_click(
-        clone!(selected_pid, process_data, status_text, window, kill_subs => move |_| {
-            let Some(pid) = *selected_pid.value() else { return };
+    let confirm_kill: Rc<dyn Fn(u32)> = Rc::new(
+        clone!(process_data, status_text, window, kill_subs => move |pid| {
             let name = process_data
                 .value()
                 .iter()
@@ -419,6 +418,31 @@ fn main() {
             }));
             kill_subs.borrow_mut().push(sub);
             confirm.show();
+        }),
+    );
+    end_task.on_click(clone!(selected_pid, confirm_kill => move |_| {
+        if let Some(pid) = *selected_pid.value() {
+            confirm_kill(pid);
+        }
+    }));
+    // 右键菜单“结束任务”：与底部按钮走同一条确认流程。
+    process_view.context_menu().observe(
+        clone!(process_data, sort, selected_pid, confirm_kill => move |row| {
+            let data = process_data.value();
+            let s = *sort.value();
+            let mut ordered: Vec<&sys::ProcessSample> = data.iter().collect();
+            ordered.sort_by(|a, b| {
+                let ordering = compare_rows(a, b, s.column);
+                if s.descending {
+                    ordering.reverse()
+                } else {
+                    ordering
+                }
+            });
+            if let Some(process) = ordered.get(*row) {
+                selected_pid.set(Some(process.pid));
+                confirm_kill(process.pid);
+            }
         }),
     );
 

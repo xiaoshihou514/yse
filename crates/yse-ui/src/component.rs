@@ -40,6 +40,7 @@ pub struct Component {
     pub value_sink: RefCell<Option<Rc<Sink<i32>>>>,
     pub date_sink: RefCell<Option<Rc<Sink<String>>>>,
     pub header_sink: RefCell<Option<Rc<Sink<i32>>>>,
+    pub context_sink: RefCell<Option<Rc<Sink<i32>>>>,
 }
 
 impl Component {
@@ -77,6 +78,7 @@ impl Component {
             value_sink: RefCell::new(None),
             date_sink: RefCell::new(None),
             header_sink: RefCell::new(None),
+            context_sink: RefCell::new(None),
         });
         unsafe { ffi::widget_set_destroyed_cb(ptr, &*this as *const Self as *mut Void) };
         if let Some(parent) = parent {
@@ -199,6 +201,16 @@ impl Component {
         self.check_thread("header clicked");
         if let Some(sink) = self.header_sink.borrow().as_ref() {
             sink.send(section);
+        }
+    }
+
+    pub fn on_view_context_menu(&self, row: i32) {
+        if !self.is_alive() {
+            return;
+        }
+        self.check_thread("view context menu");
+        if let Some(sink) = self.context_sink.borrow().as_ref() {
+            sink.send(row);
         }
     }
 

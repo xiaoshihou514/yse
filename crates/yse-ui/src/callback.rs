@@ -65,6 +65,15 @@ pub(crate) unsafe fn header_clicked(data: *mut Void, section: i32) {
 
 /// # Safety
 ///
+/// Same contract as [`clicked`]. `row` is the row under the cursor.
+pub(crate) unsafe fn view_context_menu(data: *mut Void, row: i32) {
+    unsafe {
+        (*(data as *const Component)).on_view_context_menu(row);
+    }
+}
+
+/// # Safety
+///
 /// `data` must be a pointer to a live `Component`; it stays valid because the
 /// Rust wrapper outlives the widget destruction that triggers this callback.
 pub(crate) unsafe fn destroyed(data: *mut Void) {

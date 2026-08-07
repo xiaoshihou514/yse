@@ -589,6 +589,7 @@ void widget_drop(Widget* w)
   w->value_cb_data = nullptr;
   w->selection_cb_data = nullptr;
   w->header_cb_data = nullptr;
+  w->context_cb_data = nullptr;
   if (w->owned && w->alive) {
     // Windows own their QWidget; children are deleted by their Qt parent.
     delete w->q;

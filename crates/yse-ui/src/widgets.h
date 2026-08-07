@@ -51,6 +51,7 @@ struct Widget {
   void* value_cb_data = nullptr;
   void* selection_cb_data = nullptr;
   void* header_cb_data = nullptr;
+  void* context_cb_data = nullptr;
   // 0 = none, 1 = QComboBox, 2 = QSpinBox, 3 = QSlider, 4 = QProgressBar.
   // 5 = QDateTimeEdit, 6 = QDateEdit, 7 = QTimeEdit.
   // `widget_value` / `widget_set_value` dispatch on this tag.
@@ -219,7 +220,9 @@ void settings_sync(Settings* s);
 
 void view_set_selection_cb(Widget* view, Void* data);
 void view_set_header_clicked_cb(Widget* view, Void* data);
+void view_set_context_menu_cb(Widget* view, Void* data);
 void view_click_header(Widget* view, int section);
+void view_emit_context_menu(Widget* view, int row);
 void view_set_column_width(Widget* view, int column, int width);
 void view_stretch_last_section(Widget* view, bool stretch);
 rust::Vec<int32_t> view_selected_rows(Widget* view);

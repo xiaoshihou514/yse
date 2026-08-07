@@ -126,6 +126,34 @@ fn reactive_bindings_drive_widgets() {
     drop(window);
 }
 
+fn context_menu_reports_the_row() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let column = window.column();
+    let model = StringTableModel::new(1, vec![String::from("Name")]);
+    model.push_row([String::from("terminal")]);
+    model.push_row([String::from("explorer")]);
+    let view = column.table_view(&model);
+
+    let seen: Rc<RefCell<Vec<usize>>> = Rc::new(RefCell::new(Vec::new()));
+    let seen_rc = seen.clone();
+    let _sub = view
+        .context_menu()
+        .observe(move |row| seen_rc.borrow_mut().push(*row));
+
+    view.emit_context_menu(1);
+    view.emit_context_menu(0);
+    assert_eq!(*seen.borrow(), vec![1, 0]);
+
+    drop(column);
+    drop(window);
+    // Emitting on a destroyed view is a safe no-op.
+    view.emit_context_menu(1);
+    assert_eq!(*seen.borrow(), vec![1, 0]);
+}
+
 // Qt permits one QApplication per process and binds it to its creating
 // thread. Keeping this integration binary to one test prevents Rust's test
 // harness from running the cases on different worker threads.
@@ -135,4 +163,5 @@ fn panel_cases_share_one_qt_thread() {
     header_clicks_stream_and_survive_teardown();
     line_chart_accepts_single_and_multi_series();
     reactive_bindings_drive_widgets();
+    context_menu_reports_the_row();
 }

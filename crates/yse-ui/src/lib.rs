@@ -167,7 +167,9 @@ mod bridge {
         unsafe fn table_text(m: *mut TableModel, row: i32, column: i32) -> String;
         unsafe fn view_set_selection_cb(view: *mut Widget, data: *mut Void);
         unsafe fn view_set_header_clicked_cb(view: *mut Widget, data: *mut Void);
+        unsafe fn view_set_context_menu_cb(view: *mut Widget, data: *mut Void);
         unsafe fn view_click_header(view: *mut Widget, section: i32);
+        unsafe fn view_emit_context_menu(view: *mut Widget, row: i32);
         unsafe fn view_set_column_width(view: *mut Widget, column: i32, width: i32);
         unsafe fn view_stretch_last_section(view: *mut Widget, stretch: bool);
         unsafe fn view_selected_rows(view: *mut Widget) -> Vec<i32>;
@@ -216,6 +218,7 @@ mod bridge {
         unsafe fn on_value_changed(data: *mut Void);
         unsafe fn on_date_value_changed(data: *mut Void);
         unsafe fn on_header_clicked(data: *mut Void, section: i32);
+        unsafe fn on_view_context_menu(data: *mut Void, row: i32);
         unsafe fn on_gui_scheduled(task: *mut Void);
         unsafe fn on_app_timer(task: *mut Void);
         unsafe fn on_action_triggered(data: *mut Void);
@@ -255,6 +258,12 @@ unsafe fn on_date_value_changed(data: *mut bridge::Void) {
 unsafe fn on_header_clicked(data: *mut bridge::Void, section: i32) {
     catch_callback("header clicked", || unsafe {
         callback::header_clicked(data, section)
+    });
+}
+
+unsafe fn on_view_context_menu(data: *mut bridge::Void, row: i32) {
+    catch_callback("view context menu", || unsafe {
+        callback::view_context_menu(data, row)
     });
 }
 
@@ -2465,6 +2474,35 @@ impl TableView {
     pub fn click_header(&self, section: usize) {
         if self.inner.is_alive() {
             unsafe { ffi::view_click_header(self.inner.raw(), section as i32) };
+        }
+    }
+
+    /// A stream of right-click (context menu) events on table rows, each
+    /// carrying the row under the cursor.
+    pub fn context_menu(&self) -> EventStream<usize> {
+        if self.inner.context_sink.borrow().is_none() {
+            unsafe {
+                ffi::view_set_context_menu_cb(
+                    self.inner.raw(),
+                    &*self.inner as *const Component as *mut Void,
+                );
+            }
+            *self.inner.context_sink.borrow_mut() = Some(Rc::new(Sink::new()));
+        }
+        self.inner
+            .context_sink
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .stream()
+            .map(|row| *row as usize)
+    }
+
+    /// Simulate a right-click on `row` (used by tests and headless smoke
+    /// runs); the shim shows the context menu and reports the row.
+    pub fn emit_context_menu(&self, row: usize) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_emit_context_menu(self.inner.raw(), row as i32) };
         }
     }
 

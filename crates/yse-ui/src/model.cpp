@@ -3,8 +3,10 @@
 
 #include "yse-ui/src/model.h"
 
+#include <QContextMenuEvent>
 #include <QItemSelectionModel>
 #include <QHeaderView>
+#include <QMenu>
 #include <QSet>
 #include <QtWidgets/QAbstractItemView>
 #include <QtWidgets/QListView>
@@ -14,6 +16,40 @@
 #include "yse-ui/src/widgets.h"
 
 namespace yse_ui {
+
+// Shows a "结束任务" popup menu on right-click and reports the row under the
+// cursor back to Rust. Owned by the view (parented QObject), so it dies with
+// the widget.
+class ContextMenuFilter final : public QObject {
+public:
+  ContextMenuFilter(QTableView* view, Widget* widget, QObject* parent)
+    : QObject(parent), view_(view), widget_(widget) {}
+
+protected:
+  bool eventFilter(QObject* watched, QEvent* event) override {
+    if (event->type() == QEvent::ContextMenu) {
+      auto* context = static_cast<QContextMenuEvent*>(event);
+      const QModelIndex index = view_->indexAt(context->pos());
+      if (index.isValid()) {
+        QMenu menu(view_);
+        QAction* end_task = menu.addAction(QStringLiteral("结束任务"));
+        connect(end_task, &QAction::triggered, this, [this, index] {
+          if (widget_->alive && widget_->context_cb_data != nullptr) {
+            yse_ui::on_view_context_menu(
+              static_cast<yse_ui::Void*>(widget_->context_cb_data), index.row());
+          }
+        });
+        menu.exec(context->globalPos());
+      }
+      return true;
+    }
+    return QObject::eventFilter(watched, event);
+  }
+
+private:
+  QTableView* view_;
+  Widget* widget_;
+};
 
 Model* model_new()
 {
@@ -204,6 +240,14 @@ void view_set_header_clicked_cb(Widget* view, Void* data)
     });
 }
 
+void view_set_context_menu_cb(Widget* view, Void* data)
+{
+  view->context_cb_data = static_cast<void*>(data);
+  auto* table_view = static_cast<QTableView*>(view->q);
+  // The filter is parented to the view, so it is destroyed with the widget.
+  table_view->installEventFilter(new ContextMenuFilter(table_view, view, table_view));
+}
+
 void view_click_header(Widget* view, int section)
 {
   if (view->alive && view->q != nullptr) {
@@ -211,6 +255,16 @@ void view_click_header(Widget* view, int section)
       static_cast<QTableView*>(view->q)->horizontalHeader(),
       "sectionClicked",
       Q_ARG(int, section));
+  }
+}
+
+void view_emit_context_menu(Widget* view, int row)
+{
+  // Test/automation helper: report the row as if the context menu action had
+  // been chosen, without blocking on QMenu::exec.
+  if (view->alive && view->context_cb_data != nullptr) {
+    yse_ui::on_view_context_menu(
+      static_cast<yse_ui::Void*>(view->context_cb_data), row);
   }
 }
 
