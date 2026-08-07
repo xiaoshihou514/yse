@@ -87,8 +87,14 @@ switch ($Command) {
         if (-not $Name) {
             throw "example requires a name, e.g. just windows-example settings"
         }
-        # No QT_QPA_PLATFORM / YSE_SMOKE: show a real window.
-        Invoke-Cargo @('run', '-p', 'yse-ui', '--example', $Name)
+        # Yse examples live in crates/yse-ui/examples; workspace binaries such
+        # as the Task Manager are separate packages (yse-taskmgr).
+        if (Test-Path "$Repo\crates\yse-ui\examples\$Name.rs") {
+            # No QT_QPA_PLATFORM / YSE_SMOKE: show a real window.
+            Invoke-Cargo @('run', '-p', 'yse-ui', '--example', $Name)
+        } else {
+            Invoke-Cargo @('run', '-p', "yse-$Name")
+        }
     }
     'run' {
         if (-not $Name) {

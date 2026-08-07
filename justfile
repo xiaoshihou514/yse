@@ -34,7 +34,11 @@ build:
     cargo build --workspace
 
 example name:
-    cargo run -p yse-ui --example {{name}}
+    @if [ -f crates/yse-ui/examples/{{name}}.rs ]; then \
+        cargo run -p yse-ui --example {{name}}; \
+    else \
+        cargo run -p yse-{{name}}; \
+    fi
 
 # --- Windows (host) recipes, PowerShell --------------------------------------
 
@@ -48,7 +52,8 @@ example name:
 windows action:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 {{action}}
 
-# Run a yse-ui example as a real window on Windows (e.g. `just windows-example settings`).
+# Run a yse-ui example or workspace binary on Windows (e.g. `just windows-example settings`
+# or `just windows-example taskmgr`).
 windows-example name:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 example {{name}}
 
