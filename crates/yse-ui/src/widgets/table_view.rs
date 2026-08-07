@@ -108,6 +108,27 @@ impl StringTableModel {
         self.state.bindings.borrow_mut().push(subscription);
     }
 
+    /// Set normalized (0..1) heat values for `column`, rendered as a
+    /// translucent intensity wash by the view's heat delegate.
+    pub fn set_heat(&self, column: usize, values: impl IntoIterator<Item = f64>) {
+        unsafe {
+            ffi::table_model_set_heat(
+                self.state.table,
+                column as i32,
+                values.into_iter().collect(),
+            )
+        };
+    }
+
+    /// Bind normalized heat values for `column` to a signal.
+    pub fn bind_heat(&self, column: usize, signal: &Signal<Vec<f64>>) {
+        let state = self.state.clone();
+        let subscription = signal.observe(move |values| unsafe {
+            ffi::table_model_set_heat(state.table, column as i32, (*values).clone());
+        });
+        self.state.bindings.borrow_mut().push(subscription);
+    }
+
     /// Bind rows and their column-0 icons from one signal of
     /// `(cells, icon path)` pairs. Rows and icons are applied atomically in a
     /// single observer, so a row reset can never wipe the same-pass icons.
@@ -300,6 +321,14 @@ impl TableView {
     pub fn set_alternating_row_colors(&self, on: bool) {
         if self.inner.is_alive() {
             unsafe { ffi::view_set_alternating_row_colors(self.inner.raw(), on) };
+        }
+    }
+
+    /// Install the heat-map delegate so cells with heat values render with an
+    /// intensity wash.
+    pub fn enable_heat(&self) {
+        if self.inner.is_alive() {
+            unsafe { ffi::view_set_heat_delegate(self.inner.raw()) };
         }
     }
 

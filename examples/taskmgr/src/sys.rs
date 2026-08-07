@@ -123,10 +123,24 @@ pub struct SystemStats {
     pub gpu_name: String,
 }
 
+/// A row of the Services page: `(name, state, description)`.
+pub type ServiceEntry = (String, String, String);
+
+/// A row of the Startup page: `(name, command, state)`.
+pub type StartupEntry = (String, String, String);
+
+/// A row of the Users page: `(user, session, state)`.
+pub type UserSession = (String, String, String);
+
 #[cfg(target_os = "linux")]
 type Backend = linux::LinuxSampler;
 #[cfg(target_os = "windows")]
 type Backend = windows::WindowsSampler;
+
+#[cfg(target_os = "linux")]
+pub use linux::{service_entries, startup_entries, user_sessions};
+#[cfg(target_os = "windows")]
+pub use windows::{service_entries, startup_entries, user_sessions};
 
 /// Samples the system; call [`Sampler::sample`] once per refresh tick.
 pub struct Sampler {

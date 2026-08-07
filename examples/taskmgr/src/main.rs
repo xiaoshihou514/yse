@@ -238,6 +238,9 @@ fn main() {
     let mem_percent = Var::new(0i32);
     let mem_label_text = Var::new(String::new());
     let details_rows_var = Var::new(Vec::<(Vec<String>, String)>::new());
+    let services_rows = Var::new(Vec::<Vec<String>>::new());
+    let startup_rows = Var::new(Vec::<Vec<String>>::new());
+    let users_rows = Var::new(Vec::<Vec<String>>::new());
 
     // --- 表格模型 ---
     let process_model = StringTableModel::new(
@@ -267,6 +270,30 @@ fn main() {
             String::from("线程数"),
             String::from("CPU 时间"),
             String::from("优先级"),
+        ],
+    );
+    let services_model = StringTableModel::new(
+        3,
+        vec![
+            String::from("名称"),
+            String::from("状态"),
+            String::from("描述"),
+        ],
+    );
+    let startup_model = StringTableModel::new(
+        3,
+        vec![
+            String::from("名称"),
+            String::from("命令"),
+            String::from("状态"),
+        ],
+    );
+    let users_model = StringTableModel::new(
+        3,
+        vec![
+            String::from("用户"),
+            String::from("会话"),
+            String::from("状态"),
         ],
     );
 
@@ -369,6 +396,18 @@ fn main() {
         let details_page = tabs.add_tab("详细信息");
         let details_view = details_page.table_view(&details_model.clone());
 
+        let services_page = tabs.add_tab("服务");
+        services_page.table_view(&services_model.clone());
+
+        let startup_page = tabs.add_tab("启动");
+        startup_page.table_view(&startup_model.clone());
+
+        let users_page = tabs.add_tab("用户");
+        users_page.table_view(&users_model.clone());
+
+        let history_page = tabs.add_tab("应用历史记录");
+        history_page.label("该视图需要平台资源使用记录：Windows 上需启用“应用历史记录”数据源，Linux 上无对应数据。");
+
         (
             tabs,
             view,
@@ -411,6 +450,48 @@ fn main() {
         .combine(&sort.signal(), |data, s| sorted_table(data, *s));
     process_model.bind_table(&sorted);
     details_model.bind_table(&details_rows_var.signal());
+    services_model.bind_rows(&services_rows.signal());
+    startup_model.bind_rows(&startup_rows.signal());
+    users_model.bind_rows(&users_rows.signal());
+
+    // 资源列热力图：CPU / 内存 / 磁盘 / 网络 按相对强度着色。
+    let cpu_heat = process_data.signal().map(|data| {
+        data.iter()
+            .map(|p| (p.cpu / 100.0).clamp(0.0, 1.0))
+            .collect()
+    });
+    process_model.bind_heat(3, &cpu_heat);
+    let mem_heat = process_data.signal().map(|data| {
+        let max = data.iter().map(|p| p.mem_bytes).max().unwrap_or(1).max(1);
+        data.iter()
+            .map(|p| (p.mem_bytes as f64 / max as f64).clamp(0.0, 1.0))
+            .collect()
+    });
+    process_model.bind_heat(4, &mem_heat);
+    let disk_heat = process_data.signal().map(|data| {
+        let max = data
+            .iter()
+            .map(|p| p.disk_bytes_per_s)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        data.iter()
+            .map(|p| (p.disk_bytes_per_s as f64 / max as f64).clamp(0.0, 1.0))
+            .collect()
+    });
+    process_model.bind_heat(5, &disk_heat);
+    let net_heat = process_data.signal().map(|data| {
+        let max = data
+            .iter()
+            .map(|p| p.net_bytes_per_s)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        data.iter()
+            .map(|p| (p.net_bytes_per_s as f64 / max as f64).clamp(0.0, 1.0))
+            .collect()
+    });
+    process_model.bind_heat(6, &net_heat);
 
     status_label.bind_text(&status_text.signal());
     detail_stats_label.bind_text(&stats_text.signal());
@@ -650,9 +731,13 @@ fn main() {
 
     // --- 刷新循环：采样并更新状态，UI 自动跟随 ---
     // 将一次采样结果应用到全部状态（在 GUI 线程运行）。
+    let service_tick = Rc::new(RefCell::new(0u32));
     let apply: Rc<dyn Fn(&sys::SystemStats)> = Rc::new(clone!(
         process_data,
         details_rows_var,
+        services_rows,
+        startup_rows,
+        users_rows,
         metrics_text,
         status_text,
         stats_text,
@@ -661,10 +746,33 @@ fn main() {
         mem_history,
         per_core_history,
         mem_percent,
-        mem_label_text
+        mem_label_text,
+        service_tick
         => move |stats: &sys::SystemStats| {
             process_data.set(stats.processes.clone());
             details_rows_var.set(details_rows(stats));
+            let tick = *service_tick.borrow();
+            *service_tick.borrow_mut() = tick.wrapping_add(1);
+            if tick.is_multiple_of(4) {
+                services_rows.set(
+                    sys::service_entries()
+                        .into_iter()
+                        .map(|(name, state, description)| vec![name, state, description])
+                        .collect(),
+                );
+                startup_rows.set(
+                    sys::startup_entries()
+                        .into_iter()
+                        .map(|(name, command, state)| vec![name, command, state])
+                        .collect(),
+                );
+                users_rows.set(
+                    sys::user_sessions()
+                        .into_iter()
+                        .map(|(user, session, state)| vec![user, session, state])
+                        .collect(),
+                );
+            }
 
             let cpu = &stats.cpu;
             let virtualized = if cpu.virtualization { "已启用" } else { "未启用" };
@@ -814,6 +922,7 @@ fn main() {
     // 表格布局与外观（一次性配置）。
     process_view.select_rows(true);
     process_view.set_alternating_row_colors(true);
+    process_view.enable_heat();
     details_view.select_rows(true);
     details_view.set_alternating_row_colors(true);
     process_view.set_column_width(0, 230);
@@ -857,7 +966,7 @@ fn main() {
     println!(
         "[diag] tabs={} tab_visible={} tab_size={}x{} \
          table_rows={} table_visible={} table_size={}x{} \
-         details_rows={} icons={} first_entries={:?}",
+         details_rows={} services={} startup={} users={} icons={} first_entries={:?}",
         tabs.count(),
         tabs.is_visible(),
         tabs.width(),
@@ -867,6 +976,9 @@ fn main() {
         process_view.width(),
         process_view.height(),
         details_model.row_count(),
+        services_model.row_count(),
+        startup_model.row_count(),
+        users_model.row_count(),
         process_model.row_icon_count(),
         (0..3)
             .map(|row| process_model.cell(row, 0))

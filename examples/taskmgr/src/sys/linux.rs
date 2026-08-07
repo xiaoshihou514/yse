@@ -1,6 +1,9 @@
 //! Linux backend: pure-`std` readers over `/proc` and `/sys`.
 
-use crate::sys::{CpuInfo, NetRate, PowerLevel, ProcessGroup, ProcessSample, SystemStats};
+use crate::sys::{
+    CpuInfo, NetRate, PowerLevel, ProcessGroup, ProcessSample, ServiceEntry, StartupEntry,
+    SystemStats, UserSession,
+};
 use std::collections::HashMap;
 
 fn read(path: &str) -> Option<String> {
@@ -278,6 +281,102 @@ fn gpu_name() -> String {
             }
         }
     }
+}
+
+/// Services from systemd (`systemctl list-units --type=service`).
+pub fn service_entries() -> Vec<ServiceEntry> {
+    let mut entries = Vec::new();
+    let Ok(output) = std::process::Command::new("systemctl")
+        .args([
+            "list-units",
+            "--type=service",
+            "--all",
+            "--no-pager",
+            "--plain",
+            "--no-legend",
+        ])
+        .output()
+    else {
+        return entries;
+    };
+    if !output.status.success() {
+        return entries;
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 4 {
+            continue;
+        }
+        let unit = fields[0];
+        // Fields: UNIT LOAD ACTIVE SUB DESCRIPTION.
+        let state = fields[2];
+        let sub = fields[3];
+        let description = fields.get(4..).unwrap_or(&[]).join(" ");
+        let name = unit.trim_end_matches(".service").to_string();
+        entries.push((name, format!("{state}（{sub}）"), description));
+    }
+    entries
+}
+
+/// Startup entries from XDG autostart directories.
+pub fn startup_entries() -> Vec<StartupEntry> {
+    let mut entries = Vec::new();
+    let mut dirs = vec![std::path::PathBuf::from("/etc/xdg/autostart")];
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(std::path::Path::new(&home).join(".config/autostart"));
+    }
+    for dir in dirs {
+        let Ok(files) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for file in files.flatten() {
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("desktop") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let mut name = String::new();
+            let mut exec = String::new();
+            for line in text.lines() {
+                if let Some(value) = line.strip_prefix("Name=") {
+                    name = value.trim().to_string();
+                } else if let Some(value) = line.strip_prefix("Exec=") {
+                    exec = value.trim().to_string();
+                }
+            }
+            if name.is_empty() {
+                name = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+            }
+            entries.push((name, exec, String::from("已启用")));
+        }
+    }
+    entries.sort();
+    entries
+}
+
+/// Logged-in sessions from `who`.
+pub fn user_sessions() -> Vec<UserSession> {
+    let mut sessions = Vec::new();
+    let Ok(output) = std::process::Command::new("who").output() else {
+        return sessions;
+    };
+    if !output.status.success() {
+        return sessions;
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() >= 2 {
+            sessions.push((
+                fields[0].to_string(),
+                fields[1].to_string(),
+                fields.get(2..).unwrap_or(&[]).join(" "),
+            ));
+        }
+    }
+    sessions
 }
 
 fn cpuinfo() -> (String, f64, f64, u32, u32, u32, bool) {

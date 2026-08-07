@@ -21,11 +21,11 @@ graphs, and the process-management actions.
 | 0 | Parity baseline, capability matrix, keyboard/menu inventory | In progress |
 | 1 | Provider/snapshot separation, background sampling, update speed, settings, benchmarks | Partially done (worker-thread sampling via `spawn_interval`, High/Normal/Low/Paused, coalescing) |
 | 2 | Theme tokens, responsive shell, shared table/graph widgets, DPI | Partially done (theme + shell live) |
-| 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Partially done (App/Background/System grouping, friendly names, icons, resource columns, end task/tree, open location) |
+| 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Partially done (grouping, friendly names, icons, resource columns, heat-map cells, end task/tree, open location; column chooser + expandable tree pending) |
 | 4 | Performance parity: CPU/memory/disk/network/GPU detail pages | CPU + memory done; disk/network/GPU partial |
-| 5 | Details + Services | Details partial (PID/PPID/threads/CPU time/priority); Services pending |
-| 6 | Startup + Users | Pending |
-| 7 | App history | Pending (platform-specific, degrade gracefully) |
+| 5 | Details + Services | Details partial (PID/PPID/threads/CPU time/priority); Services implemented (systemd / `sc`) |
+| 6 | Startup + Users | Startup implemented (XDG autostart / registry Run); Users partial (sessions) |
+| 7 | App history | Explicit unavailable state (degrades per roadmap) |
 | 8 | Menus/commands/keyboard parity | Partially done (update speed, pause, group toggle, submenus, checkable actions) |
 | 9 | Accessibility, reliability, polish | Pending |
 | 10 | Release hardening | Pending |
@@ -40,14 +40,16 @@ graphs, and the process-management actions.
   Apps/Background/System, friendly names, group-aware sorting, process-tree
   termination, open-file-location, extended Details columns (PPID, threads,
   CPU time, priority), composable popup context menus, and checkable/submenu
-  menu actions.
+  menu actions, resource heat-map cells, Services (systemd/SCM), Startup
+  (XDG/registry Run), and Users (session) sections.
 
 ## Next
 
 - Expandable app groups (tree view) and column chooser.
 - Heat-map resource cells.
 - Performance detail pages for disk/network/GPU.
-- Services, Startup, Users, App history.
+- Column chooser, expandable tree groups, disk/network/GPU performance details,
+  Users detail, keyboard/accessibility parity, soak test, release hardening.
 - Keyboard parity, accessibility, 24-hour soak, release hardening.
 
 ## Data-correctness rules (from the original roadmap)

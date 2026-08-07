@@ -185,6 +185,13 @@ fn color_scheme_and_table_polish() {
     model.bind_row_icons(&paths_var.signal());
     assert!(model.row_icon_count() >= 1, "bound icons must apply");
 
+    // Heat values render via the view's delegate without panicking.
+    model.set_heat(1, vec![0.0, 1.0]);
+    let heat = Var::new(vec![0.5, 0.25]);
+    model.bind_heat(1, &heat.signal());
+    view.enable_heat();
+    heat.set(vec![1.0, 0.0]);
+
     // Rows and icons bound from the SAME source: a row reset must not wipe
     // the icons that arrive in the same propagation pass.
     let data = Var::new(vec![(vec![String::from("a")], String::from("/bin/ls"))]);

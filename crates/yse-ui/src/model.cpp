@@ -9,7 +9,9 @@
 #include <QFileIconProvider>
 #include <QFileInfo>
 #include <QMenu>
+#include <QPainter>
 #include <QSet>
+#include <QStyledItemDelegate>
 #include <QtWidgets/QAbstractItemView>
 #include <QtWidgets/QListView>
 #include <QtWidgets/QTableView>
@@ -18,6 +20,29 @@
 #include "yse-ui/src/widgets.h"
 
 namespace yse_ui {
+
+// Paints a translucent accent wash over cells whose model exposes a positive
+// `kHeatRole` value (normalized 0..1), producing the resource heat-map look.
+class HeatDelegate final : public QStyledItemDelegate {
+public:
+  using QStyledItemDelegate::QStyledItemDelegate;
+
+  void paint(QPainter* painter, const QStyleOptionViewItem& option,
+             const QModelIndex& index) const override {
+    QStyledItemDelegate::paint(painter, option, index);
+    const QVariant heat = index.data(kHeatRole);
+    if (!heat.isValid()) {
+      return;
+    }
+    const double intensity = qBound(0.0, heat.toDouble(), 1.0);
+    if (intensity <= 0.0) {
+      return;
+    }
+    QColor accent = option.palette.color(QPalette::Highlight);
+    accent.setAlphaF(0.18 * intensity);
+    painter->fillRect(option.rect.adjusted(2, 2, -2, -2), accent);
+  }
+};
 
 // Reports the row under the cursor on right-click back to Rust, where the
 // application composes its own context menu. Owned by the view (parented
@@ -195,6 +220,19 @@ void table_model_set_row_icons(TableModel* m, rust::Vec<rust::String> paths)
   m->q->rustSetRowIcons(icons);
 }
 
+void table_model_set_heat(TableModel* m, int column, rust::Vec<double> values)
+{
+  if (!m->alive) {
+    return;
+  }
+  QVector<qreal> heat;
+  heat.reserve(values.size());
+  for (double value : values) {
+    heat.append(static_cast<qreal>(value));
+  }
+  m->q->rustSetHeat(column, heat);
+}
+
 int table_model_row_icon_count(TableModel* m)
 {
   return m->alive ? m->q->rustIconCount() : 0;
@@ -315,6 +353,14 @@ void view_set_alternating_row_colors(Widget* view, bool on)
 {
   if (view->alive && view->q != nullptr) {
     static_cast<QTableView*>(view->q)->setAlternatingRowColors(on);
+  }
+}
+
+void view_set_heat_delegate(Widget* view)
+{
+  if (view->alive && view->q != nullptr) {
+    static_cast<QTableView*>(view->q)->setItemDelegate(
+      new HeatDelegate(static_cast<QTableView*>(view->q)));
   }
 }
 

@@ -147,6 +147,7 @@ mod bridge {
         unsafe fn table_reset(m: *mut TableModel, rows: Vec<Row>);
         unsafe fn table_model_set_row_icons(m: *mut TableModel, paths: Vec<String>);
         unsafe fn table_model_row_icon_count(m: *mut TableModel) -> i32;
+        unsafe fn table_model_set_heat(m: *mut TableModel, column: i32, values: Vec<f64>);
         unsafe fn table_row_count(m: *mut TableModel) -> i32;
         unsafe fn table_column_count(m: *mut TableModel) -> i32;
         unsafe fn table_text(m: *mut TableModel, row: i32, column: i32) -> String;
@@ -159,6 +160,7 @@ mod bridge {
         unsafe fn view_stretch_last_section(view: *mut Widget, stretch: bool);
         unsafe fn view_set_select_rows(view: *mut Widget, on: bool);
         unsafe fn view_set_alternating_row_colors(view: *mut Widget, on: bool);
+        unsafe fn view_set_heat_delegate(view: *mut Widget);
         unsafe fn view_selected_rows(view: *mut Widget) -> Vec<i32>;
         unsafe fn view_select_row(view: *mut Widget, row: i32);
         unsafe fn view_clear_selection(view: *mut Widget);

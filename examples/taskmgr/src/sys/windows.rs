@@ -1,7 +1,10 @@
 //! Windows backend: `windows-sys` FFI over Toolhelp / PSAPI / IP Helper /
 //! the registry. Rate counters are diffed against the previous tick.
 
-use crate::sys::{CpuInfo, NetRate, PowerLevel, ProcessGroup, ProcessSample, SystemStats};
+use crate::sys::{
+    CpuInfo, NetRate, PowerLevel, ProcessGroup, ProcessSample, ServiceEntry, StartupEntry,
+    SystemStats, UserSession,
+};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use windows_sys::Win32::Foundation::HWND;
@@ -567,4 +570,106 @@ pub fn kill(pid: u32) -> bool {
     let ok = unsafe { TerminateProcess(handle, 1) } != 0;
     unsafe { CloseHandle(handle) };
     ok
+}
+
+/// Services from the Service Control Manager (`sc query state= all`).
+pub fn service_entries() -> Vec<ServiceEntry> {
+    let mut entries = Vec::new();
+    let Ok(output) = std::process::Command::new("sc.exe")
+        .args(["query", "state=", "all"])
+        .output()
+    else {
+        return entries;
+    };
+    if !output.status.success() {
+        return entries;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut name = String::new();
+    let mut display = String::new();
+    let mut state = String::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("SERVICE_NAME:") {
+            if !name.is_empty() {
+                entries.push((
+                    std::mem::take(&mut name),
+                    std::mem::take(&mut state),
+                    std::mem::take(&mut display),
+                ));
+            }
+            name = value.trim().to_string();
+        } else if let Some(value) = line.strip_prefix("DISPLAY_NAME:") {
+            display = value.trim().to_string();
+        } else if let Some(value) = line.strip_prefix("STATE") {
+            state = value
+                .split_whitespace()
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join(" ");
+        }
+    }
+    if !name.is_empty() {
+        entries.push((name, state, display));
+    }
+    entries
+}
+
+fn run_key_entries(root: &str) -> Vec<StartupEntry> {
+    let mut entries = Vec::new();
+    let Ok(output) = std::process::Command::new("reg.exe")
+        .args(["query", root])
+        .output()
+    else {
+        return entries;
+    };
+    if !output.status.success() {
+        return entries;
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let mut fields = line.split_whitespace();
+        let Some(name) = fields.next() else { continue };
+        if name.ends_with('\\') {
+            continue;
+        }
+        let _type = fields.next();
+        let command = fields.collect::<Vec<_>>().join(" ");
+        entries.push((name.to_string(), command, String::from("已启用")));
+    }
+    entries
+}
+
+/// Startup entries from the HKCU/HKLM Run registry keys.
+pub fn startup_entries() -> Vec<StartupEntry> {
+    let mut entries = run_key_entries(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run");
+    entries.extend(run_key_entries(
+        r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run",
+    ));
+    entries.sort();
+    entries
+}
+
+/// Logged-in sessions from `query user`.
+pub fn user_sessions() -> Vec<UserSession> {
+    let mut sessions = Vec::new();
+    let Ok(output) = std::process::Command::new("query.exe").arg("user").output() else {
+        return sessions;
+    };
+    if !output.status.success() {
+        return sessions;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut lines = text.lines();
+    let _header = lines.next();
+    for line in lines {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() >= 3 {
+            sessions.push((
+                fields[0].trim_start_matches('>').to_string(),
+                fields[1].to_string(),
+                fields[2].to_string(),
+            ));
+        }
+    }
+    sessions
 }

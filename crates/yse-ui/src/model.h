@@ -82,6 +82,9 @@ private:
   QVector<QString> rows_;
 };
 
+/// Custom role carrying a normalized (0..1) heat value for a table cell.
+inline constexpr int kHeatRole = Qt::UserRole + 1;
+
 /// A QAbstractTableModel mirror with a fixed column count, headers, and
 /// string rows, driven incrementally from Rust.
 class RustTableModel : public QAbstractTableModel
@@ -113,6 +116,11 @@ public:
     if (role == Qt::DecorationRole && index.column() == 0
         && index.row() < icons_.size() && !icons_.at(index.row()).isNull()) {
       return icons_.at(index.row());
+    }
+    if (role == kHeatRole
+        && index.column() < heatColumns_.size()
+        && index.row() < heatColumns_.at(index.column()).size()) {
+      return heatColumns_.at(index.column()).at(index.row());
     }
     if (role != Qt::DisplayRole) {
       return {};
@@ -147,6 +155,9 @@ public:
     for (int i = 0; i < rows.size(); ++i) {
       rows_.insert(row + i, rows.at(i));
       icons_.insert(row + i, QIcon());
+      for (QVector<qreal>& heat : heatColumns_) {
+        heat.insert(row + i, 0.0);
+      }
     }
     endInsertRows();
   }
@@ -160,6 +171,9 @@ public:
     beginRemoveRows({}, row, end - 1);
     rows_.remove(row, end - row);
     icons_.remove(row, end - row);
+    for (QVector<qreal>& heat : heatColumns_) {
+      heat.remove(row, end - row);
+    }
     endRemoveRows();
   }
 
@@ -183,6 +197,11 @@ public:
     // runs in the follow-up propagation pass), and clearing here would erase
     // icons that were just set for the new rows.
     icons_.resize(rows_.size());
+    // Heat values are re-supplied per refresh; drop stale ones so old rows
+    // never keep outdated intensities.
+    for (QVector<qreal>& heat : heatColumns_) {
+      heat.resize(rows_.size());
+    }
     endResetModel();
   }
 
@@ -191,6 +210,21 @@ public:
     icons_ = icons;
     if (!rows_.isEmpty()) {
       emit dataChanged(index(0, 0), index(rows_.size() - 1, 0), { Qt::DecorationRole });
+    }
+  }
+
+  void rustSetHeat(int column, const QVector<qreal>& values)
+  {
+    if (column < 0) {
+      return;
+    }
+    while (heatColumns_.size() <= static_cast<qsizetype>(column)) {
+      heatColumns_.append(QVector<qreal>());
+    }
+    heatColumns_[column] = values;
+    if (!rows_.isEmpty()) {
+      emit dataChanged(index(0, column), index(rows_.size() - 1, column),
+                       { kHeatRole });
     }
   }
 
@@ -223,4 +257,5 @@ private:
   QVector<QStringList> rows_;
   QStringList headers_;
   QVector<QIcon> icons_;
+  QVector<QVector<qreal>> heatColumns_;
 };
