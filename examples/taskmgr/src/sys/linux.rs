@@ -278,6 +278,36 @@ fn disk_names() -> Vec<String> {
     names
 }
 
+fn disk_activity(prev: &mut HashMap<String, (u64, std::time::Instant)>) -> Vec<(String, f64)> {
+    let mut activity = Vec::new();
+    let Some(text) = read("/proc/diskstats") else {
+        return activity;
+    };
+    let now = std::time::Instant::now();
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 14 {
+            continue;
+        }
+        let name = fields[2].to_string();
+        if name.starts_with("loop") || name.starts_with("ram") || name.starts_with("zram") {
+            continue;
+        }
+        // Field 13 is the cumulative time spent doing I/Os, in milliseconds.
+        let io_time: u64 = fields[13].parse().unwrap_or(0);
+        let active = match prev.get(&name) {
+            Some((previous_io, previous_at)) => {
+                let elapsed_ms = now.duration_since(*previous_at).as_millis().max(1) as f64;
+                (io_time.saturating_sub(*previous_io) as f64 / elapsed_ms * 100.0).clamp(0.0, 100.0)
+            }
+            None => 0.0,
+        };
+        prev.insert(name.clone(), (io_time, now));
+        activity.push((name, active));
+    }
+    activity
+}
+
 fn gpu_name() -> String {
     let vendor = read("/sys/class/drm/card0/device/vendor")
         .unwrap_or_default()
@@ -471,6 +501,7 @@ pub struct LinuxSampler {
     prev_proc: HashMap<u32, StatTick>,
     prev_nets: HashMap<String, (u64, u64)>,
     exe_cache: HashMap<String, Option<String>>,
+    prev_disk: HashMap<String, (u64, std::time::Instant)>,
 }
 
 impl LinuxSampler {
@@ -481,6 +512,7 @@ impl LinuxSampler {
             prev_proc: HashMap::new(),
             prev_nets: HashMap::new(),
             exe_cache: HashMap::new(),
+            prev_disk: HashMap::new(),
         }
     }
 
@@ -572,6 +604,7 @@ impl LinuxSampler {
         let (_model, current_mhz, base_mhz, sockets, cores, logical, virtualization) = cpuinfo();
         let (l1_kb, l2_kb, l3_kb) = cache_kb();
         let nets = net_rates(&mut self.prev_nets);
+        let disk_activity = disk_activity(&mut self.prev_disk);
         let uptime = uptime_secs();
 
         SystemStats {
@@ -597,6 +630,7 @@ impl LinuxSampler {
             handle_count: 0,
             nets,
             disk_names: disk_names(),
+            disk_activity,
             gpu_name: gpu_name(),
         }
     }

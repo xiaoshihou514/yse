@@ -556,6 +556,9 @@ impl WindowsSampler {
             handle_count,
             nets,
             disk_names: disk_names(),
+            // Per-disk active time needs performance counters (PDH); mark it
+            // unavailable rather than fabricating zeroes.
+            disk_activity: Vec::new(),
             gpu_name: self.gpu.clone(),
         }
     }

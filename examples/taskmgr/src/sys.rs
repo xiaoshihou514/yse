@@ -120,6 +120,8 @@ pub struct SystemStats {
     pub handle_count: u32,
     pub nets: Vec<NetRate>,
     pub disk_names: Vec<String>,
+    /// Per-disk active time percentage, when the platform provides it.
+    pub disk_activity: Vec<(String, f64)>,
     pub gpu_name: String,
 }
 

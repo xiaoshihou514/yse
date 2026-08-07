@@ -294,6 +294,7 @@ fn main() {
     let cpu_history = Var::new(Vec::<f64>::new());
     let mem_history = Var::new(Vec::<f64>::new());
     let net_history = Var::new(Vec::<f64>::new());
+    let disk_history = Var::new(Vec::<f64>::new());
     let per_core_history = Var::new(Vec::<Vec<f64>>::new());
     let metrics_text = Var::new(String::new());
     let status_text = Var::new(String::new());
@@ -351,7 +352,10 @@ fn main() {
     // --- 菜单 ---
     let menubar = window.menu_bar();
     let (quit_action, refresh_action) = menubar.menu_with("文件", |m| {
-        (m.action("退出").shortcut("Ctrl+Q"), m.action("立即刷新"))
+        (
+            m.action("退出").shortcut("Ctrl+Q"),
+            m.action("立即刷新").shortcut("Ctrl+R"),
+        )
     });
     let about_action = menubar.menu_with("选项", |m| m.action("关于"));
     let (high_action, normal_action, low_action, pause_action, column_actions) =
@@ -548,22 +552,21 @@ fn main() {
     );
     resource_label.bind_visible(&resource.signal().map(|r| *r >= 2));
 
-    let chart_series = resource.signal().combine4(
-        &cpu_history.signal(),
+    let histories = cpu_history.signal().combine4(
         &mem_history.signal(),
         &net_history.signal(),
-        |r, cpu, mem, net| {
-            if *r == 0 {
-                cpu.clone()
-            } else if *r == 1 {
-                mem.clone()
-            } else if *r == 3 {
-                net.clone()
-            } else {
-                Vec::new()
-            }
-        },
+        &disk_history.signal(),
+        |cpu, mem, net, disk| [cpu.clone(), mem.clone(), net.clone(), disk.clone()],
     );
+    let chart_series = resource
+        .signal()
+        .combine(&histories, |r, histories| match *r {
+            0 => histories[0].clone(),
+            1 => histories[0].clone(),
+            2 => histories[3].clone(),
+            3 => histories[2].clone(),
+            _ => Vec::new(),
+        });
     chart.bind_series(&chart_series);
     cores_chart.bind_series_multi(&per_core_history.signal());
     cores_chart.bind_visible(&resource.signal().map(|r| *r == 0));
@@ -765,6 +768,7 @@ fn main() {
         cpu_history,
         mem_history,
         net_history,
+        disk_history,
         per_core_history,
         mem_percent,
         mem_label_text,
@@ -827,8 +831,14 @@ fn main() {
             ));
 
             let mut disk_text = String::from("磁盘\n");
-            for name in &stats.disk_names {
-                disk_text.push_str(&format!("{name}  活动：—\n"));
+            if stats.disk_activity.is_empty() {
+                for name in &stats.disk_names {
+                    disk_text.push_str(&format!("{name}  活动：不可用\n"));
+                }
+            } else {
+                for (name, active) in &stats.disk_activity {
+                    disk_text.push_str(&format!("{name}  活动：{active:.0}%\n"));
+                }
             }
             let mut net_text = String::from("网络\n");
             for net in &stats.nets {
@@ -872,6 +882,12 @@ fn main() {
                 .sum::<u64>() as f64
                 / 1_000_000.0;
             push_history(&net_history, net_mbps);
+            let disk_active = stats
+                .disk_activity
+                .iter()
+                .map(|(_, active)| *active)
+                .fold(0.0f64, f64::max);
+            push_history(&disk_history, disk_active);
             let mut cores = per_core_history.value().as_ref().clone();
             if cores.len() != stats.cpu.per_core_pct.len() {
                 cores = vec![Vec::new(); stats.cpu.per_core_pct.len()];

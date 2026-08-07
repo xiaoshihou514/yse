@@ -22,13 +22,13 @@ graphs, and the process-management actions.
 | 1 | Provider/snapshot separation, background sampling, update speed, settings, benchmarks | Partially done (worker-thread sampling via `spawn_interval`, High/Normal/Low/Paused, coalescing) |
 | 2 | Theme tokens, responsive shell, shared table/graph widgets, DPI | Partially done (theme + shell live) |
 | 3 | Processes parity: grouping, friendly names, icons, columns, heat maps, actions | Done (expandable App/Background/System tree, friendly names, icons, heat maps, column chooser, end task/tree, open location) |
-| 4 | Performance parity: CPU/memory/disk/network/GPU detail pages | CPU + memory + network history done; disk/GPU metadata only |
+| 4 | Performance parity: CPU/memory/disk/network/GPU detail pages | CPU/memory/network/disk (Linux) done; GPU explicitly unavailable |
 | 5 | Details + Services | Details partial (PID/PPID/threads/CPU time/priority); Services implemented (systemd / `sc`) |
 | 6 | Startup + Users | Startup implemented (XDG autostart / registry Run); Users implemented (who / query user) |
 | 7 | App history | Explicit unavailable state (degrades per roadmap) |
 | 8 | Menus/commands/keyboard parity | Partially done (update speed, pause, group toggle, submenus, checkable actions) |
-| 9 | Accessibility, reliability, polish | Sampler soak test + 28x sampling speedup; keyboard/accessibility audit pending |
-| 10 | Release hardening | Pending |
+| 9 | Accessibility, reliability, polish | Bounded soak + 28x sampling speedup; keyboard nav/focus via Qt defaults, Ctrl+Q/R shortcuts, no color-only info |
+| 10 | Release hardening | Known-limitations matrix below; signing/installer pending |
 
 ## Done so far
 
@@ -65,3 +65,28 @@ graphs, and the process-management actions.
 8. Keep units consistent and centralized.
 9. Keep raw values in models; formatting belongs to presentation.
 10. Sampling frequency must not depend on how many views are open.
+
+## Known limitations & parity deviations
+
+Explicitly documented instead of fabricating values, per the roadmap rules:
+
+| Capability | Linux | Windows |
+|---|---|---|
+| Process icons | PATH lookup when `/proc/<pid>/exe` is unreadable | Shell icons |
+| Per-disk active time | `/proc/diskstats` deltas | Unavailable (PDH not wired) |
+| GPU usage | Unavailable (no vendor API) | Unavailable (no NVML/ADL/DXGI) |
+| App history | No source | Requires Windows resource-usage records |
+| Users | `who` | `query user` (exit code 1 from non-console contexts; output still parsed) |
+| Privilege elevation | Not isolated (demo) | Not isolated (demo) |
+| 24-hour soak | Bounded soak in tests; run the sampler loop for full duration on real machines | Same |
+
+## UI acceptance checklist
+
+- Distinct focus/hover/selected/disabled states: Qt Fusion + stylesheet. Done.
+- Works without a mouse: Qt keyboard navigation; Ctrl+Q quit, Ctrl+R refresh. Done.
+- Long text overflow: table/tree cells ellipsize with tooltips. Done.
+- No information by color alone: heat maps pair with text labels. Done.
+- Units consistent and no layout jumps: formatting helpers centralized; refresh is coalesced. Done.
+- Light/dark both intentional: palette + per-scheme stylesheets. Done.
+- Inaccessible metrics show "不可用", not misleading zeroes. Done.
+- Provider errors never modal-spam: sampling failures degrade to empty/unavailable states. Done.
