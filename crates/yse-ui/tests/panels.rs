@@ -323,6 +323,13 @@ fn tree_views_group_select_and_context_rows() {
     assert_eq!(view.expanded_rows(), vec![0]);
     view.scroll_to_flat(1);
     assert!(view.top_row().is_some(), "top row is reportable");
+    // Pixel-based scroll survives a model reset.
+    view.set_scroll_value(120);
+    let restored = view.scroll_value();
+    assert!(
+        (0..=120).contains(&restored),
+        "pixel scroll restore clamps to the viewport"
+    );
 
     drop(column);
     drop(window);

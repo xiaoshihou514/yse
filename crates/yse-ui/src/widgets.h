@@ -263,6 +263,8 @@ rust::Vec<int32_t> tree_view_expanded_rows(Widget* view);
 void tree_view_expand_rows(Widget* view, rust::Vec<int32_t> rows);
 int tree_view_top_row(Widget* view);
 void tree_view_scroll_to_flat(Widget* view, int flat);
+int tree_view_scroll_value(Widget* view);
+void tree_view_set_scroll_value(Widget* view, int value);
 rust::Vec<int32_t> view_selected_rows(Widget* view);
 void view_select_row(Widget* view, int row);
 void view_clear_selection(Widget* view);

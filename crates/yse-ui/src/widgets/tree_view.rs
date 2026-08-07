@@ -234,6 +234,18 @@ impl TreeView {
         }
     }
 
+    /// The current vertical scroll position in pixels.
+    pub fn scroll_value(&self) -> i32 {
+        unsafe { ffi::tree_view_scroll_value(self.inner.raw()) }
+    }
+
+    /// Restore the vertical scroll position in pixels.
+    pub fn set_scroll_value(&self, value: i32) {
+        if self.inner.is_alive() {
+            unsafe { ffi::tree_view_set_scroll_value(self.inner.raw(), value) };
+        }
+    }
+
     /// Expand or collapse all group rows.
     pub fn expand_all(&self, expand: bool) {
         if self.inner.is_alive() {

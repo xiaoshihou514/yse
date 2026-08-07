@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QMenu>
 #include <QPainter>
+#include <QScrollBar>
 #include <QSet>
 #include <QStyledItemDelegate>
 #include <functional>
@@ -579,6 +580,21 @@ void tree_view_scroll_to_flat(Widget* view, int flat)
     if (index.isValid()) {
       tree->scrollTo(index, QAbstractItemView::PositionAtTop);
     }
+  }
+}
+
+int tree_view_scroll_value(Widget* view)
+{
+  if (view->alive && view->q != nullptr) {
+    return static_cast<QTreeView*>(view->q)->verticalScrollBar()->value();
+  }
+  return 0;
+}
+
+void tree_view_set_scroll_value(Widget* view, int value)
+{
+  if (view->alive && view->q != nullptr) {
+    static_cast<QTreeView*>(view->q)->verticalScrollBar()->setValue(value);
   }
 }
 

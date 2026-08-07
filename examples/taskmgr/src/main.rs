@@ -498,6 +498,8 @@ fn main() {
                     title.set_style_class("title");
                     let chart = area.line_chart();
                     let cores_chart = area.line_chart();
+                    let cores_unavailable = area.label("逻辑处理器：不可用");
+                    cores_unavailable.set_style_class("muted");
                     let usage = area.label("");
                     usage.set_style_class("primary");
                     let speed = area.label("");
@@ -516,6 +518,7 @@ fn main() {
                         title,
                         chart,
                         cores_chart,
+                        cores_unavailable,
                         usage,
                         speed,
                         detail,
@@ -562,6 +565,7 @@ fn main() {
         title_label,
         chart,
         cores_chart,
+        cores_unavailable,
         usage,
         speed,
         detail,
@@ -611,12 +615,11 @@ fn main() {
     let _tree_sync = tree_rows_signal.observe(clone!(
         tree_model, process_view, tree, selected_pid => move |rows: &Vec<(i32, Vec<String>, String)>| {
             let expanded = process_view.expanded_rows();
-            let top = process_view.top_row();
+            let scroll = process_view.scroll_value();
             tree_model.reset(rows.clone());
             process_view.expand_rows(&expanded);
-            if let Some(top) = top {
-                process_view.scroll_to_flat(top);
-            }
+            // 按像素恢复滚动位置，避免按行滚动导致的相对位置偏移。
+            process_view.set_scroll_value(scroll);
             if let Some((pid, _)) = *selected_pid.value()
                 && let Some(row) = tree.value().iter().position(|r| r.pid == Some(pid))
             {
@@ -673,7 +676,18 @@ fn main() {
         });
     chart.bind_series(&chart_series);
     cores_chart.bind_series_multi(&per_core_history.signal());
-    cores_chart.bind_visible(&resource.signal().map(|r| *r == 0));
+    // 逻辑处理器图表仅在数据可用时显示（Linux 提供，Windows 显示不可用）。
+    let cores_empty = per_core_history.signal().map(|cores| cores.is_empty());
+    cores_chart.bind_visible(
+        &resource
+            .signal()
+            .combine(&cores_empty, |r, empty| *r == 0 && !*empty),
+    );
+    cores_unavailable.bind_visible(
+        &resource
+            .signal()
+            .combine(&cores_empty, |r, empty| *r == 0 && *empty),
+    );
     usage.bind_visible(&resource.signal().map(|r| *r == 0));
     speed.bind_visible(&resource.signal().map(|r| *r == 0));
     detail.bind_visible(&resource.signal().map(|r| *r == 0));
