@@ -61,6 +61,7 @@ impl Project {
     }
 
     /// Parse a project name and pin it to a local Yse repository checkout.
+    /// The pinned path feeds `cargo add yse --path <checkout>/crates/yse`.
     pub fn parse_local(name: &str, yse_path: &str) -> Result<Self, String> {
         let mut project = Self::parse(name)?;
         let absolute = std::path::Path::new(yse_path)
@@ -109,7 +110,6 @@ pub fn write_project(project: &Project, target: &Path) -> Result<(), String> {
             "Cargo.toml",
             template::render(template::CARGO_TOML, project),
         ),
-        ("build.rs", template::render(template::BUILD_RS, project)),
         (
             "gansi.toml",
             template::render(template::GANSI_TOML, project),
@@ -122,62 +122,8 @@ pub fn write_project(project: &Project, target: &Path) -> Result<(), String> {
         ("README.md", template::render(template::README_MD, project)),
         ("src/main.rs", template::render(template::MAIN_RS, project)),
         (
-            "src/bridge.rs",
-            template::render(template::BRIDGE_RS, project),
-        ),
-        ("src/spike.h", template::render(template::SPIKE_H, project)),
-        (
-            "src/spike.cpp",
-            template::render(template::SPIKE_CPP, project),
-        ),
-        (
             "tests/smoke.rs",
             template::render(template::TESTS_SMOKE_RS, project),
-        ),
-    ];
-    for (relative, content) in files {
-        let path = target.join(relative);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
-        }
-        fs::write(&path, content)
-            .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
-    }
-    Ok(())
-}
-
-/// Generate a project that depends on a local Yse checkout through the
-/// `yse` facade (no C++ shim: `yse-ui` provides the Qt surface).
-pub fn write_project_local(project: &Project, target: &Path) -> Result<(), String> {
-    let files: Vec<(&str, String)> = vec![
-        (
-            "Cargo.toml",
-            template::render_local(template::CARGO_TOML_LOCAL, project),
-        ),
-        (
-            "gansi.toml",
-            template::render_local(template::GANSI_TOML, project),
-        ),
-        (
-            "README.md",
-            template::render_local(template::README_MD, project),
-        ),
-        (
-            ".gitignore",
-            template::render_local(template::GITIGNORE, project),
-        ),
-        (
-            "RELEASE.md",
-            template::render_local(template::RELEASE_MD, project),
-        ),
-        (
-            "src/main.rs",
-            template::render_local(template::MAIN_RS_LOCAL, project),
-        ),
-        (
-            "tests/smoke.rs",
-            template::render_local(template::TESTS_SMOKE_RS, project),
         ),
     ];
     for (relative, content) in files {
@@ -302,25 +248,23 @@ mod tests {
         write_project(&project, &dir).unwrap();
         for file in [
             "Cargo.toml",
-            "build.rs",
             "gansi.toml",
             "RELEASE.md",
             "README.md",
             "src/main.rs",
-            "src/bridge.rs",
-            "src/spike.h",
-            "src/spike.cpp",
             "tests/smoke.rs",
         ] {
             assert!(dir.join(file).exists(), "missing generated file {file}");
         }
         let cargo_toml = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
         assert!(cargo_toml.contains("name = \"smoke-app\""));
+        let main_rs = fs::read_to_string(dir.join("src/main.rs")).unwrap();
+        assert!(main_rs.contains("use yse::*"));
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn local_generation_uses_the_facade() {
+    fn local_parse_pins_the_checkout_path() {
         let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
@@ -331,10 +275,8 @@ mod tests {
 
         let dir = std::env::temp_dir().join(format!("gansi-local-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        write_project_local(&project, &dir).unwrap();
-        let cargo_toml = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
-        assert!(cargo_toml.contains("yse = { path = \""));
-        assert!(cargo_toml.contains("/crates/yse\""));
+        write_project(&project, &dir).unwrap();
+        assert!(dir.join("Cargo.toml").exists());
         assert!(!dir.join("build.rs").exists());
         let _ = fs::remove_dir_all(&dir);
     }

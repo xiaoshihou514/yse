@@ -2,7 +2,7 @@
 
 `gansi build` builds a release binary and lays it out in `dist/{{name}}/`.
 On Linux that is a portable binary (Qt must be present on the target or
-# deployed alongside it); on Windows `windeployqt` and on macOS `macdeployqt`
+deployed alongside it); on Windows `windeployqt` and on macOS `macdeployqt`
 are invoked automatically when available.
 
 ## What remains application-specific

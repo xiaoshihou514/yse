@@ -24,12 +24,12 @@ fn main() {
     let (combo, spin, slider, bar, reset, status_label) = window.mount(column((
         combo_box(["Starter", "Balanced", "Power"])
             .value(profile.clone())
-            .on_value_change(clone!(profile, status => move |index| {
+            .on_value_change(clone!(status => move |index| {
                 status.set(format!("profile: {}", ["Starter", "Balanced", "Power"][*index as usize]));
             })),
         spin_box(quantity.clone())
             .range(1, 10)
-            .on_value_change(clone!(quantity, status => move |value| {
+            .on_value_change(clone!(status => move |value| {
                 status.set(format!("quantity: {value}"));
             })),
         slider(level.clone()).range(0, 100),
