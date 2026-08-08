@@ -97,7 +97,7 @@ enum Platform {
 }
 
 impl Platform {
-    fn detect() -> Self {
+    const fn detect() -> Self {
         if cfg!(target_os = "windows") {
             Self::Windows
         } else if cfg!(target_os = "macos") {
@@ -107,7 +107,7 @@ impl Platform {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Windows => "windows",
             Self::Macos => "macos",
@@ -251,19 +251,6 @@ struct GlobalConfig {
     target_arch: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ManifestFile {
-    project: ManifestProject,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ManifestProject {
-    name: String,
-    qt_version: Option<String>,
-    compiler_family: Option<String>,
-    target_arch: Option<String>,
-}
-
 #[derive(Clone)]
 struct HealthCheck {
     label: &'static str,
@@ -271,6 +258,24 @@ struct HealthCheck {
     version: Option<String>,
     required: bool,
     suggestion: &'static str,
+}
+
+/// Outcome of a `doctor` run, mapped to a process exit code at the boundary.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DoctorStatus {
+    AllGood,
+    SoftMissing,
+    RequiredMissing,
+}
+
+impl DoctorStatus {
+    const fn exit_code(self) -> i32 {
+        match self {
+            Self::AllGood => 0,
+            Self::SoftMissing => 1,
+            Self::RequiredMissing => 2,
+        }
+    }
 }
 
 fn main() {
@@ -305,7 +310,7 @@ fn execute(cli: Cli) -> Result<i32, String> {
             command_build(debug, args)?;
             Ok(0)
         }
-        Command::Doctor { verbose } => command_doctor(verbose),
+        Command::Doctor { verbose } => Ok(command_doctor(verbose)?.exit_code()),
         Command::Setup { version } => command_setup(version),
         Command::Clean => {
             command_clean()?;
@@ -341,18 +346,16 @@ fn command_create(name: &str, local: Option<&str>) -> Result<(), String> {
     }
     project::write_project(&project, &target)?;
     add_yse_dependency(&project, &target)?;
-    println!(
-        "Generated {} at {}\n\
-         \n\
-         Next steps:\n\
-         \x20   cd {}\n\
-         \x20   gansi run                  # build and run (requires Qt 6 development files)\n\
-         \x20   gansi test                 # run tests\n\
-         \x20   gansi build                # build a release bundle",
-        project.name,
-        target.display(),
-        project.name
-    );
+    println!("Generated {} at {}\n", project.name, target.display());
+    println!("Next steps:");
+    for step in [
+        format!("cd {}", project.name),
+        "gansi run   # build and run (requires Qt 6 development files)".into(),
+        "gansi test  # run tests".into(),
+        "gansi build # build a release bundle".into(),
+    ] {
+        println!("  {step}");
+    }
     Ok(())
 }
 
@@ -363,7 +366,13 @@ fn add_yse_dependency(project: &project::Project, target: &Path) -> Result<(), S
     let mut args = vec!["add".to_string(), "yse".to_string()];
     if let Some(yse_path) = &project.local_yse {
         args.push("--path".to_string());
-        args.push(format!("{yse_path}/crates/yse"));
+        args.push(
+            yse_path
+                .join("crates")
+                .join("yse")
+                .to_string_lossy()
+                .into_owned(),
+        );
     }
     let status = ProcessCommand::new("cargo")
         .args(&args)
@@ -415,19 +424,19 @@ fn command_build(debug: bool, args: Vec<String>) -> Result<(), String> {
     project::bundle(&project, profile)
 }
 
-fn command_doctor(verbose: bool) -> Result<i32, String> {
-    let checks = collect_health_checks()?;
+fn command_doctor(verbose: bool) -> Result<DoctorStatus, String> {
+    let checks = collect_health_checks();
     render_checks(&checks);
     if verbose {
         render_verbose_environment()?;
     }
 
     if checks.iter().any(|check| check.required && !check.found) {
-        Ok(2)
+        Ok(DoctorStatus::RequiredMissing)
     } else if checks.iter().any(|check| !check.found) {
-        Ok(1)
+        Ok(DoctorStatus::SoftMissing)
     } else {
-        Ok(0)
+        Ok(DoctorStatus::AllGood)
     }
 }
 
@@ -456,7 +465,7 @@ fn command_setup(version: Option<String>) -> Result<i32, String> {
         return Ok(0);
     }
 
-    if let Some(root) = config.qt_roots.iter().find_map(has_qmake_path) {
+    if let Some(root) = config.qt_roots.iter().find_map(|root| has_qmake_path(root)) {
         println!("Using existing Qt root: {}", root.display());
         register_qt_root(&mut config, &qt_version, &root)?;
         return Ok(0);
@@ -490,7 +499,7 @@ fn command_setup(version: Option<String>) -> Result<i32, String> {
     Ok(1)
 }
 
-fn has_qmake_path(value: &String) -> Option<PathBuf> {
+fn has_qmake_path(value: &str) -> Option<PathBuf> {
     let path = Path::new(value);
     has_qmake(path).then(|| path.to_path_buf())
 }
@@ -509,6 +518,7 @@ fn register_qt_root(
     save_global_config(config)
 }
 
+#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 fn install_qt_from_mirrors(
     qt_version: &str,
     platform: Platform,
@@ -542,9 +552,9 @@ fn install_qt_from_mirrors(
     // root one) — enumerating those per-arch folders is not implemented yet.
     let use_split = qt_version.major == 6 && (8..=10).contains(&qt_version.minor);
     let version_path = if use_split {
-        format!("{0}/{0}", base_folder)
+        format!("{base_folder}/{base_folder}")
     } else {
-        base_folder.clone()
+        base_folder
     };
     let updates_path = "Updates.xml".to_string();
 
@@ -609,88 +619,15 @@ fn install_qt_from_mirrors(
 
         candidates.sort_by_key(|candidate| archive_preference(&candidate.archive_name));
         for candidate in candidates {
-            let mut archive_path = String::new();
-            archive_path.push_str(candidate.package_name.as_str());
-            if !archive_path.is_empty() {
-                archive_path.push('/');
-            }
-            if let Some(location) = candidate.location.as_deref() {
-                let location = location.trim_matches('/');
-                if !location.is_empty() {
-                    archive_path.push_str(location);
-                    archive_path.push('/');
-                }
-            }
-            archive_path.push_str(&candidate.package_version);
-            archive_path.push_str(&candidate.archive_name);
-
-            let archive_name = candidate.archive_name;
-            let archive_url = url_join(&mirror_base, &[&archive_path]);
-
-            let stage = work_dir.join(format!(
-                "archive_{}",
-                archive_name.replace(['/', '\\'], "_")
-            ));
-            match http_download_file(&archive_url, &stage) {
-                Ok(()) => {}
-                Err(error) => {
-                    println!("  {} download failed: {error}", archive_name);
-                    continue;
-                }
-            }
-            if let Some(expected) = candidate.sha1.as_deref() {
-                match verify_sha1(&stage, expected) {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        println!("  {archive_name} checksum mismatch");
-                        let _ = fs::remove_file(&stage);
-                        continue;
-                    }
-                    Err(error) => {
-                        println!("  {} checksum check failed: {error}", archive_name);
-                        let _ = fs::remove_file(&stage);
-                        continue;
-                    }
-                }
-            }
-
-            let extract_dir = work_dir.join(format!(
-                "extract_{}",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_err(|error| format!("time error: {error}"))?
-                    .as_nanos()
-            ));
-            if let Err(error) = extract_archive(&stage, &extract_dir) {
-                println!("  failed to extract {}: {error}", archive_name);
-                let _ = fs::remove_file(&stage);
-                continue;
-            }
-            let found_root = find_qmake_root(&extract_dir);
-            if let Some(found_root) = found_root {
-                if has_qmake(&found_root) {
-                    if found_root != *expected_root {
-                        if expected_root.exists() {
-                            fs::remove_dir_all(expected_root).map_err(|error| {
-                                format!("cannot clear {}: {error}", expected_root.display())
-                            })?;
-                        }
-                        copy_dir_all(&found_root, expected_root)?;
-                        install_root = Some(expected_root.to_path_buf());
-                    } else {
-                        install_root = Some(found_root);
-                    }
-                }
-            } else if let Some(payload_root) =
-                find_qt_payload_root(&extract_dir, &qt_full_version, &qt_arch)
-                && let Some(root) = install_root.as_deref().filter(|root| root.exists())
-            {
-                if is_top_level_library_payload(&payload_root) {
-                    copy_dir_all(&payload_root, &root.join("lib"))?;
-                } else {
-                    copy_dir_all(&payload_root, root)?;
-                }
-            }
+            install_qt_candidate(
+                &candidate,
+                &mirror_base,
+                &work_dir,
+                expected_root,
+                &qt_full_version,
+                &qt_arch,
+                &mut install_root,
+            )?;
         }
 
         if install_root.is_some() {
@@ -718,6 +655,101 @@ fn install_qt_from_mirrors(
     Ok(install_root)
 }
 
+/// Download, verify, and stage one archive candidate, then fold its Qt root
+/// into `install_root`. Failures (download, checksum, extraction) only stop
+/// this candidate — the caller moves on to the next one.
+fn install_qt_candidate(
+    candidate: &QtArchiveCandidate,
+    mirror_base: &str,
+    work_dir: &Path,
+    expected_root: &Path,
+    qt_full_version: &str,
+    qt_arch: &str,
+    install_root: &mut Option<PathBuf>,
+) -> Result<(), String> {
+    let archive_name = candidate.archive_name.clone();
+    let mut archive_path = String::new();
+    if !candidate.package_name.is_empty() {
+        archive_path.push_str(&candidate.package_name);
+        archive_path.push('/');
+    }
+    if let Some(location) = candidate.location.as_deref() {
+        let location = location.trim_matches('/');
+        if !location.is_empty() {
+            archive_path.push_str(location);
+            archive_path.push('/');
+        }
+    }
+    archive_path.push_str(&candidate.package_version);
+    archive_path.push_str(&candidate.archive_name);
+    let archive_url = url_join(mirror_base, &[&archive_path]);
+
+    let stage = work_dir.join(format!(
+        "archive_{}",
+        archive_name.replace(['/', '\\'], "_")
+    ));
+    if let Err(error) = http_download_file(&archive_url, &stage) {
+        println!("  {archive_name} download failed: {error}");
+        return Ok(());
+    }
+
+    if let Some(expected) = candidate.sha1.as_deref() {
+        match verify_sha1(&stage, expected) {
+            Ok(true) => {}
+            Ok(false) => {
+                println!("  {archive_name} checksum mismatch");
+                let _ = fs::remove_file(&stage);
+                return Ok(());
+            }
+            Err(error) => {
+                println!("  {archive_name} checksum check failed: {error}");
+                let _ = fs::remove_file(&stage);
+                return Ok(());
+            }
+        }
+    }
+
+    let extract_dir = work_dir.join(format!(
+        "extract_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("time error: {error}"))?
+            .as_nanos()
+    ));
+    if let Err(error) = extract_archive(&stage, &extract_dir) {
+        println!("  failed to extract {archive_name}: {error}");
+        let _ = fs::remove_file(&stage);
+        return Ok(());
+    }
+
+    if let Some(found_root) = find_qmake_root(&extract_dir).filter(|root| has_qmake(root)) {
+        merge_qt_root(&found_root, expected_root)?;
+        *install_root = Some(expected_root.to_path_buf());
+    } else if let Some(payload_root) = find_qt_payload_root(&extract_dir, qt_full_version, qt_arch)
+        && let Some(root) = install_root.as_deref().filter(|root| root.exists())
+    {
+        if is_top_level_library_payload(&payload_root) {
+            copy_dir_all(&payload_root, &root.join("lib"))?;
+        } else {
+            copy_dir_all(&payload_root, root)?;
+        }
+    }
+    Ok(())
+}
+
+/// Move an extracted Qt root into `expected_root`, clearing it first unless
+/// it already holds a matching install.
+fn merge_qt_root(found_root: &Path, expected_root: &Path) -> Result<(), String> {
+    if found_root == expected_root {
+        return Ok(());
+    }
+    if expected_root.exists() {
+        fs::remove_dir_all(expected_root)
+            .map_err(|error| format!("cannot clear {}: {error}", expected_root.display()))?;
+    }
+    copy_dir_all(found_root, expected_root)
+}
+
 #[derive(Clone)]
 struct QtArchiveCandidate {
     archive_name: String,
@@ -731,10 +763,11 @@ fn parse_sha1_from_xml(block: &str) -> Option<String> {
     extract_xml_text(block, "SHA1")
         .or_else(|| extract_xml_text(block, "SHA1Sum"))
         .or_else(|| extract_xml_text(block, "SHA1SumFile"))
+        .as_deref()
         .and_then(normalize_sha1)
 }
 
-fn normalize_sha1(value: String) -> Option<String> {
+fn normalize_sha1(value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
     if value.len() != 40 {
         return None;
@@ -793,11 +826,10 @@ fn find_matching_qt_candidates(
             } else if !is_base_package && !is_qtbase_archive(&archive) {
                 continue;
             }
-            let key = if let Some(location) = location.as_deref() {
-                format!("{name}|{location}|{version}|{archive}")
-            } else {
-                format!("{name}|{version}|{archive}")
-            };
+            let key = location.as_deref().map_or_else(
+                || format!("{name}|{version}|{archive}"),
+                |location| format!("{name}|{location}|{version}|{archive}"),
+            );
             if seen.insert(key) {
                 candidates.push(QtArchiveCandidate {
                     archive_name: archive,
@@ -839,13 +871,11 @@ fn qt_version_matches(value: &str, qt_version: &QtVersion) -> bool {
     if parts.len() < 2 {
         return false;
     }
-    let major = match parts[0].parse::<u32>() {
-        Ok(major) => major,
-        Err(_) => return false,
+    let Ok(major) = parts[0].parse::<u32>() else {
+        return false;
     };
-    let minor = match parts[1].parse::<u32>() {
-        Ok(minor) => minor,
-        Err(_) => return false,
+    let Ok(minor) = parts[1].parse::<u32>() else {
+        return false;
     };
     if major != qt_version.major || minor != qt_version.minor {
         return false;
@@ -853,9 +883,8 @@ fn qt_version_matches(value: &str, qt_version: &QtVersion) -> bool {
     if qt_version.patch == 0 {
         return true;
     }
-    let patch = match parts.get(2).and_then(|value| value.parse::<u32>().ok()) {
-        Some(patch) => patch,
-        None => return true,
+    let Some(patch) = parts.get(2).and_then(|value| value.parse::<u32>().ok()) else {
+        return true;
     };
     patch == qt_version.patch
 }
@@ -913,12 +942,13 @@ fn is_qt_base_package(name: &str, qt_version: &QtVersion) -> bool {
 fn split_archives(value: &str) -> Vec<String> {
     value
         .split([',', ';', ' ', '\n'])
-        .map(|part| part.trim())
+        .map(str::trim)
         .filter(|part| !part.is_empty())
-        .map(|part| part.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 fn archive_preference(name: &str) -> u8 {
     let name = name.to_lowercase();
     if name.ends_with(".zip") {
@@ -968,7 +998,20 @@ fn http_download_file(url: &str, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 fn extract_archive(archive: &Path, target: &Path) -> Result<(), String> {
+    fn extract_tar<R: Read>(
+        archive: &Path,
+        target: &Path,
+        decode: impl FnOnce(io::BufReader<fs::File>) -> R,
+    ) -> Result<(), String> {
+        let file = fs::File::open(archive)
+            .map_err(|error| format!("cannot open {}: {error}", archive.display()))?;
+        tar::Archive::new(decode(io::BufReader::new(file)))
+            .unpack(target)
+            .map_err(|error| format!("cannot extract {}: {error}", archive.display()))
+    }
+
     let archive_name = archive
         .file_name()
         .and_then(|value| value.to_str())
@@ -985,36 +1028,13 @@ fn extract_archive(archive: &Path, target: &Path) -> Result<(), String> {
         zip.extract(target)
             .map_err(|error| format!("cannot extract zip {}: {error}", archive.display()))
     } else if archive_name.ends_with(".tar.xz") {
-        let file = fs::File::open(archive)
-            .map_err(|error| format!("cannot open {}: {error}", archive.display()))?;
-        let decoder = xz2::read::XzDecoder::new(file);
-        let mut tar_archive = tar::Archive::new(decoder);
-        tar_archive
-            .unpack(target)
-            .map_err(|error| format!("cannot extract {}: {error}", archive.display()))
+        extract_tar(archive, target, xz2::read::XzDecoder::new)
     } else if archive_name.ends_with(".tar.gz") {
-        let file = fs::File::open(archive)
-            .map_err(|error| format!("cannot open {}: {error}", archive.display()))?;
-        let decoder = flate2::read::GzDecoder::new(file);
-        let mut tar_archive = tar::Archive::new(decoder);
-        tar_archive
-            .unpack(target)
-            .map_err(|error| format!("cannot extract {}: {error}", archive.display()))
+        extract_tar(archive, target, flate2::read::GzDecoder::new)
     } else if archive_name.ends_with(".tar.bz2") {
-        let file = fs::File::open(archive)
-            .map_err(|error| format!("cannot open {}: {error}", archive.display()))?;
-        let decoder = bzip2::read::BzDecoder::new(file);
-        let mut tar_archive = tar::Archive::new(decoder);
-        tar_archive
-            .unpack(target)
-            .map_err(|error| format!("cannot extract {}: {error}", archive.display()))
+        extract_tar(archive, target, bzip2::read::BzDecoder::new)
     } else if archive_name.ends_with(".tar") {
-        let file = fs::File::open(archive)
-            .map_err(|error| format!("cannot open {}: {error}", archive.display()))?;
-        let mut tar_archive = tar::Archive::new(file);
-        tar_archive
-            .unpack(target)
-            .map_err(|error| format!("cannot extract {}: {error}", archive.display()))
+        extract_tar(archive, target, io::BufReader::new)
     } else if archive_name.ends_with(".7z") {
         Err(format!(
             "pure Rust extraction for .7z is not implemented: {}",
@@ -1039,11 +1059,10 @@ fn verify_sha1(path: &Path, expected: &str) -> Result<bool, String> {
         }
         hasher.update(&buffer[..read]);
     }
-    let actual = hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let mut actual = String::with_capacity(40);
+    for byte in &hasher.finalize() {
+        let _ = std::fmt::Write::write_fmt(&mut actual, format_args!("{byte:02x}"));
+    }
     Ok(actual == expected.to_ascii_lowercase())
 }
 
@@ -1221,9 +1240,8 @@ fn is_top_level_library_payload(path: &Path) -> bool {
         if !file_type.is_file() {
             return false;
         }
-        let name = match entry.file_name().into_string() {
-            Ok(name) => name,
-            Err(_) => return false,
+        let Ok(name) = entry.file_name().into_string() else {
+            return false;
         };
         if !name.starts_with("lib") || !name.contains(".so") {
             return false;
@@ -1263,7 +1281,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
         let entry = entry
             .map_err(|error| format!("cannot read source entry in {}: {error}", src.display()))?;
         let source = entry.path();
-        let dest = dst.join(entry.file_name());
+        let destination = dst.join(entry.file_name());
         let metadata = fs::symlink_metadata(&source).map_err(|error| {
             format!(
                 "cannot read metadata for source path {}: {error}",
@@ -1271,20 +1289,20 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
             )
         })?;
         if metadata.is_dir() {
-            if !dest.exists() {
-                fs::create_dir_all(&dest)
-                    .map_err(|error| format!("cannot create {}: {error}", dest.display()))?;
+            if !destination.exists() {
+                fs::create_dir_all(&destination)
+                    .map_err(|error| format!("cannot create {}: {error}", destination.display()))?;
             }
-            copy_dir_all(&source, &dest)?;
+            copy_dir_all(&source, &destination)?;
         } else {
-            if dest.exists() {
-                let _ = fs::remove_file(&dest);
+            if destination.exists() {
+                let _ = fs::remove_file(&destination);
             }
-            fs::copy(&source, &dest).map_err(|error| {
+            fs::copy(&source, &destination).map_err(|error| {
                 format!(
                     "cannot copy {} to {}: {error}",
                     source.display(),
-                    dest.display()
+                    destination.display()
                 )
             })?;
         }
@@ -1303,7 +1321,7 @@ fn url_join(base: &str, segments: &[&str]) -> String {
     out
 }
 
-fn qt_os_arch(platform: Platform) -> &'static str {
+const fn qt_os_arch(platform: Platform) -> &'static str {
     match platform {
         Platform::Windows => "windows_x86",
         Platform::Macos => "mac_x64",
@@ -1362,26 +1380,31 @@ fn command_config(command: ConfigCommand) -> Result<i32, String> {
         ConfigCommand::Set { key, value } => {
             match key.as_str() {
                 "qt_roots" => {
-                    config.qt_roots = value
+                    let qt_roots: Vec<String> = value
                         .split(',')
                         .map(str::trim)
                         .filter(|value| !value.is_empty())
-                        .map(|value| value.to_string())
-                        .collect::<HashSet<_>>()
-                        .into_iter()
+                        .map(ToString::to_string)
                         .collect();
+                    let mut uniq_roots = Vec::new();
+                    for root in qt_roots {
+                        if !uniq_roots.contains(&root) {
+                            uniq_roots.push(root);
+                        }
+                    }
+                    config.qt_roots = uniq_roots;
                 }
                 "default_qt_version" => {
-                    config.default_qt_version = to_option(value);
+                    config.default_qt_version = to_option(&value);
                 }
                 "compiler_family" => {
-                    config.compiler_family = to_option(value);
+                    config.compiler_family = to_option(&value);
                 }
                 "target_arch" => {
-                    config.target_arch = to_option(value);
+                    config.target_arch = to_option(&value);
                 }
                 _ => return Err(format!("unknown key `{key}`")),
-            };
+            }
             save_global_config(&config)?;
             println!("Updated.");
             Ok(0)
@@ -1420,13 +1443,14 @@ fn command_init() -> Result<(), String> {
 
 fn ensure_project_environment() -> Result<(), String> {
     match command_doctor(false)? {
-        2 => Err("required environment checks failed. Run `gansi doctor`.".into()),
-        1 => {
+        DoctorStatus::RequiredMissing => {
+            Err("required environment checks failed. Run `gansi doctor`.".into())
+        }
+        DoctorStatus::SoftMissing => {
             eprintln!("Warning: environment has soft-missing items. Build may still work.");
             Ok(())
         }
-        0 => Ok(()),
-        _ => Err("environment checks failed".into()),
+        DoctorStatus::AllGood => Ok(()),
     }
 }
 
@@ -1446,35 +1470,7 @@ fn run_cargo(args: &[String]) -> Result<(), String> {
 
 fn apply_qt_env(command: &mut ProcessCommand) -> Result<(), String> {
     let config = load_global_config()?;
-
-    let mut roots: Vec<PathBuf> = config
-        .qt_roots
-        .iter()
-        .map(PathBuf::from)
-        .filter(|path| has_qmake(path))
-        .collect();
-    if let Some(path) = env::var_os("QMAKE").map(PathBuf::from) {
-        let root = path
-            .parent()
-            .and_then(|value| value.parent())
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
-        if has_qmake(&root) {
-            roots.push(root);
-        }
-    }
-    if roots.is_empty()
-        && let Some(root) = locate_qmake().and_then(|path| {
-            path.parent()
-                .and_then(|value| value.parent())
-                .map(|value| value.to_path_buf())
-                .filter(|root| has_qmake(root))
-        })
-    {
-        roots.push(root);
-    }
-
-    if let Some(root) = roots.into_iter().next() {
+    if let Some(root) = candidate_qt_roots(&config).into_iter().next() {
         let qmake = root.join("bin").join(qmake_binary_name());
         let path = env::var_os("PATH").unwrap_or_default();
         let mut entries: Vec<PathBuf> = vec![root.join("bin")];
@@ -1504,11 +1500,33 @@ fn apply_qt_env(command: &mut ProcessCommand) -> Result<(), String> {
     Ok(())
 }
 
-fn collect_health_checks() -> Result<Vec<HealthCheck>, String> {
+/// Qt roots to try, in order: configured `qt_roots`, the `QMAKE` env var, and
+/// a `qmake` found on `PATH` (only when the others came up empty).
+fn candidate_qt_roots(config: &GlobalConfig) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = config
+        .qt_roots
+        .iter()
+        .map(PathBuf::from)
+        .filter(|root| has_qmake(root))
+        .collect();
+    if let Some(qmake) = env::var_os("QMAKE").map(PathBuf::from)
+        && let Some(root) = qt_root_from_qmake(&qmake)
+    {
+        roots.push(root);
+    }
+    if roots.is_empty()
+        && let Some(root) = locate_qmake().and_then(|qmake| qt_root_from_qmake(&qmake))
+    {
+        roots.push(root);
+    }
+    roots
+}
+
+fn collect_health_checks() -> Vec<HealthCheck> {
     let mut checks = vec![
-        check_tool("rustc", &["--version"], true, "Install Rust via rustup."),
-        check_tool("cargo", &["--version"], true, "Install Rust via rustup."),
-        check_tool("cmake", &["--version"], false, "Install CMake."),
+        check_tool("rustc", true, "Install Rust via rustup."),
+        check_tool("cargo", true, "Install Rust via rustup."),
+        check_tool("cmake", false, "Install CMake."),
     ];
     if let Some(qmake) = locate_qmake() {
         checks.push(HealthCheck {
@@ -1527,39 +1545,28 @@ fn collect_health_checks() -> Result<Vec<HealthCheck>, String> {
             suggestion: "Install Qt 6 (qmake).",
         });
     }
-    checks.push(check_tool(
-        "pkg-config",
-        &["--version"],
-        false,
-        "Install pkg-config.",
-    ));
+    checks.push(check_tool("pkg-config", false, "Install pkg-config."));
 
-    Ok(checks)
+    checks
 }
 
-fn check_tool(
-    command: &'static str,
-    _args: &[&str],
-    required: bool,
-    suggestion: &'static str,
-) -> HealthCheck {
-    if let Some(version) = tool_version(command, _args) {
-        HealthCheck {
-            label: command,
-            found: true,
-            version: Some(version),
-            required,
-            suggestion,
-        }
-    } else {
-        HealthCheck {
+fn check_tool(command: &'static str, required: bool, suggestion: &'static str) -> HealthCheck {
+    tool_version(command).map_or_else(
+        || HealthCheck {
             label: command,
             found: false,
             version: None,
             required,
             suggestion,
-        }
-    }
+        },
+        |version| HealthCheck {
+            label: command,
+            found: true,
+            version: Some(version),
+            required,
+            suggestion,
+        },
+    )
 }
 
 fn render_checks(checks: &[HealthCheck]) {
@@ -1612,37 +1619,57 @@ fn render_verbose_environment() -> Result<(), String> {
 }
 
 fn qmake_version(path: &Path) -> Option<String> {
-    let root = path.parent()?.parent()?;
+    let root = qt_root_from_qmake(path)?;
     let version_file = root
         .join("lib")
         .join("cmake")
         .join("Qt6Core")
         .join("Qt6CoreConfigVersion.cmake");
-    if let Ok(text) = fs::read_to_string(version_file) {
-        for line in text.lines() {
-            let line = line.trim();
-            if let Some(raw_value) = line.strip_prefix("set(PACKAGE_VERSION") {
-                let value = raw_value
-                    .trim()
-                    .trim_start_matches('(')
-                    .trim_end_matches(')')
-                    .trim()
-                    .trim_matches('\"')
-                    .trim();
-                if !value.is_empty() {
-                    return Some(value.to_string());
-                }
-            }
-        }
-    }
-    Some("installed".to_string())
+    let text = fs::read_to_string(version_file).ok()?;
+    text.lines()
+        .find_map(parse_cmake_package_version)
+        .or_else(|| Some("installed".to_string()))
 }
 
-fn tool_version(command: &str, _args: &[&str]) -> Option<String> {
+/// The `<root>/bin/qmake` path pins its Qt root one level up: `<root>/bin`.
+fn qt_root_from_qmake(qmake: &Path) -> Option<PathBuf> {
+    let root = qmake.parent()?.parent()?.to_path_buf();
+    has_qmake(&root).then_some(root)
+}
+
+fn parse_cmake_package_version(line: &str) -> Option<String> {
+    let value = line
+        .trim()
+        .strip_prefix("set(PACKAGE_VERSION")?
+        .strip_suffix(')')?
+        .trim()
+        .trim_matches('"');
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn tool_version(command: &str) -> Option<String> {
     let command_path = find_command(command)?;
-    command_path
-        .exists()
-        .then(|| command_path.display().to_string())
+    let output = ProcessCommand::new(command_path)
+        .arg("--version")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
+    if text.trim().is_empty() {
+        text = String::from_utf8_lossy(&output.stderr).to_string();
+    }
+    text.lines().find_map(|line| {
+        line.split_whitespace().find_map(|value| {
+            let has_digit = value.chars().any(|value| value.is_ascii_digit());
+            if has_digit {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        })
+    })
 }
 
 fn locate_qmake() -> Option<PathBuf> {
@@ -1688,7 +1715,7 @@ fn has_qmake(root: &Path) -> bool {
     root.join("bin").join(qmake_binary_name()).exists()
 }
 
-fn qmake_binary_name() -> &'static str {
+const fn qmake_binary_name() -> &'static str {
     if cfg!(windows) { "qmake.exe" } else { "qmake" }
 }
 
@@ -1776,15 +1803,15 @@ fn save_global_config(config: &GlobalConfig) -> Result<(), String> {
     fs::rename(&tmp, &path).map_err(|error| format!("cannot update {}: {error}", path.display()))
 }
 
-fn read_manifest() -> Result<ManifestProject, String> {
+fn read_manifest() -> Result<project::ManifestProject, String> {
     let text = fs::read_to_string(project::MANIFEST_FILE_NAME)
         .map_err(|error| format!("cannot read {}: {error}", project::MANIFEST_FILE_NAME))?;
-    let manifest: ManifestFile =
+    let manifest: project::ManifestFile =
         toml::from_str(&text).map_err(|error| format!("invalid manifest: {error}"))?;
     Ok(manifest.project)
 }
 
-fn to_option(value: String) -> Option<String> {
+fn to_option(value: &str) -> Option<String> {
     let value = value.trim();
     if value.is_empty() {
         None

@@ -2,18 +2,33 @@
 
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use serde::Deserialize;
 
 use crate::template;
 
 pub const MANIFEST_FILE_NAME: &str = "gansi.toml";
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ManifestFile {
+    pub project: ManifestProject,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ManifestProject {
+    pub name: String,
+    pub qt_version: Option<String>,
+    pub compiler_family: Option<String>,
+    pub target_arch: Option<String>,
+}
+
 pub struct Project {
     pub name: String,
     pub name_snake: String,
     pub title: String,
-    pub local_yse: Option<String>,
+    pub local_yse: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -23,7 +38,7 @@ pub enum BundleProfile {
 }
 
 impl BundleProfile {
-    fn target_dir(&self) -> &'static str {
+    const fn target_dir(self) -> &'static str {
         match self {
             Self::Debug => "debug",
             Self::Release => "release",
@@ -73,7 +88,7 @@ impl Project {
                 absolute.display()
             ));
         }
-        project.local_yse = Some(absolute.to_string_lossy().replace('\\', "/"));
+        project.local_yse = Some(absolute);
         Ok(project)
     }
 
@@ -81,13 +96,9 @@ impl Project {
     pub fn from_manifest(path: &str) -> Result<Self, String> {
         let content = fs::read_to_string(path)
             .map_err(|error| format!("cannot read `{path}` (run `gansi create` first): {error}"))?;
-        let name = content
-            .lines()
-            .find_map(|line| line.trim().strip_prefix("name = "))
-            .ok_or_else(|| format!("`{path}` is missing `project.name`"))?
-            .trim_matches('"')
-            .to_string();
-        Self::parse(&name)
+        let manifest: ManifestFile = toml::from_str(&content)
+            .map_err(|error| format!("`{path}` is not a valid gansi manifest: {error}"))?;
+        Self::parse(&manifest.project.name)
     }
 }
 
@@ -96,10 +107,9 @@ fn title_case(name: &str) -> String {
         .filter(|part| !part.is_empty())
         .map(|part| {
             let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
-                None => String::new(),
-            }
+            chars.next().map_or_else(String::new, |first| {
+                first.to_ascii_uppercase().to_string() + chars.as_str()
+            })
         })
         .collect()
 }
