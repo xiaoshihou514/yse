@@ -17,6 +17,7 @@ toml = "0.8.23"
 xz2 = "0.1.7"
 bzip2 = "0.4.4"
 sha1 = "0.10.6"
+roxmltree = "0.21.1"
 
 [[bin]]
 name = "gansi"

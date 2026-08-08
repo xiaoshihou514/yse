@@ -759,14 +759,6 @@ struct QtArchiveCandidate {
     sha1: Option<String>,
 }
 
-fn parse_sha1_from_xml(block: &str) -> Option<String> {
-    extract_xml_text(block, "SHA1")
-        .or_else(|| extract_xml_text(block, "SHA1Sum"))
-        .or_else(|| extract_xml_text(block, "SHA1SumFile"))
-        .as_deref()
-        .and_then(normalize_sha1)
-}
-
 fn normalize_sha1(value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
     if value.len() != 40 {
@@ -778,6 +770,17 @@ fn normalize_sha1(value: &str) -> Option<String> {
     Some(value)
 }
 
+/// Trimmed text of the first child element whose tag matches one of `tags`,
+/// or `None` when the element is absent or holds only whitespace.
+fn child_xml_text<'a, 'input>(node: roxmltree::Node<'a, 'input>, tags: &[&str]) -> Option<String> {
+    node.children()
+        .find(|child| child.is_element() && tags.contains(&child.tag_name().name()))
+        .and_then(|child| child.text())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
 fn find_matching_qt_candidates(
     updates_xml: &str,
     qt_version: &QtVersion,
@@ -785,22 +788,24 @@ fn find_matching_qt_candidates(
     qt_arch: &str,
     strict: bool,
 ) -> Vec<QtArchiveCandidate> {
+    let document = match roxmltree::Document::parse(updates_xml) {
+        Ok(document) => document,
+        Err(error) => {
+            eprintln!("warning: cannot parse Updates.xml: {error}");
+            return Vec::new();
+        }
+    };
     let mut candidates = Vec::new();
-    let mut cursor = updates_xml;
-    let marker = "</PackageUpdate>";
     let mut seen = HashSet::new();
 
-    while let Some(start) = cursor.find("<PackageUpdate") {
-        let block = match cursor[start..].find(marker) {
-            Some(end_of_package) => &cursor[start..start + end_of_package + marker.len()],
-            None => break,
-        };
-        cursor = &cursor[start + block.len()..];
-
-        let Some(name) = extract_xml_text(block, "Name") else {
+    for package in document
+        .descendants()
+        .filter(|node| node.has_tag_name("PackageUpdate"))
+    {
+        let Some(name) = child_xml_text(package, &["Name"]) else {
             continue;
         };
-        let version = extract_xml_text(block, "Version").unwrap_or_default();
+        let version = child_xml_text(package, &["Version"]).unwrap_or_default();
         if !qt_package_matches(
             &name,
             Some(&version),
@@ -811,12 +816,13 @@ fn find_matching_qt_candidates(
         ) {
             continue;
         }
-        let Some(downloads) = extract_xml_text(block, "DownloadableArchives") else {
+        let Some(downloads) = child_xml_text(package, &["DownloadableArchives"]) else {
             continue;
         };
-        let location =
-            extract_xml_text(block, "DownloadLocation").filter(|value| !value.is_empty());
-        let sha1 = parse_sha1_from_xml(block);
+        let location = child_xml_text(package, &["DownloadLocation"]);
+        let sha1 = child_xml_text(package, &["SHA1", "SHA1Sum", "SHA1SumFile"])
+            .as_deref()
+            .and_then(normalize_sha1);
         let is_base_package = is_qt_base_package(&name, qt_version);
         for archive in split_archives(&downloads) {
             if strict {
@@ -960,15 +966,6 @@ fn archive_preference(name: &str) -> u8 {
     } else {
         4
     }
-}
-
-fn extract_xml_text(xml: &str, tag: &str) -> Option<String> {
-    let open = format!("<{tag}>");
-    let close = format!("</{tag}>");
-    let start = xml.find(&open)?;
-    let rest = &xml[start + open.len()..];
-    let end = rest.find(&close)?;
-    Some(rest[..end].trim().to_string())
 }
 
 fn http_get_text(url: &str) -> Result<String, String> {
@@ -1818,4 +1815,81 @@ fn to_option(value: &str) -> Option<String> {
     } else {
         Some(value.to_string())
     }
+}
+
+#[cfg(test)]
+const UPDATES_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Updates>
+  <PackageUpdate>
+    <PackageName>qt.qt6.683.linux_gcc_64</PackageName>
+    <Name>qt.qt6.683.gcc_64</Name>
+    <Version>6.8.3-1-202406151217</Version>
+    <DownloadableArchives>qtbase-6.8.3-linux-x86-offline.7z, qtdeclarative-6.8.3-linux-x86-offline.7z, qtbase-6.8.3-linux-x86-debug.7z</DownloadableArchives>
+    <DownloadLocation>./packages</DownloadLocation>
+    <SHA1>aabbccddeeff00112233445566778899aabbccdd</SHA1>
+  </PackageUpdate>
+  <PackageUpdate>
+    <PackageName>qt.qt6.683.wasm_singlethread</PackageName>
+    <Name>qt.qt6.683.wasm_singlethread</Name>
+    <Version>6.8.3-1-202406151217</Version>
+    <DownloadableArchives>qtbase-6.8.3-wasm_singlethread.7z</DownloadableArchives>
+  </PackageUpdate>
+</Updates>"#;
+
+#[test]
+fn finds_matching_qt_archives_in_update_xml() {
+    let qt_version = QtVersion::parse("6.8.3").unwrap();
+    let candidates =
+        find_matching_qt_candidates(UPDATES_XML, &qt_version, "6.8.3", "gcc_64", false);
+
+    assert!(
+        candidates
+            .iter()
+            .any(|c| c.archive_name == "qtbase-6.8.3-linux-x86-offline.7z")
+    );
+    assert!(
+        candidates
+            .iter()
+            .all(|c| c.archive_name != "qtbase-6.8.3-wasm_singlethread.7z")
+    );
+
+    let first = &candidates[0];
+    assert_eq!(first.package_name, "qt.qt6.683.gcc_64");
+    assert_eq!(first.package_version, "6.8.3-1-202406151217");
+    assert_eq!(first.location.as_deref(), Some("./packages"));
+    assert_eq!(
+        first.sha1.as_deref(),
+        Some("aabbccddeeff00112233445566778899aabbccdd")
+    );
+    assert!(
+        !candidates
+            .iter()
+            .any(|c| c.package_name != "qt.qt6.683.gcc_64")
+    );
+}
+
+#[test]
+fn strict_mode_filters_debug_archives() {
+    let qt_version = QtVersion::parse("6.8.3").unwrap();
+    let candidates = find_matching_qt_candidates(UPDATES_XML, &qt_version, "6.8.3", "gcc_64", true);
+
+    assert!(candidates.iter().all(|c| !c.archive_name.contains("debug")));
+    assert!(
+        candidates
+            .iter()
+            .any(|c| c.archive_name.contains("qtdeclarative"))
+    );
+}
+
+#[test]
+fn malformed_updates_xml_yields_no_candidates() {
+    let qt_version = QtVersion::parse("6.8.3").unwrap();
+    let candidates = find_matching_qt_candidates(
+        "<Updates><PackageUpdate><!-- broken",
+        &qt_version,
+        "6.8.3",
+        "gcc_64",
+        false,
+    );
+    assert!(candidates.is_empty());
 }
