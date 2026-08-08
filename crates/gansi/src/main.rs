@@ -536,6 +536,9 @@ fn install_qt_from_mirrors(
     }
 
     let qt_version = QtVersion::parse(requested_version)?;
+    if qt_version.major == 6 && qt_version.minor >= 11 {
+        return install_qt_611_from_mirrors(&qt_version, platform, requested_arch, expected_root);
+    }
     let version_short = qt_version.short();
     let repo_os_arch = qt_os_arch(platform);
     let qt_arch = qt_archive_arch(platform, requested_arch, &qt_version);
@@ -635,11 +638,21 @@ fn install_qt_from_mirrors(
         }
     }
 
+    finalize_qt_install(install_root, &work_dir, last_error)
+}
+
+/// Post-install bookkeeping shared by every install path: patch library
+/// soname symlinks, drop the temporary download folder, and report failure.
+fn finalize_qt_install(
+    install_root: Option<PathBuf>,
+    work_dir: &Path,
+    last_error: Option<String>,
+) -> Result<Option<PathBuf>, String> {
     if let Some(root) = install_root.as_deref() {
         ensure_qt_library_soname_links(root)?;
     }
 
-    if let Err(error) = fs::remove_dir_all(&work_dir) {
+    if let Err(error) = fs::remove_dir_all(work_dir) {
         println!(
             "warning: cannot remove temp dir {}: {error}",
             work_dir.display()
@@ -655,45 +668,187 @@ fn install_qt_from_mirrors(
     Ok(install_root)
 }
 
-/// Download, verify, and stage one archive candidate, then fold its Qt root
-/// into `install_root`. Failures (download, checksum, extraction) only stop
-/// this candidate — the caller moves on to the next one.
-fn install_qt_candidate(
-    candidate: &QtArchiveCandidate,
-    mirror_base: &str,
+/// Qt 6.11+ dropped the aggregated `Updates.xml`: each package now lives in
+/// its own directory that lists `.7z` archives (plus `.sha1` sidecars)
+/// directly. Module directories are `qt.qt6.<short>.<arch>`; Windows nests
+/// them under an arch folder (`qt6_<short>_<arch>`), the other platforms
+/// under a doubled version folder (`qt6_<short>/qt6_<short>`).
+fn install_qt_611_from_mirrors(
+    qt_version: &QtVersion,
+    platform: Platform,
+    requested_arch: &str,
+    expected_root: &Path,
+) -> Result<Option<PathBuf>, String> {
+    if expected_root.exists() && !has_qmake(expected_root) {
+        fs::remove_dir_all(expected_root).map_err(|error| {
+            format!(
+                "cannot clean stale Qt root {}: {error}",
+                expected_root.display()
+            )
+        })?;
+    }
+
+    let version_short = qt_version.short();
+    let qt_arch = qt_archive_arch(platform, requested_arch, qt_version);
+    let package_dir = format!("qt.qt6.{version_short}.{qt_arch}");
+    let version_folder = match platform {
+        Platform::Windows => format!(
+            "qt6_{version_short}_{}",
+            qt_arch.trim_start_matches("win64_")
+        ),
+        Platform::Linux | Platform::Macos => format!("qt6_{version_short}/qt6_{version_short}"),
+    };
+    let qt_full_version = format!(
+        "{}.{}.{}",
+        qt_version.major, qt_version.minor, qt_version.patch
+    );
+
+    let work_dir = env::temp_dir().join(format!(
+        ".gansi_qt_download_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("time error: {error}"))?
+            .as_nanos()
+    ));
+    fs::create_dir_all(&work_dir).map_err(|error| {
+        format!(
+            "cannot create temporary folder {}: {error}",
+            work_dir.display()
+        )
+    })?;
+
+    let mut install_root: Option<PathBuf> = None;
+    let mut last_error: Option<String> = None;
+    for mirror in configured_qt_setup_mirrors() {
+        let mirror_base = url_join(
+            mirror.base_url,
+            &[
+                mirror.root_path,
+                qt_os_arch(platform),
+                QT_TARGET,
+                &version_folder,
+            ],
+        );
+        let package_url = url_join(&mirror_base, &[&package_dir]);
+        let html = match http_get_text(&package_url) {
+            Ok(html) => html,
+            Err(error) => {
+                println!("  mirror unavailable ({}): {error}", mirror.label);
+                last_error = Some(error);
+                continue;
+            }
+        };
+        let archives = list_qt_archives(&html);
+        if archives.is_empty() {
+            println!(
+                "  no Qt archives found at {}, trying next mirror",
+                package_url
+            );
+            last_error = Some("no archives in package directory".to_string());
+            continue;
+        }
+        println!("Selected mirror: {} ({})", mirror.label, mirror.base_url);
+
+        for archive in &archives {
+            let archive_url = url_join(&package_url, &[archive]);
+            let expected_sha1 = http_get_text(&format!("{archive_url}.sha1"))
+                .ok()
+                .as_deref()
+                .and_then(parse_sha1_text);
+            stage_and_fold_archive(
+                archive,
+                &archive_url,
+                expected_sha1.as_deref(),
+                &work_dir,
+                expected_root,
+                &qt_full_version,
+                &qt_arch,
+                &mut install_root,
+            )?;
+        }
+
+        if install_root.is_some() {
+            break;
+        }
+    }
+
+    finalize_qt_install(install_root, &work_dir, last_error)
+}
+
+/// List the Qt archives worth installing from a 6.11-style directory listing:
+/// `.7z` files that are not mirror-list sidecars and not the `meta` manifest
+/// or the `qtdoc` documentation bundle. One archive per module is kept (the
+/// first target the listing exposes, e.g. the RHEL build over the older one).
+fn list_qt_archives(html: &str) -> Vec<String> {
+    let mut archives = Vec::new();
+    let mut seen_modules = HashSet::new();
+    for href in href_values(html) {
+        if !href.ends_with(".7z") || href.contains(".mirrorlist") {
+            continue;
+        }
+        let module = qt_archive_module(&href);
+        if matches!(module, "meta" | "qtdoc") || !seen_modules.insert(module.to_string()) {
+            continue;
+        }
+        archives.push(href);
+    }
+    archives
+}
+
+/// Module name of a Qt 6.11+ archive, e.g.
+/// `6.11.0-0-202603180534qtbase-…-X86_64.7z` -> `qtbase`, `meta.7z` -> `meta`.
+fn qt_archive_module(archive_name: &str) -> &str {
+    let name = archive_name.strip_suffix(".7z").unwrap_or(archive_name);
+    let Some((_, stamp)) = name.split_once("-0-") else {
+        return name;
+    };
+    let module = stamp.trim_start_matches(char::is_numeric);
+    module.split_once('-').map_or(module, |(module, _)| module)
+}
+
+/// Values of every `href="…"` attribute in an HTML fragment.
+fn href_values(html: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut rest = html;
+    while let Some(start) = rest.find("href=\"") {
+        rest = &rest[start + "href=\"".len()..];
+        let Some(end) = rest.find('"') else {
+            break;
+        };
+        values.push(rest[..end].to_string());
+        rest = &rest[end..];
+    }
+    values
+}
+
+/// Extract the SHA-1 digest from a `.sha1` sidecar (`<40 hex>  <name>`).
+fn parse_sha1_text(text: &str) -> Option<String> {
+    text.split_whitespace().next().and_then(normalize_sha1)
+}
+/// Download, verify, extract, and fold one Qt archive into the install root.
+/// Failures (download, checksum, extraction) only stop this candidate — the
+/// caller moves on to the next one.
+#[allow(clippy::too_many_arguments)]
+fn stage_and_fold_archive(
+    archive_name: &str,
+    archive_url: &str,
+    expected_sha1: Option<&str>,
     work_dir: &Path,
     expected_root: &Path,
     qt_full_version: &str,
     qt_arch: &str,
     install_root: &mut Option<PathBuf>,
 ) -> Result<(), String> {
-    let archive_name = candidate.archive_name.clone();
-    let mut archive_path = String::new();
-    if !candidate.package_name.is_empty() {
-        archive_path.push_str(&candidate.package_name);
-        archive_path.push('/');
-    }
-    if let Some(location) = candidate.location.as_deref() {
-        let location = location.trim_matches('/');
-        if !location.is_empty() {
-            archive_path.push_str(location);
-            archive_path.push('/');
-        }
-    }
-    archive_path.push_str(&candidate.package_version);
-    archive_path.push_str(&candidate.archive_name);
-    let archive_url = url_join(mirror_base, &[&archive_path]);
-
     let stage = work_dir.join(format!(
         "archive_{}",
         archive_name.replace(['/', '\\'], "_")
     ));
-    if let Err(error) = http_download_file(&archive_url, &stage) {
+    if let Err(error) = http_download_file(archive_url, &stage) {
         println!("  {archive_name} download failed: {error}");
         return Ok(());
     }
 
-    if let Some(expected) = candidate.sha1.as_deref() {
+    if let Some(expected) = expected_sha1 {
         match verify_sha1(&stage, expected) {
             Ok(true) => {}
             Ok(false) => {
@@ -735,6 +890,46 @@ fn install_qt_candidate(
         }
     }
     Ok(())
+}
+
+/// Download, verify, and stage one archive candidate, then fold its Qt root
+/// into `install_root`. Failures (download, checksum, extraction) only stop
+/// this candidate — the caller moves on to the next one.
+fn install_qt_candidate(
+    candidate: &QtArchiveCandidate,
+    mirror_base: &str,
+    work_dir: &Path,
+    expected_root: &Path,
+    qt_full_version: &str,
+    qt_arch: &str,
+    install_root: &mut Option<PathBuf>,
+) -> Result<(), String> {
+    let mut archive_path = String::new();
+    if !candidate.package_name.is_empty() {
+        archive_path.push_str(&candidate.package_name);
+        archive_path.push('/');
+    }
+    if let Some(location) = candidate.location.as_deref() {
+        let location = location.trim_matches('/');
+        if !location.is_empty() {
+            archive_path.push_str(location);
+            archive_path.push('/');
+        }
+    }
+    archive_path.push_str(&candidate.package_version);
+    archive_path.push_str(&candidate.archive_name);
+    let archive_url = url_join(mirror_base, &[&archive_path]);
+
+    stage_and_fold_archive(
+        &candidate.archive_name,
+        &archive_url,
+        candidate.sha1.as_deref(),
+        work_dir,
+        expected_root,
+        qt_full_version,
+        qt_arch,
+        install_root,
+    )
 }
 
 /// Move an extracted Qt root into `expected_root`, clearing it first unless
@@ -1033,13 +1228,66 @@ fn extract_archive(archive: &Path, target: &Path) -> Result<(), String> {
     } else if archive_name.ends_with(".tar") {
         extract_tar(archive, target, io::BufReader::new)
     } else if archive_name.ends_with(".7z") {
-        Err(format!(
-            "pure Rust extraction for .7z is not implemented: {}",
-            archive.display()
-        ))
+        extract_7z(archive, target)
     } else {
         Err(format!("unsupported archive format: {archive_name}"))
     }
+}
+
+/// Extract a 7z archive with a pure-Rust decoder. Qt's online archives are
+/// `.7z`, so this closes the last gap in the `setup` download-and-install
+/// flow. Each entry is written relative to `target`; absolute or
+/// parent-traversing paths are rejected.
+fn extract_7z(archive: &Path, target: &Path) -> Result<(), String> {
+    let mut reader = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
+        .map_err(|error| format!("cannot read 7z {}: {error}", archive.display()))?;
+    let mut failure: Option<String> = None;
+    reader
+        .for_each_entries(|entry, input| {
+            if failure.is_some() {
+                return Ok(false);
+            }
+            let relative = Path::new(&entry.name);
+            if relative.is_absolute()
+                || relative
+                    .components()
+                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
+            {
+                failure = Some(format!("unsafe path in archive: {}", entry.name));
+                return Ok(false);
+            }
+            let destination = target.join(relative);
+            if entry.is_directory {
+                if let Err(error) = fs::create_dir_all(&destination) {
+                    failure = Some(format!("cannot create {}: {error}", destination.display()));
+                    return Ok(false);
+                }
+                return Ok(true);
+            }
+            if !entry.has_stream {
+                return Ok(true);
+            }
+            if let Some(parent) = destination.parent()
+                && let Err(error) = fs::create_dir_all(parent)
+            {
+                failure = Some(format!("cannot create {}: {error}", parent.display()));
+                return Ok(false);
+            }
+            let mut output = match fs::File::create(&destination) {
+                Ok(output) => output,
+                Err(error) => {
+                    failure = Some(format!("cannot create {}: {error}", destination.display()));
+                    return Ok(false);
+                }
+            };
+            if let Err(error) = io::copy(input, &mut output) {
+                failure = Some(format!("cannot write {}: {error}", destination.display()));
+                return Ok(false);
+            }
+            Ok(true)
+        })
+        .map_err(|error| format!("7z decode failed: {error}"))?;
+    failure.map_or(Ok(()), Err)
 }
 
 fn verify_sha1(path: &Path, expected: &str) -> Result<bool, String> {
@@ -1892,4 +2140,107 @@ fn malformed_updates_xml_yields_no_candidates() {
         false,
     );
     assert!(candidates.is_empty());
+}
+
+#[cfg(test)]
+const QT611_HTML: &str = r#"<html>
+<a href="6.11.0-0-202603180534qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha1">…</a>
+<a href="6.11.0-0-202603180534qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z">…</a>
+ <a href="6.11.0-0-202603180534qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z">…</a>
+ <a href="6.11.0-0-202603180534qtbase-linux-Rhel8.6-x86_64.7z">…</a>
+ <a href="6.11.0-0-202603180534qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.mirrorlist">…</a>
+<a href="6.11.0-0-202603180534qtdoc-MacOS-MacOS_15-Clang-MacOS-MacOS_15-X86_64-ARM64.7z">…</a>
+<a href="6.11.0-0-202603180534opengl32sw-64-mesa_11_2_2-signed_sha256.7z">…</a>
+<a href="6.11.0-0-202603180534meta.7z">…</a>
+</html>"#;
+
+#[test]
+fn lists_qt_archives_from_611_directory_html() {
+    let archives = list_qt_archives(QT611_HTML);
+    assert_eq!(archives.len(), 3);
+    assert!(
+        archives
+            .iter()
+            .any(|a| a.contains("Windows-Windows_11_24H2-MSVC2022"))
+    );
+    assert!(archives.iter().any(|a| a.contains("opengl32sw")));
+    assert_eq!(archives.iter().filter(|a| a.contains("qtbase")).count(), 1);
+    assert!(archives.iter().all(|a| !a.contains(".mirrorlist")
+        && !a.contains(".sha1")
+        && !a.contains("qtdoc")
+        && a != "meta.7z"));
+}
+
+#[test]
+fn extracts_module_and_sha1_from_611_names() {
+    assert_eq!(
+        qt_archive_module(
+            "6.11.0-0-202603180534qtbase-Linux-RHEL_9_6-GCC-Linux-RHEL_9_6-X86_64.7z"
+        ),
+        "qtbase"
+    );
+    assert_eq!(
+        qt_archive_module("6.11.0-0-202603180534opengl32sw-64-mesa_11_2_2-signed_sha256.7z"),
+        "opengl32sw"
+    );
+    assert_eq!(qt_archive_module("meta.7z"), "meta");
+    assert_eq!(
+        parse_sha1_text("aabbccddeeff00112233445566778899aabbccdd  6.11.0-0-…qtbase.7z\n"),
+        Some("aabbccddeeff00112233445566778899aabbccdd".to_string())
+    );
+    assert_eq!(parse_sha1_text("not a hash"), None);
+}
+
+#[cfg(test)]
+fn test_scratch_dir(label: &str) -> std::path::PathBuf {
+    let root = env::temp_dir().join(format!(
+        ".gansi_test_{label}_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    root
+}
+
+#[test]
+fn extracts_7z_round_trip() {
+    let root = test_scratch_dir("7z");
+    let archive = root.join("sample.7z");
+    {
+        let mut writer = sevenz_rust2::ArchiveWriter::create(&archive).unwrap();
+        writer.set_encrypt_header(false);
+        let mut entry = sevenz_rust2::ArchiveEntry::new();
+        entry.name = "dir/inner.txt".to_string();
+        writer
+            .push_archive_entry(entry, Some(&b"hello from 7z"[..]))
+            .unwrap();
+        writer.finish().unwrap();
+    }
+    let out = root.join("out");
+    extract_7z(&archive, &out).unwrap();
+    let text = fs::read_to_string(out.join("dir").join("inner.txt")).unwrap();
+    assert_eq!(text, "hello from 7z");
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn rejects_traversing_7z_entries() {
+    let root = test_scratch_dir("7z_evil");
+    let archive = root.join("evil.7z");
+    {
+        let mut writer = sevenz_rust2::ArchiveWriter::create(&archive).unwrap();
+        writer.set_encrypt_header(false);
+        let mut entry = sevenz_rust2::ArchiveEntry::new();
+        entry.name = "../evil.txt".to_string();
+        writer
+            .push_archive_entry(entry, Some(&b"pwned"[..]))
+            .unwrap();
+        writer.finish().unwrap();
+    }
+    let out = root.join("out");
+    assert!(extract_7z(&archive, &out).is_err());
+    assert!(!out.join("..").join("evil.txt").exists());
+    fs::remove_dir_all(&root).unwrap();
 }
