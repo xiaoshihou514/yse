@@ -1,4 +1,11 @@
 #[test]
-fn smoke_counter_starts_at_zero() {
-    assert_eq!(0, 0);
+fn reactive_counter_updates_derived_text() {
+    use yse::{Var, transaction};
+
+    let count = Var::new(0u32);
+    let text = count.signal().map(|count| format!("Count: {count}"));
+
+    transaction(|| count.set(1));
+
+    assert_eq!(text.value().as_str(), "Count: 1");
 }

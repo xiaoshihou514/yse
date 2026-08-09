@@ -423,6 +423,10 @@ impl TableView {
     }
 
     /// Escape hatch: the underlying Qt `QTableView` pointer.
+    ///
+    /// The pointer is valid only while this view's Qt object is alive. Do not
+    /// retain it after destruction or use it from a thread other than the GUI
+    /// thread. Dereferencing or passing the pointer across FFI remains unsafe.
     pub fn qobject_ptr(&self) -> *mut Void {
         self.inner.raw() as *mut Void
     }

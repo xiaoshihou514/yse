@@ -2,7 +2,14 @@
 name = "yse-model"
 version = "0.1.0"
 edition = "2024"
-description = "Pure-Rust reactive runtime for Yse, inspired by Airstream"
+description = "Pure-Rust reactive runtime for yse, inspired by Airstream"
 license = "MIT OR Apache-2.0"
+rust-version = "1.89"
+repository = "https://github.com/xiaoshihou514/yse"
+homepage = "https://github.com/xiaoshihou514/yse"
+documentation = "https://docs.rs/yse-model"
+readme = "../../README.md"
+keywords = ["reactive", "signals", "frp", "desktop"]
+categories = ["data-structures", "gui"]
 
 [dependencies]

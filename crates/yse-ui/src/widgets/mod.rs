@@ -48,8 +48,11 @@ pub use settings::Settings;
 pub enum TextAlign {
     /// Inherit the view's default alignment.
     Default,
+    /// Align text to the left edge.
     Left,
+    /// Align text to the right edge.
     Right,
+    /// Center text horizontally.
     Center,
 }
 
@@ -64,6 +67,7 @@ impl TextAlign {
     }
 }
 
+/// Common access implemented by every retained widget wrapper.
 pub trait IntoWidget {
     /// Access the underlying component.
     #[doc(hidden)]
@@ -116,6 +120,10 @@ macro_rules! widget_wrapper {
             }
 
             /// Escape hatch: the underlying Qt `QWidget` pointer.
+            ///
+            /// The pointer is valid only while this handle's Qt object is alive. Do not
+            /// retain it after destruction or use it from a thread other than the GUI
+            /// thread. Dereferencing or passing the pointer across FFI remains unsafe.
             pub fn qobject_ptr(&self) -> *mut Void {
                 self.inner.raw() as *mut Void
             }
@@ -123,7 +131,7 @@ macro_rules! widget_wrapper {
             /// Set an application-defined style class for scoped Qt style-sheet rules.
             ///
             /// This leaves the platform style untouched unless the application supplies
-            /// matching rules through [`Application::set_style_sheet`].
+            /// matching rules through [`crate::Application::set_style_sheet`].
             pub fn set_style_class(&self, style_class: impl AsRef<str>) {
                 if self.inner.is_alive() {
                     unsafe { ffi::widget_set_style_class(self.inner.raw(), style_class.as_ref()) };

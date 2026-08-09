@@ -15,6 +15,7 @@
 //! (see [`spawn_task`]).
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 // The typed operator nodes store nested closure types (e.g.
 // `RefCell<Box<dyn FnMut(&A, &B) -> R>>`) by design; the complexity is
 // inherent to the API, not accidental.

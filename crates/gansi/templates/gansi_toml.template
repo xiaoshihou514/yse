@@ -2,9 +2,10 @@
 # family, and target architecture are pinned here for reproducible builds.
 [project]
 name = "{{name}}"
-qt_version = "6.8"
-compiler_family = "gcc"   # gcc | msvc | clang
-target_arch = "x86_64"
+qt_version = "{{qt_version}}"
+compiler_family = "{{compiler_family}}"   # gcc | msvc | clang
+target_arch = "{{target_arch}}"
 
 [deployment]
 bundle_name = "{{title}}"
+app_id = "{{app_id}}" # Replace com.example.* before publishing.

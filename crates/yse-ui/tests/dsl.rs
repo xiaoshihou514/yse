@@ -3,7 +3,6 @@ use std::rc::Rc;
 use yse_model::Var;
 use yse_ui::*;
 
-#[test]
 fn declarative_tree_builds_and_retains_widgets() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -32,7 +31,6 @@ fn declarative_tree_builds_and_retains_widgets() {
     count.set(9);
 }
 
-#[test]
 fn laminar_style_views_mount_with_reactive_modifiers() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -61,7 +59,6 @@ fn laminar_style_views_mount_with_reactive_modifiers() {
     assert_eq!(label.text(), "Count: 2");
 }
 
-#[test]
 fn controlled_input_uses_var_as_two_way_state() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -75,7 +72,21 @@ fn controlled_input_uses_var_as_two_way_state() {
     assert_eq!(input.text(), "Grace");
 }
 
-#[test]
+fn uncontrolled_input_owns_widget_state_and_emits_changes() {
+    unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
+
+    let _app = Application::init();
+    let window = Window::new();
+    let (input,) = window.mount(column((line_edit("Ada"),)));
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    input.on_text_change(clone!(changes => move |text| changes.borrow_mut().push(text.clone())));
+
+    assert_eq!(input.text(), "Ada");
+    input.set_text("Grace");
+    assert_eq!(input.text(), "Grace");
+    assert_eq!(&*changes.borrow(), &[String::from("Grace")]);
+}
+
 fn checkbox_binding_uses_the_generated_checked_property() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -92,7 +103,6 @@ fn checkbox_binding_uses_the_generated_checked_property() {
     assert!(!checkbox.checked());
 }
 
-#[test]
 fn leaf_widgets_require_a_layout() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -104,7 +114,6 @@ fn leaf_widgets_require_a_layout() {
     assert!(result.is_err(), "a leaf widget without a layout must panic");
 }
 
-#[test]
 fn ui_scope_owns_non_widget_subscriptions() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -121,7 +130,6 @@ fn ui_scope_owns_non_widget_subscriptions() {
     assert_eq!(count.signal().observer_count(), 0);
 }
 
-#[test]
 fn clone_macro_avoids_boilerplate() {
     let value = Rc::new(5i32);
     let closure = clone!(value => move || *value);
@@ -130,7 +138,6 @@ fn clone_macro_avoids_boilerplate() {
     assert_eq!(*value, 5);
 }
 
-#[test]
 fn menus_chain_fluently() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -156,4 +163,17 @@ fn menus_chain_fluently() {
 
     // `about` and `quit` are separate handles from the same menu.
     let _ = about;
+}
+
+#[test]
+fn dsl_cases_share_one_qt_thread() {
+    declarative_tree_builds_and_retains_widgets();
+    laminar_style_views_mount_with_reactive_modifiers();
+    controlled_input_uses_var_as_two_way_state();
+    uncontrolled_input_owns_widget_state_and_emits_changes();
+    checkbox_binding_uses_the_generated_checked_property();
+    leaf_widgets_require_a_layout();
+    ui_scope_owns_non_widget_subscriptions();
+    clone_macro_avoids_boilerplate();
+    menus_chain_fluently();
 }

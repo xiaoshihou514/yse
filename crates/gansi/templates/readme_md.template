@@ -1,15 +1,66 @@
 # {{title}}
 
-This project was generated with `gansi create`.
-
-## Run
-
-- `gansi run`: build and run the app
-- `gansi test`: run tests
-- `gansi build`: build a release bundle
+This native Qt 6 Widgets application was generated with `gansi create`.
+The small `build.rs` retains CXX-Qt dependency initializers in the final
+executable; it does not contain or generate application-owned C++ code.
+It requires Rust 1.89 or newer.
 
 ## Requirements
 
-Install Qt 6 Widgets development files and a compatible C++ toolchain.
+Fedora:
+
+```sh
+sudo dnf install qt6-qtbase-devel gcc-c++ cmake ninja-build pkgconf-pkg-config
+```
+
+Ubuntu:
+
+```sh
+sudo apt install qt6-base-dev g++ cmake ninja-build pkg-config
+```
+
+## Run
+
+```sh
+gansi doctor  # diagnose Rust, C++, CMake, and Qt
+gansi run     # build and run the app
+gansi test    # run tests
+gansi analyze # run Clippy with warnings denied
+gansi format --check
+gansi upgrade # update Cargo.lock
+gansi add serde -- --features derive
+gansi build   # build a release bundle under dist/
+```
+
+On Linux, run the bundle through `dist/{{name}}/{{name}}`. Its launcher selects
+the bundled Qt libraries and plugins while leaving glibc and graphics drivers
+to the target system. `gansi build` also emits a `.tar.gz` containing that
+directory plus `SHA256SUMS` for transfer verification. Package integration
+inputs live under `share/`: a valid desktop entry and scalable application
+icon. Change their generated identifiers, summary, category, and artwork before
+release as appropriate.
+
+`gansi create` records the detected Qt version, compiler family, and host
+architecture in `gansi.toml`. Project commands reject a mismatched environment
+instead of silently building with a different toolchain; update a pin only as
+an intentional SDK/toolchain migration. Set `deployment.bundle_name` and replace
+the `com.example.*` `deployment.app_id` before producing real packages; bundle
+desktop metadata is rendered from those values.
+
+For a display-free smoke run:
+
+```sh
+QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 gansi run
+```
 
 For release packaging, see [`RELEASE.md`](RELEASE.md).
+
+## CI before Yse is published
+
+The generated `.github/workflows/ci.yml` runs formatting, Clippy, tests, and an
+offscreen Qt interaction smoke on Ubuntu. Because this project initially
+records an absolute path to your local Yse checkout, the workflow checks out
+`xiaoshihou514/yse` into the job and replaces that path before building. Pin
+the Yse checkout to a release tag or commit when you need reproducible CI, and
+replace the path dependency with the crates.io release after publication.
+macOS is intentionally not included until that path is tested on a real host.

@@ -7,6 +7,7 @@ use crate::widgets::{IntoWidget, widget_wrapper};
 use std::rc::Rc;
 use yse_model::Signal;
 
+/// A painted proportional disk-usage overview.
 pub struct DiskMap {
     pub(crate) inner: Rc<Component>,
 }

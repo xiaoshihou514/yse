@@ -45,7 +45,8 @@ fn main() {
 
     // Headless smoke run: drive every control, then quit.
     let smoke_ok = Var::new(true);
-    if std::env::var("YSE_SMOKE").is_ok() {
+    let smoke = std::env::var("YSE_SMOKE").is_ok();
+    if smoke {
         app.quit_after(1500);
         app.after(
             150,
@@ -79,9 +80,11 @@ fn main() {
         bar.value(),
         status_label.text(),
     );
-    assert!(*smoke_ok.value(), "controls smoke checks failed");
-    assert_eq!(combo.current_index(), 0, "reset restores the profile");
-    assert_eq!(spin.value(), 3, "reset restores the quantity");
-    assert_eq!(slider.value(), 40, "reset restores the level");
+    if smoke {
+        assert!(*smoke_ok.value(), "controls smoke checks failed");
+        assert_eq!(combo.current_index(), 0, "reset restores the profile");
+        assert_eq!(spin.value(), 3, "reset restores the quantity");
+        assert_eq!(slider.value(), 40, "reset restores the level");
+    }
     std::process::exit(code);
 }

@@ -7,6 +7,7 @@ use crate::widgets::{IntoWidget, widget_wrapper};
 use std::rc::Rc;
 use yse_model::{EventStream, Signal, Sink};
 
+/// A retained push-button widget.
 pub struct Button {
     pub(crate) inner: Rc<Component>,
 }

@@ -204,17 +204,26 @@ fn main() {
         }
     });
 
-    if std::env::var("YSE_SMOKE").is_ok() {
-        let source = "/tmp/yse-media-smoke.wav";
-        let destination = "/tmp/yse-media-smoke.flac";
+    let smoke_paths = std::env::var("YSE_SMOKE").ok().map(|_| {
+        let directory = std::env::var_os("YSE_SMOKE_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
+        std::fs::create_dir_all(&directory).expect("create smoke-test directory");
+        (
+            directory.join("yse-media-smoke.wav"),
+            directory.join("yse-media-smoke.flac"),
+        )
+    });
+    if let Some((source, destination)) = smoke_paths.as_ref() {
         if let Err(error) = std::fs::remove_file(destination)
             && error.kind() != std::io::ErrorKind::NotFound
         {
             panic!("remove old smoke-test output: {error}");
         }
-        write_test_wav(source).expect("create smoke-test input");
-        input.set(String::from(source));
-        output.set(String::from(destination));
+        write_test_wav(source.to_str().expect("UTF-8 smoke-test input path"))
+            .expect("create smoke-test input");
+        input.set(source.to_string_lossy().into_owned());
+        output.set(destination.to_string_lossy().into_owned());
         selected.set(MediaPreset::Flac);
         convert.click();
         app.quit_after(1800);
@@ -222,8 +231,8 @@ fn main() {
 
     window.show();
     let code = app.exec();
-    if std::env::var("YSE_SMOKE").is_ok() {
-        let converted = probe_media("/tmp/yse-media-smoke.flac")
+    if let Some((_, destination)) = smoke_paths.as_ref() {
+        let converted = probe_media(destination.to_str().expect("UTF-8 smoke-test output path"))
             .expect("inspect the converted file through libavformat");
         assert!(converted.has_audio);
         assert!(!converted.has_video);

@@ -8,18 +8,26 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use yse_model::{EventStream, Sink};
 
+/// Standard button combinations for a [`MessageBox`].
 pub enum MessageBoxButtons {
+    /// A single acknowledgement button.
     Ok,
+    /// Acknowledgement and cancellation buttons.
     OkCancel,
+    /// Affirmative and negative choice buttons.
     YesNo,
 }
 
 /// The button a [`MessageBox`] was closed with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MessageBoxResult {
+    /// The user accepted the message.
     Ok,
+    /// The user cancelled or closed the message.
     Cancel,
+    /// The user chose the affirmative option.
     Yes,
+    /// The user chose the negative option.
     No,
 }
 

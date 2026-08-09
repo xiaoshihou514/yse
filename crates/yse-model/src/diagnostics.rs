@@ -14,24 +14,40 @@ use std::rc::Rc;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DiagnosticEvent {
     /// A transaction began.
-    TransactionStarted { id: u64 },
+    TransactionStarted {
+        /// Monotonically increasing transaction identifier.
+        id: u64,
+    },
     /// A node was recomputed / processed.
     NodeProcessed {
+        /// Identifier of the processed graph node.
         node: u64,
+        /// Topological rank used to schedule the node.
         rank: usize,
+        /// Whether the node represents state rather than events.
         signal: bool,
     },
     /// An observer callback was delivered a value.
-    ObserverFired { observer: u64 },
+    ObserverFired {
+        /// Identifier of the observer that received a value.
+        observer: u64,
+    },
     /// A write performed during propagation was queued for the next pass.
-    DeferredWriteQueued { transaction: u64 },
+    DeferredWriteQueued {
+        /// Transaction during which the write was queued.
+        transaction: u64,
+    },
     /// A reactive cycle was detected and rejected.
     CycleRejected,
     /// A transaction finished, with summary counts.
     TransactionEnded {
+        /// Identifier matching the corresponding start event.
         id: u64,
+        /// Number of graph nodes processed.
         processed: usize,
+        /// Number of observer callbacks delivered.
         fired: usize,
+        /// Number of re-entrant writes deferred.
         deferred: usize,
     },
 }
@@ -117,16 +133,22 @@ impl Diagnostics {
 /// Severity of a log record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
+    /// An operation failed and needs attention.
     Error,
+    /// A potentially harmful condition occurred.
     Warn,
+    /// A normal operational message.
     Info,
+    /// Detailed diagnostic information.
     Debug,
 }
 
 /// A structured log record.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogRecord {
+    /// Severity assigned to the record.
     pub level: LogLevel,
+    /// Human-readable log message.
     pub message: String,
 }
 
@@ -187,18 +209,22 @@ impl Logger {
         }
     }
 
+    /// Emit a debug record.
     pub fn debug(&self, message: impl Into<String>) {
         self.log(LogLevel::Debug, message);
     }
 
+    /// Emit an informational record.
     pub fn info(&self, message: impl Into<String>) {
         self.log(LogLevel::Info, message);
     }
 
+    /// Emit a warning record.
     pub fn warn(&self, message: impl Into<String>) {
         self.log(LogLevel::Warn, message);
     }
 
+    /// Emit an error record.
     pub fn error(&self, message: impl Into<String>) {
         self.log(LogLevel::Error, message);
     }
@@ -213,18 +239,22 @@ pub fn log(level: LogLevel, message: impl Into<String>) {
     });
 }
 
+/// Emit a debug record through the thread's installed logger.
 pub fn log_debug(message: impl Into<String>) {
     log(LogLevel::Debug, message);
 }
 
+/// Emit an informational record through the thread's installed logger.
 pub fn log_info(message: impl Into<String>) {
     log(LogLevel::Info, message);
 }
 
+/// Emit a warning record through the thread's installed logger.
 pub fn log_warn(message: impl Into<String>) {
     log(LogLevel::Warn, message);
 }
 
+/// Emit an error record through the thread's installed logger.
 pub fn log_error(message: impl Into<String>) {
     log(LogLevel::Error, message);
 }

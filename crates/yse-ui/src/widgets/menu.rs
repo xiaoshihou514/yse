@@ -8,6 +8,7 @@ use crate::widgets::{IntoWidget, widget_wrapper};
 use std::rc::Rc;
 use yse_model::{EventStream, Signal, Sink};
 
+/// A retained command that can appear in menus or toolbars.
 pub struct Action {
     inner: Rc<ActionState>,
 }

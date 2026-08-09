@@ -7,6 +7,7 @@ use crate::widgets::{IntoWidget, date_value_bindings, widget_wrapper};
 use std::rc::Rc;
 use yse_model::{EventStream, Signal, Sink, Var};
 
+/// A retained local date-and-time editor.
 pub struct DateTimeEdit {
     pub(crate) inner: Rc<Component>,
 }

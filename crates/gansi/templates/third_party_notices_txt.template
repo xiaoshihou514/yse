@@ -1,0 +1,20 @@
+Third-party notices for {{title}}
+=================================
+
+This application uses Yse, CXX-Qt, CXX-Qt-Lib, and CXX. Those projects are
+available under MIT OR Apache-2.0. Their source and license information is at:
+
+  Yse:   https://github.com/xiaoshihou514/yse
+  CXX-Qt: https://github.com/KDAB/cxx-qt
+  CXX:   https://github.com/dtolnay/cxx
+
+This application also uses Qt. Qt is separately available under commercial
+and open-source license terms. The application distributor must identify the
+license path used for this build and provide all notices, license texts,
+corresponding source or written offers, relinking rights, and module-specific
+third-party notices required by that path.
+
+This generated notice is a starting point. It is not a complete license
+inventory and is not legal advice. Review the exact libraries and plugins in
+the distributed artifact before release. `CARGO_LICENSES.tsv` in this bundle
+contains the machine-generated inventory of the locked Rust dependency graph.

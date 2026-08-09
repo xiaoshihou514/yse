@@ -707,8 +707,10 @@ dependencies = [
  "reqwest",
  "roxmltree",
  "serde",
+ "serde_json",
  "sevenz-rust2",
  "sha1",
+ "sha2",
  "tar",
  "toml",
  "xz2",
@@ -2305,6 +2307,7 @@ dependencies = [
 name = "yse"
 version = "0.1.0"
 dependencies = [
+ "cxx-qt-build",
  "yse-model",
  "yse-ui",
 ]
@@ -2327,6 +2330,7 @@ version = "0.1.0"
 name = "yse-taskmgr"
 version = "0.1.0"
 dependencies = [
+ "cxx-qt-build",
  "libc",
  "windows-sys 0.61.2",
  "yse",
@@ -2340,6 +2344,7 @@ dependencies = [
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "static_assertions",
  "yse-model",
 ]
 

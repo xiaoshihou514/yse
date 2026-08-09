@@ -15,16 +15,26 @@ versions with semver-aware changes:
 Before publishing, run the full gate locally:
 
 ```sh
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --check
+CCACHE_DISABLE=1 just release-check
 ```
+
+This command does not publish or upload anything. It validates the Fedora-local
+workspace, MSRV, dependency licenses, standalone crate packages, generated
+application lifecycle, Linux release bundle, examples, and Valgrind teardown.
+It is not evidence for another operating system or an older Linux distribution.
 
 ## CI
 
 No CI workflows are committed (Actions quota is reserved). Validate locally
 with the gate above, and add platform CI only when your quota allows.
 `gansi build` still produces a Linux release bundle on demand.
+That bundle carries its Qt libraries and selected plugins behind a relocatable
+launcher and records them in `QT_RUNTIME.tsv`; it does not bundle glibc,
+graphics drivers, or every non-Qt system dependency. Validate it on the oldest
+Linux distribution you intend to support and review `SYSTEM_RUNTIME.tsv` for
+the remaining compatibility and licensing surface. The adjacent architecture-
+labelled `.tar.gz` is the transport artifact for the complete bundle directory;
+verify its adjacent `SHA256SUMS` entry after transfer.
 
 ## What stays application-specific
 

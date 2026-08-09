@@ -19,6 +19,10 @@ extending it.
   created it. Callbacks arriving on a different thread (a misuse Yse does not
   support) are detected at the FFI boundary and logged as errors, so silent
   cross-thread access shows up during development instead of corrupting state.
+- Widget `qobject_ptr()` methods are deliberately narrow escape hatches. Their
+  raw pointers are borrowed views of the retained Qt object, not ownership
+  transfers: never retain one past Qt destruction, dereference it off the GUI
+  thread, or construct a second owner for it.
 
 ## Ownership and pointer lifetime
 

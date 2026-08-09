@@ -21,3 +21,12 @@ fn facade_exposes_model_and_ui() {
     let _ = std::any::type_name::<Window>();
     let _ = std::any::type_name::<StringTableModel>();
 }
+
+#[test]
+fn prelude_exposes_normal_application_surface() {
+    use yse::prelude::*;
+
+    let value = Var::new(String::from("ready"));
+    let _window: Option<Window> = None;
+    assert_eq!(value.value().as_str(), "ready");
+}

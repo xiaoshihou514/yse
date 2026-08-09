@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use yse_model::Signal;
 
+/// A retained horizontal box layout.
 pub struct Row {
     pub(crate) inner: Rc<Component>,
 }

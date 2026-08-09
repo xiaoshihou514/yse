@@ -2,8 +2,15 @@
 name = "yse-ui"
 version = "0.1.0"
 edition = "2024"
-description = "Reactive Qt Widgets layer for Yse"
+description = "Reactive Qt Widgets layer for yse"
 license = "MIT OR Apache-2.0"
+rust-version = "1.89"
+repository = "https://github.com/xiaoshihou514/yse"
+homepage = "https://github.com/xiaoshihou514/yse"
+documentation = "https://docs.rs/yse-ui"
+readme = "../../README.md"
+keywords = ["qt", "widgets", "gui", "desktop", "reactive"]
+categories = ["gui"]
 links = "yse_ui"
 
 [dependencies]
@@ -14,3 +21,6 @@ yse-model = { version = "0.1.0", path = "../yse-model" }
 
 [build-dependencies]
 cxx-qt-build = "0.9.1"
+
+[dev-dependencies]
+static_assertions = "1.1.0"

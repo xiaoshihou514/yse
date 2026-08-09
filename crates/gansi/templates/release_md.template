@@ -1,9 +1,29 @@
 # Release guide for {{title}}
 
 `gansi build` builds a release binary and lays it out in `dist/{{name}}/`.
-On Linux that is a portable binary (Qt must be present on the target or
-deployed alongside it); on Windows `windeployqt` and on macOS `macdeployqt`
-are invoked automatically when available.
+It stages a complete bundle and replaces the previous directory, preventing
+obsolete libraries or plugins from surviving a rebuild.
+Linux also emits `dist/{{name}}-linux-<arch>.tar.gz`; extracting that archive
+preserves the launcher and complete bundle layout. `dist/SHA256SUMS` records
+its SHA-256 digest; verify it after transfer with `sha256sum --check SHA256SUMS`.
+Archive paths, ownership, modes, ordering, and timestamps are normalized.
+`SOURCE_DATE_EPOCH` controls the archive timestamp and defaults to zero.
+On Linux the bundle contains a launcher, the application binary, the Qt shared
+libraries it uses, selected desktop plugins, Qt license texts when discoverable,
+`QT_RUNTIME.tsv`, `SYSTEM_RUNTIME.tsv`, and `GLIBC_REQUIREMENTS.tsv`. The
+GLIBC report records the newest required symbol version for each shipped ELF
+object and for the bundle as a whole. The launcher selects those bundled
+Qt files without rewriting ELF metadata. glibc, graphics drivers, and non-Qt
+system libraries remain target-system dependencies. Packaging fails when an
+ELF dependency is unresolved. Windows uses `windeployqt` and macOS uses
+`macdeployqt` when available.
+
+The Linux `share/` tree contains a freedesktop desktop entry, AppStream
+metadata, and a scalable icon for package/AppImage integration.
+`deployment.bundle_name` and
+`deployment.app_id` in `gansi.toml` control its identity. Replace the generated
+`com.example.*` ID, and review the category, description, executable path, and
+artwork before publishing an installer.
 
 ## What remains application-specific
 
@@ -17,9 +37,44 @@ These steps cannot be automated generically and are your responsibility:
 - **Third-party native dependencies** — any libraries beyond Qt must be
   bundled and licensed manually.
 
+## Qt and CXX-Qt licensing
+
+Yse, CXX-Qt, CXX-Qt-Lib, and CXX use `MIT OR Apache-2.0`. Qt is a separate
+dependency with commercial and open-source licensing paths; using a wrapper
+does not remove Qt's terms.
+
+Before distribution:
+
+- Record whether this build uses commercial Qt or open-source Qt.
+- Prefer dynamically linked Qt for the LGPL path and preserve the user's right
+  to replace the Qt libraries and run the modified combination.
+- Include the applicable Qt license text and a prominent Qt-use notice.
+- Provide a distributor-controlled corresponding-source path or written offer
+  for the exact LGPL Qt libraries shipped, including modifications.
+- Inventory every Qt module, platform plugin, and third-party component; some
+  components may be GPL-only or carry additional licenses.
+- Review `QT_RUNTIME.tsv` and prune plugins your application does not need.
+- Review and license the non-Qt dependencies listed in `SYSTEM_RUNTIME.tsv`;
+  paths describe the build host, not files copied into the bundle.
+- Test the Linux bundle on the oldest supported distribution; bundling Qt does
+  not make glibc or graphics-driver compatibility universal. Confirm that its
+  glibc is at least the `<bundle>` version in `GLIBC_REQUIREMENTS.tsv`.
+- Preserve notices for Yse, CXX-Qt, CXX, and all Cargo dependencies.
+
+`THIRD_PARTY_NOTICES.txt` is generated as a starting notice and copied into the
+bundle. Yse's MIT and Apache-2.0 texts are included under `licenses/rust/`.
+Discoverable dependency license and SPDX notice files, including CXX-Qt's
+packaged notice, are copied under `licenses/cargo/`. `CARGO_LICENSES.tsv`
+records the name, version, declared SPDX license, and repository of every
+package in the locked Cargo graph. These artifacts are not a complete
+compliance package or legal advice. See Yse's `docs/licensing.md` and Qt's
+official licensing documentation.
+
 ## Checklist
 
 1. `gansi test`
 2. `gansi build`
 3. Inspect `dist/{{name}}/` and run the app on a clean machine.
-4. Sign and notarize per platform; trigger where applicable.
+4. Verify Qt is dynamically linked when using the intended LGPL path.
+5. Add complete license texts, exact dependency inventory, and Qt source offer.
+6. Sign and notarize per platform; trigger where applicable.

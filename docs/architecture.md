@@ -121,8 +121,9 @@ standalone CXX-Qt template.
 
 - The reactive graph is single-threaded by design; background work must return
   through a scheduler.
-- Windows/macOS builds are only verified from this development machine;
-  platform CI can be added later when quota allows.
-- The crates are not yet published; outside a local yse checkout,
-  `gansi create` falls back to the standalone CXX-Qt shape rather than
-  depending on the facade.
+- Windows has build helpers but no current clean-host evidence in the recorded
+  validation matrix. macOS validation is deferred and does not block the first
+  release. Platform CI can be added later when quota allows.
+- The crates are not yet published; outside a local Yse checkout,
+  `gansi create` requires `--local <yse-checkout>` and never resolves an
+  unrelated registry package with the same name.

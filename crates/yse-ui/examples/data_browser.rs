@@ -317,7 +317,8 @@ fn main() {
                                 load_action.trigger();
                                 app.after(40, clone!(cancel_action => move || {
                                     cancel_action.trigger();
-                                    app.after(100, clone!(fail_action => move || {
+                                    app.after(100, clone!(fail_action, status_var => move || {
+                                        assert_eq!(status_var.value().as_str(), "load cancelled");
                                         fail_action.trigger();
                                         app.after(150, clone!(about_action, about_box => move || {
                                             about_action.trigger();

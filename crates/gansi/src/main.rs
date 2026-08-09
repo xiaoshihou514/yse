@@ -8,6 +8,8 @@
 //! - `gansi run [--release] [-- <args>...]` — build and run the current project.
 //! - `gansi test [-- <args>...]` — run the current project's tests.
 //! - `gansi build [--debug] [-- <args>...]` — build and bundle the current project.
+//! - `gansi analyze [-- <args>...]` — run Clippy with warnings denied.
+//! - `gansi format [--check]` — format or verify the project.
 //! - `gansi doctor` — check local dependencies and Qt SDK status.
 
 mod project;
@@ -85,6 +87,12 @@ struct QtVersion {
     major: u32,
     minor: u32,
     patch: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ArchiveChecksum {
+    Sha256(String),
+    Sha1(String),
 }
 
 /// Host platform. Replaces the previous stringly-typed `detect_platform`
@@ -171,8 +179,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Create a new project. Depends on the `yse` facade (added with
-    /// `cargo add yse`); pass `--local <yse-checkout>` to pin a checkout.
+    /// Create a new project against a local Yse checkout.
     #[command(name = "create", alias = "new")]
     Create {
         name: String,
@@ -227,6 +234,31 @@ enum Command {
 
     /// Print environment summary (`doctor --verbose`).
     Env,
+
+    /// Run Clippy across all project targets with warnings denied.
+    Analyze {
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
+
+    /// Format the project, or verify formatting with `--check`.
+    Format {
+        #[arg(long)]
+        check: bool,
+    },
+
+    /// Update dependencies recorded in Cargo.lock.
+    Upgrade {
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
+
+    /// Add a Cargo dependency to the current project.
+    Add {
+        package: String,
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
 
     /// Print toolchain version.
     Version,
@@ -325,6 +357,23 @@ fn execute(cli: Cli) -> Result<i32, String> {
             command_doctor(true)?;
             Ok(0)
         }
+        Command::Analyze { args } => {
+            ensure_project_environment()?;
+            command_analyze(args)?;
+            Ok(0)
+        }
+        Command::Format { check } => {
+            command_format(check)?;
+            Ok(0)
+        }
+        Command::Upgrade { args } => {
+            command_upgrade(args)?;
+            Ok(0)
+        }
+        Command::Add { package, args } => {
+            command_add(&package, args)?;
+            Ok(0)
+        }
         Command::Version => {
             println!("gansi {VERSION}");
             Ok(0)
@@ -333,19 +382,42 @@ fn execute(cli: Cli) -> Result<i32, String> {
 }
 
 fn command_create(name: &str, local: Option<&str>) -> Result<(), String> {
-    let project = match local {
-        Some(path) => project::Project::parse_local(name, path)?,
-        None => project::Project::parse(name)?,
+    let cwd =
+        env::current_dir().map_err(|error| format!("cannot read current directory: {error}"))?;
+    let checkout = match local {
+        Some(path) => PathBuf::from(path),
+        None => discover_yse_checkout(&cwd).ok_or(
+            "Yse is not published yet. Run this command inside a Yse checkout or pass \
+             `--local <yse-checkout>`.",
+        )?,
     };
+    let mut project = project::Project::parse_local(name, &checkout.to_string_lossy())?;
+    pin_detected_toolchain(&mut project);
 
-    let target = env::current_dir()
-        .map_err(|error| format!("cannot read current directory: {error}"))?
-        .join(&project.name);
+    let target = cwd.join(&project.name);
     if target.exists() {
         return Err(format!("directory `{}` already exists", target.display()));
     }
-    project::write_project(&project, &target)?;
-    add_yse_dependency(&project, &target)?;
+    let staging = cwd.join(format!(".{}.gansi-{}", project.name, std::process::id()));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)
+            .map_err(|error| format!("cannot clear {}: {error}", staging.display()))?;
+    }
+    let result = project::write_project(&project, &staging)
+        .and_then(|()| add_yse_dependency(&project, &staging))
+        .and_then(|()| {
+            fs::rename(&staging, &target).map_err(|error| {
+                format!(
+                    "cannot finalize project {} as {}: {error}",
+                    staging.display(),
+                    target.display()
+                )
+            })
+        });
+    if result.is_err() && staging.exists() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    result?;
     println!("Generated {} at {}\n", project.name, target.display());
     println!("Next steps:");
     for step in [
@@ -359,35 +431,39 @@ fn command_create(name: &str, local: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-/// Add the `yse` dependency to the generated project. Without `--local` this
-/// resolves `yse` on crates.io; with a pinned checkout it points at
-/// `<checkout>/crates/yse` via `--path`.
 fn add_yse_dependency(project: &project::Project, target: &Path) -> Result<(), String> {
-    let mut args = vec!["add".to_string(), "yse".to_string()];
-    if let Some(yse_path) = &project.local_yse {
-        args.push("--path".to_string());
-        args.push(
-            yse_path
-                .join("crates")
-                .join("yse")
-                .to_string_lossy()
-                .into_owned(),
-        );
-    }
+    let yse_path = project
+        .local_yse
+        .as_ref()
+        .ok_or("generated projects require a local Yse checkout until publication")?;
+    let args = vec![
+        "add".to_string(),
+        "yse".to_string(),
+        "--path".to_string(),
+        yse_path
+            .join("crates")
+            .join("yse")
+            .to_string_lossy()
+            .into_owned(),
+        "--offline".to_string(),
+    ];
     let status = ProcessCommand::new("cargo")
         .args(&args)
         .current_dir(target)
         .status()
         .map_err(|error| format!("cannot run `cargo add yse`: {error}"))?;
     if !status.success() {
-        return Err(
-            "`cargo add yse` failed. Without `--local` the `yse` crate must be published on \
-             crates.io; otherwise pass `--local <yse-checkout>` to pin the local facade."
-                .to_string(),
-        );
+        return Err("`cargo add yse --path <checkout>/crates/yse` failed".to_string());
     }
     println!("Added the `yse` dependency.");
     Ok(())
+}
+
+fn discover_yse_checkout(start: &Path) -> Option<PathBuf> {
+    start
+        .ancestors()
+        .find(|candidate| candidate.join("crates/yse/Cargo.toml").is_file())
+        .map(Path::to_path_buf)
 }
 
 fn command_run(release: bool, args: Vec<String>) -> Result<(), String> {
@@ -405,6 +481,39 @@ fn command_test(args: Vec<String>) -> Result<(), String> {
     cargo_args.extend(args);
     run_cargo(&cargo_args)?;
     Ok(())
+}
+
+fn command_analyze(args: Vec<String>) -> Result<(), String> {
+    let mut cargo_args = vec![
+        "clippy".to_string(),
+        "--all-targets".to_string(),
+        "--".to_string(),
+        "-D".to_string(),
+        "warnings".to_string(),
+    ];
+    cargo_args.extend(args);
+    run_cargo(&cargo_args)
+}
+
+fn command_format(check: bool) -> Result<(), String> {
+    let mut cargo_args = vec!["fmt".to_string()];
+    if check {
+        cargo_args.push("--".to_string());
+        cargo_args.push("--check".to_string());
+    }
+    run_cargo(&cargo_args)
+}
+
+fn command_upgrade(args: Vec<String>) -> Result<(), String> {
+    let mut cargo_args = vec!["update".to_string()];
+    cargo_args.extend(args);
+    run_cargo(&cargo_args)
+}
+
+fn command_add(package: &str, args: Vec<String>) -> Result<(), String> {
+    let mut cargo_args = vec!["add".to_string(), package.to_string()];
+    cargo_args.extend(args);
+    run_cargo(&cargo_args)
 }
 
 fn command_build(debug: bool, args: Vec<String>) -> Result<(), String> {
@@ -550,9 +659,8 @@ fn install_qt_from_mirrors(
 
     let base_folder = format!("qt{}_{}", qt_version.major, version_short);
     // Qt's online repository nested the version directory from 6.8 through
-    // 6.10 (`qt6_683/qt6_683/Updates.xml`) and flattened it again starting
-    // with 6.11 (per-arch subfolders each with their own `Updates.xml`, no
-    // root one) — enumerating those per-arch folders is not implemented yet.
+    // 6.10 (`qt6_683/qt6_683/Updates.xml`) and switched to package directory
+    // listings starting with 6.11; that layout is handled separately above.
     let use_split = qt_version.major == 6 && (8..=10).contains(&qt_version.minor);
     let version_path = if use_split {
         format!("{base_folder}/{base_folder}")
@@ -751,14 +859,9 @@ fn install_qt_611_from_mirrors(
 
         for archive in &archives {
             let archive_url = url_join(&package_url, &[archive]);
-            let expected_sha1 = http_get_text(&format!("{archive_url}.sha1"))
-                .ok()
-                .as_deref()
-                .and_then(parse_sha1_text);
             stage_and_fold_archive(
                 archive,
                 &archive_url,
-                expected_sha1.as_deref(),
                 &work_dir,
                 expected_root,
                 &qt_full_version,
@@ -821,9 +924,34 @@ fn href_values(html: &str) -> Vec<String> {
     values
 }
 
-/// Extract the SHA-1 digest from a `.sha1` sidecar (`<40 hex>  <name>`).
-fn parse_sha1_text(text: &str) -> Option<String> {
-    text.split_whitespace().next().and_then(normalize_sha1)
+fn parse_checksum_text(text: &str, algorithm: &str) -> Option<ArchiveChecksum> {
+    let digest = text.split_whitespace().next()?.trim().to_ascii_lowercase();
+    if !digest.chars().all(|value| value.is_ascii_hexdigit()) {
+        return None;
+    }
+    match algorithm {
+        "sha256" if digest.len() == 64 => Some(ArchiveChecksum::Sha256(digest)),
+        "sha1" if digest.len() == 40 => Some(ArchiveChecksum::Sha1(digest)),
+        _ => None,
+    }
+}
+
+fn fetch_archive_checksum(archive_url: &str) -> Result<ArchiveChecksum, String> {
+    let mut failures = Vec::new();
+    for algorithm in ["sha256", "sha1"] {
+        let checksum_url = format!("{archive_url}.{algorithm}");
+        match http_get_text(&checksum_url) {
+            Ok(text) => match parse_checksum_text(&text, algorithm) {
+                Some(checksum) => return Ok(checksum),
+                None => failures.push(format!("invalid {algorithm} sidecar")),
+            },
+            Err(error) => failures.push(error),
+        }
+    }
+    Err(format!(
+        "no valid checksum sidecar for {archive_url}: {}",
+        failures.join("; ")
+    ))
 }
 /// Download, verify, extract, and fold one Qt archive into the install root.
 /// Failures (download, checksum, extraction) only stop this candidate — the
@@ -832,13 +960,19 @@ fn parse_sha1_text(text: &str) -> Option<String> {
 fn stage_and_fold_archive(
     archive_name: &str,
     archive_url: &str,
-    expected_sha1: Option<&str>,
     work_dir: &Path,
     expected_root: &Path,
     qt_full_version: &str,
     qt_arch: &str,
     install_root: &mut Option<PathBuf>,
 ) -> Result<(), String> {
+    let checksum = match fetch_archive_checksum(archive_url) {
+        Ok(checksum) => checksum,
+        Err(error) => {
+            println!("  {archive_name} checksum unavailable: {error}");
+            return Ok(());
+        }
+    };
     let stage = work_dir.join(format!(
         "archive_{}",
         archive_name.replace(['/', '\\'], "_")
@@ -848,19 +982,17 @@ fn stage_and_fold_archive(
         return Ok(());
     }
 
-    if let Some(expected) = expected_sha1 {
-        match verify_sha1(&stage, expected) {
-            Ok(true) => {}
-            Ok(false) => {
-                println!("  {archive_name} checksum mismatch");
-                let _ = fs::remove_file(&stage);
-                return Ok(());
-            }
-            Err(error) => {
-                println!("  {archive_name} checksum check failed: {error}");
-                let _ = fs::remove_file(&stage);
-                return Ok(());
-            }
+    match verify_archive_checksum(&stage, &checksum) {
+        Ok(true) => {}
+        Ok(false) => {
+            println!("  {archive_name} checksum mismatch");
+            let _ = fs::remove_file(&stage);
+            return Ok(());
+        }
+        Err(error) => {
+            println!("  {archive_name} checksum check failed: {error}");
+            let _ = fs::remove_file(&stage);
+            return Ok(());
         }
     }
 
@@ -923,7 +1055,6 @@ fn install_qt_candidate(
     stage_and_fold_archive(
         &candidate.archive_name,
         &archive_url,
-        candidate.sha1.as_deref(),
         work_dir,
         expected_root,
         qt_full_version,
@@ -951,18 +1082,6 @@ struct QtArchiveCandidate {
     package_version: String,
     package_name: String,
     location: Option<String>,
-    sha1: Option<String>,
-}
-
-fn normalize_sha1(value: &str) -> Option<String> {
-    let value = value.trim().to_ascii_lowercase();
-    if value.len() != 40 {
-        return None;
-    }
-    if !value.chars().all(|value| value.is_ascii_hexdigit()) {
-        return None;
-    }
-    Some(value)
 }
 
 /// Trimmed text of the first child element whose tag matches one of `tags`,
@@ -1015,9 +1134,6 @@ fn find_matching_qt_candidates(
             continue;
         };
         let location = child_xml_text(package, &["DownloadLocation"]);
-        let sha1 = child_xml_text(package, &["SHA1", "SHA1Sum", "SHA1SumFile"])
-            .as_deref()
-            .and_then(normalize_sha1);
         let is_base_package = is_qt_base_package(&name, qt_version);
         for archive in split_archives(&downloads) {
             if strict {
@@ -1037,7 +1153,6 @@ fn find_matching_qt_candidates(
                     package_version: version.clone(),
                     package_name: name.to_string(),
                     location: location.clone(),
-                    sha1: sha1.clone(),
                 });
             }
         }
@@ -1290,25 +1405,42 @@ fn extract_7z(archive: &Path, target: &Path) -> Result<(), String> {
     failure.map_or(Ok(()), Err)
 }
 
-fn verify_sha1(path: &Path, expected: &str) -> Result<bool, String> {
+fn verify_archive_checksum(path: &Path, checksum: &ArchiveChecksum) -> Result<bool, String> {
     let mut file =
         fs::File::open(path).map_err(|error| format!("cannot open {}: {error}", path.display()))?;
-    let mut hasher = sha1::Sha1::new();
     let mut buffer = [0u8; 16 * 1024];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
-        if read == 0 {
-            break;
+    let actual = match checksum {
+        ArchiveChecksum::Sha256(_) => {
+            let mut hasher = sha2::Sha256::new();
+            loop {
+                let read = file
+                    .read(&mut buffer)
+                    .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+                if read == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..read]);
+            }
+            format!("{:x}", hasher.finalize())
         }
-        hasher.update(&buffer[..read]);
-    }
-    let mut actual = String::with_capacity(40);
-    for byte in &hasher.finalize() {
-        let _ = std::fmt::Write::write_fmt(&mut actual, format_args!("{byte:02x}"));
-    }
-    Ok(actual == expected.to_ascii_lowercase())
+        ArchiveChecksum::Sha1(_) => {
+            let mut hasher = sha1::Sha1::new();
+            loop {
+                let read = file
+                    .read(&mut buffer)
+                    .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+                if read == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..read]);
+            }
+            format!("{:x}", hasher.finalize())
+        }
+    };
+    let expected = match checksum {
+        ArchiveChecksum::Sha256(expected) | ArchiveChecksum::Sha1(expected) => expected,
+    };
+    Ok(actual == *expected)
 }
 
 #[cfg(unix)]
@@ -1597,9 +1729,25 @@ fn qt_archive_arch(platform: Platform, requested_arch: &str, qt_version: &QtVers
 fn command_clean() -> Result<(), String> {
     let cwd =
         env::current_dir().map_err(|error| format!("cannot read current directory: {error}"))?;
-    let reclaimed = reclaim_targets(&[cwd.join("target"), cwd.join("dist")])?;
+    let target_dir = cargo_target_dir(&cwd, env::var_os("CARGO_TARGET_DIR").as_deref())?;
+    let reclaimed = reclaim_targets(&[target_dir, cwd.join("dist")])?;
     println!("Reclaimed approximately {reclaimed} bytes");
     Ok(())
+}
+
+fn cargo_target_dir(cwd: &Path, configured: Option<&std::ffi::OsStr>) -> Result<PathBuf, String> {
+    let Some(configured) = configured else {
+        return Ok(cwd.join("target"));
+    };
+    if configured.is_empty() {
+        return Err("CARGO_TARGET_DIR must not be empty".to_string());
+    }
+    let configured = PathBuf::from(configured);
+    if configured.is_absolute() {
+        Ok(configured)
+    } else {
+        Ok(cwd.join(configured))
+    }
 }
 
 fn command_config(command: ConfigCommand) -> Result<i32, String> {
@@ -1664,7 +1812,8 @@ fn command_init() -> Result<(), String> {
         .file_name()
         .and_then(|value| value.to_str())
         .ok_or("invalid current directory name")?;
-    let project = project::Project::parse(cwd_name)?;
+    let mut project = project::Project::parse(cwd_name)?;
+    pin_detected_toolchain(&mut project);
 
     let manifest = cwd.join(project::MANIFEST_FILE_NAME);
     if manifest.exists() {
@@ -1688,14 +1837,97 @@ fn command_init() -> Result<(), String> {
 
 fn ensure_project_environment() -> Result<(), String> {
     match command_doctor(false)? {
-        DoctorStatus::RequiredMissing => {
-            Err("required environment checks failed. Run `gansi doctor`.".into())
-        }
+        DoctorStatus::RequiredMissing => Err(String::from(
+            "required environment checks failed. Run `gansi doctor`.",
+        )),
         DoctorStatus::SoftMissing => {
             eprintln!("Warning: environment has soft-missing items. Build may still work.");
             Ok(())
         }
         DoctorStatus::AllGood => Ok(()),
+    }?;
+    validate_project_toolchain()
+}
+
+fn pin_detected_toolchain(project: &mut project::Project) {
+    let qt_version = detected_qt_version().unwrap_or_else(|| "6".to_string());
+    project.pin_toolchain(qt_version, detected_compiler_family(), env::consts::ARCH);
+}
+
+fn validate_project_toolchain() -> Result<(), String> {
+    let manifest = read_manifest()?;
+    validate_toolchain_values(
+        &manifest,
+        detected_qt_version().as_deref(),
+        &detected_compiler_family(),
+        env::consts::ARCH,
+    )
+}
+
+fn validate_toolchain_values(
+    manifest: &project::ManifestProject,
+    qt_version: Option<&str>,
+    compiler_family: &str,
+    target_arch: &str,
+) -> Result<(), String> {
+    let mut mismatches = Vec::new();
+
+    if let Some(expected) = manifest.qt_version.as_deref()
+        && let Some(actual) = qt_version
+        && expected != actual
+    {
+        mismatches.push(format!(
+            "Qt {expected} is pinned, but qmake reports Qt {actual}"
+        ));
+    }
+    if let Some(expected) = manifest.compiler_family.as_deref()
+        && expected != compiler_family
+    {
+        mismatches.push(format!(
+            "compiler family {expected} is pinned, but {compiler_family} was detected"
+        ));
+    }
+    if let Some(expected) = manifest.target_arch.as_deref()
+        && expected != target_arch
+    {
+        mismatches.push(format!(
+            "target architecture {expected} is pinned, but this host is {target_arch}"
+        ));
+    }
+
+    if mismatches.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "project toolchain does not match gansi.toml:\n  - {}\nUpdate the pins intentionally or use the matching SDK/toolchain.",
+            mismatches.join("\n  - ")
+        ))
+    }
+}
+
+fn detected_qt_version() -> Option<String> {
+    let config = load_global_config().ok()?;
+    let qmake = resolve_qmake(&config)?;
+    let output = ProcessCommand::new(qmake)
+        .args(["-query", "QT_VERSION"])
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|version| !version.is_empty())
+}
+
+fn detected_compiler_family() -> String {
+    if cfg!(target_env = "msvc") {
+        return "msvc".to_string();
+    }
+    let version = tool_version("c++").unwrap_or_default().to_ascii_lowercase();
+    if version.contains("clang") {
+        "clang".to_string()
+    } else {
+        "gcc".to_string()
     }
 }
 
@@ -1771,28 +2003,63 @@ fn collect_health_checks() -> Vec<HealthCheck> {
     let mut checks = vec![
         check_tool("rustc", true, "Install Rust via rustup."),
         check_tool("cargo", true, "Install Rust via rustup."),
-        check_tool("cmake", false, "Install CMake."),
+        check_tool("c++", true, "Install a C++17 compiler (GCC or Clang)."),
+        check_tool("cmake", true, "Install CMake."),
+        check_tool("ninja", true, "Install Ninja."),
+        check_tool("pkg-config", true, "Install pkg-config."),
     ];
-    if let Some(qmake) = locate_qmake() {
+    if cfg!(target_os = "linux") {
+        checks.extend([
+            check_tool("ldd", true, "Install glibc development tools."),
+            check_tool("readelf", true, "Install GNU binutils."),
+        ]);
+    }
+    let config = load_global_config().unwrap_or_default();
+    if let Some(qmake) = resolve_qmake(&config) {
         checks.push(HealthCheck {
             label: "qmake",
             found: true,
             version: qmake_version(&qmake),
-            required: false,
+            required: true,
             suggestion: "n/a",
         });
+        checks.push(check_qt_platform_plugin(&qmake));
     } else {
         checks.push(HealthCheck {
             label: "qmake",
             found: false,
             version: None,
-            required: false,
-            suggestion: "Install Qt 6 (qmake).",
+            required: true,
+            suggestion: "Install Qt 6 development files or run `gansi setup`.",
+        });
+        checks.push(HealthCheck {
+            label: "Qt platform plugin",
+            found: false,
+            version: None,
+            required: true,
+            suggestion: "Install the Qt 6 platform plugins package.",
         });
     }
-    checks.push(check_tool("pkg-config", false, "Install pkg-config."));
 
     checks
+}
+
+fn check_qt_platform_plugin(qmake: &Path) -> HealthCheck {
+    let plugins = ProcessCommand::new(qmake)
+        .args(["-query", "QT_INSTALL_PLUGINS"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| PathBuf::from(String::from_utf8_lossy(&output.stdout).trim()))
+        .filter(|path| path.join("platforms").is_dir());
+
+    HealthCheck {
+        label: "Qt platform plugin",
+        found: plugins.is_some(),
+        version: plugins.map(|path| path.display().to_string()),
+        required: true,
+        suggestion: "Install the Qt 6 platform plugins package.",
+    }
 }
 
 fn check_tool(command: &'static str, required: bool, suggestion: &'static str) -> HealthCheck {
@@ -1830,6 +2097,21 @@ fn render_checks(checks: &[HealthCheck]) {
 }
 
 fn render_verbose_environment() -> Result<(), String> {
+    println!("host:");
+    println!("  os: {}", env::consts::OS);
+    println!("  arch: {}", env::consts::ARCH);
+    if let Ok(os_release) = fs::read_to_string("/etc/os-release")
+        && let Some(pretty_name) = os_release
+            .lines()
+            .find_map(|line| line.strip_prefix("PRETTY_NAME="))
+    {
+        println!("  distribution: {}", pretty_name.trim_matches('"'));
+    }
+    for key in ["XDG_SESSION_TYPE", "QT_QPA_PLATFORM", "QMAKE"] {
+        if let Ok(value) = env::var(key) {
+            println!("  {key}: {value}");
+        }
+    }
     let config = load_global_config()?;
     println!("config: {}", config_path().display());
     if config.qt_roots.is_empty() {
@@ -1931,6 +2213,16 @@ fn locate_qmake() -> Option<PathBuf> {
         return Some(qmake);
     }
     None
+}
+
+fn resolve_qmake(config: &GlobalConfig) -> Option<PathBuf> {
+    config
+        .qt_roots
+        .iter()
+        .map(PathBuf::from)
+        .find(|root| has_qmake(root))
+        .map(|root| root.join("bin").join(qmake_binary_name()))
+        .or_else(locate_qmake)
 }
 
 fn find_command(name: &str) -> Option<PathBuf> {
@@ -2105,10 +2397,6 @@ fn finds_matching_qt_archives_in_update_xml() {
     assert_eq!(first.package_name, "qt.qt6.683.gcc_64");
     assert_eq!(first.package_version, "6.8.3-1-202406151217");
     assert_eq!(first.location.as_deref(), Some("./packages"));
-    assert_eq!(
-        first.sha1.as_deref(),
-        Some("aabbccddeeff00112233445566778899aabbccdd")
-    );
     assert!(
         !candidates
             .iter()
@@ -2172,7 +2460,7 @@ fn lists_qt_archives_from_611_directory_html() {
 }
 
 #[test]
-fn extracts_module_and_sha1_from_611_names() {
+fn extracts_module_and_checksum_from_611_names() {
     assert_eq!(
         qt_archive_module(
             "6.11.0-0-202603180534qtbase-Linux-RHEL_9_6-GCC-Linux-RHEL_9_6-X86_64.7z"
@@ -2185,10 +2473,31 @@ fn extracts_module_and_sha1_from_611_names() {
     );
     assert_eq!(qt_archive_module("meta.7z"), "meta");
     assert_eq!(
-        parse_sha1_text("aabbccddeeff00112233445566778899aabbccdd  6.11.0-0-…qtbase.7z\n"),
-        Some("aabbccddeeff00112233445566778899aabbccdd".to_string())
+        parse_checksum_text(
+            "aabbccddeeff00112233445566778899aabbccdd  6.11.0-0-…qtbase.7z\n",
+            "sha1"
+        ),
+        Some(ArchiveChecksum::Sha1(
+            "aabbccddeeff00112233445566778899aabbccdd".to_string()
+        ))
     );
-    assert_eq!(parse_sha1_text("not a hash"), None);
+    assert_eq!(parse_checksum_text("not a hash", "sha1"), None);
+}
+
+#[test]
+fn verifies_sha256_and_sha1_archive_checksums() {
+    let root = test_scratch_dir("checksums");
+    let archive = root.join("archive.bin");
+    fs::write(&archive, b"hello").unwrap();
+
+    let sha256 = ArchiveChecksum::Sha256(
+        "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".to_string(),
+    );
+    let sha1 = ArchiveChecksum::Sha1("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string());
+    assert!(verify_archive_checksum(&archive, &sha256).unwrap());
+    assert!(verify_archive_checksum(&archive, &sha1).unwrap());
+
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[cfg(test)]
@@ -2243,4 +2552,75 @@ fn rejects_traversing_7z_entries() {
     assert!(extract_7z(&archive, &out).is_err());
     assert!(!out.join("..").join("evil.txt").exists());
     fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn accepts_matching_project_toolchain() {
+    let manifest = project::ManifestProject {
+        name: "smoke-app".to_string(),
+        qt_version: Some("6.11.1".to_string()),
+        compiler_family: Some("gcc".to_string()),
+        target_arch: Some("x86_64".to_string()),
+    };
+    assert!(validate_toolchain_values(&manifest, Some("6.11.1"), "gcc", "x86_64").is_ok());
+}
+
+#[test]
+fn reports_all_project_toolchain_mismatches() {
+    let manifest = project::ManifestProject {
+        name: "smoke-app".to_string(),
+        qt_version: Some("6.8.3".to_string()),
+        compiler_family: Some("clang".to_string()),
+        target_arch: Some("aarch64".to_string()),
+    };
+    let error = validate_toolchain_values(&manifest, Some("6.11.1"), "gcc", "x86_64")
+        .expect_err("mismatched pins must fail");
+    assert!(error.contains("Qt 6.8.3 is pinned"));
+    assert!(error.contains("compiler family clang is pinned"));
+    assert!(error.contains("target architecture aarch64 is pinned"));
+}
+
+#[test]
+fn configured_qt_root_resolves_without_path_lookup() {
+    let root = test_scratch_dir("configured_qt");
+    let qt_root = root.join("qt");
+    let qmake = qt_root.join("bin").join(qmake_binary_name());
+    fs::create_dir_all(qmake.parent().unwrap()).unwrap();
+    fs::write(&qmake, b"").unwrap();
+    let config = GlobalConfig {
+        qt_roots: vec![qt_root.to_string_lossy().into_owned()],
+        ..GlobalConfig::default()
+    };
+
+    assert_eq!(resolve_qmake(&config), Some(qmake));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn discovers_yse_checkout_from_nested_directory() {
+    let root = test_scratch_dir("checkout");
+    let nested = root.join("examples").join("app");
+    fs::create_dir_all(root.join("crates").join("yse")).unwrap();
+    fs::write(root.join("crates/yse/Cargo.toml"), b"[package]\n").unwrap();
+    fs::create_dir_all(&nested).unwrap();
+
+    assert_eq!(discover_yse_checkout(&nested), Some(root.clone()));
+    assert_eq!(discover_yse_checkout(&env::temp_dir()), None);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn resolves_configured_cargo_target_directory() {
+    let cwd = Path::new("/workspace/app");
+    let absolute = env::temp_dir().join("gansi-target-cache");
+    assert_eq!(cargo_target_dir(cwd, None).unwrap(), cwd.join("target"));
+    assert_eq!(
+        cargo_target_dir(cwd, Some(std::ffi::OsStr::new("cache"))).unwrap(),
+        cwd.join("cache")
+    );
+    assert_eq!(
+        cargo_target_dir(cwd, Some(absolute.as_os_str())).unwrap(),
+        absolute
+    );
+    assert!(cargo_target_dir(cwd, Some(std::ffi::OsStr::new(""))).is_err());
 }

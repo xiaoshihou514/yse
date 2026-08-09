@@ -201,6 +201,7 @@ pub use views::{
     ButtonView, CheckBoxView, ComboBoxView, LabelView, LineEditView, ProgressBarView, SliderView,
     SpinBoxView, button, checkbox, combo_box, label, line_edit, progress_bar, slider, spin_box,
 };
+/// A stretchable empty item that consumes spare layout space.
 pub struct SpacerView;
 
 /// Describe a stretch spacer.

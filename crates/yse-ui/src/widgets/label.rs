@@ -7,6 +7,7 @@ use crate::widgets::{IntoWidget, widget_wrapper};
 use std::rc::Rc;
 use yse_model::Signal;
 
+/// A retained text label widget.
 pub struct Label {
     pub(crate) inner: Rc<Component>,
 }
