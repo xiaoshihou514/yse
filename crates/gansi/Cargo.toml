@@ -8,7 +8,7 @@ rust-version = "1.89"
 repository = "https://github.com/xiaoshihou514/yse"
 homepage = "https://github.com/xiaoshihou514/yse"
 documentation = "https://docs.rs/gansi"
-readme = "../../README.md"
+readme = "../../README.en.md"
 keywords = ["qt", "gui", "desktop", "cli", "packaging"]
 categories = ["command-line-utilities", "development-tools"]
 

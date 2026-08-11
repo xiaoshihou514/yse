@@ -8,7 +8,7 @@ rust-version = "1.89"
 repository = "https://github.com/xiaoshihou514/yse"
 homepage = "https://github.com/xiaoshihou514/yse"
 documentation = "https://docs.rs/yse-model"
-readme = "../../README.md"
+readme = "../../README.en.md"
 keywords = ["reactive", "signals", "frp", "desktop"]
 categories = ["data-structures", "gui"]
 
