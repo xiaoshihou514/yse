@@ -383,8 +383,11 @@ pub fn bundle(project: &Project, profile: BundleProfile) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     if qt_platform != "offscreen" {
+        let windeployqt = find_qt_tool("windeployqt")
+            .or_else(|| find_command_any("windeployqt"))
+            .ok_or("cannot deploy Qt: windeployqt was not found in the gansi Qt root or PATH")?;
         run_deploy_tool(
-            "windeployqt",
+            &windeployqt.to_string_lossy(),
             &[destination.to_string_lossy().to_string()],
             &dist,
         )?;
@@ -880,6 +883,35 @@ fn find_qt_qmake() -> Option<PathBuf> {
     None
 }
 
+/// Locate a Qt tool (e.g. `windeployqt`) in the gansi-managed Qt root's bin
+/// directory, falling back to PATH lookups in the caller.
+fn find_qt_tool(tool: &str) -> Option<PathBuf> {
+    let tool = if cfg!(target_os = "windows") {
+        format!("{tool}.exe")
+    } else {
+        tool.to_string()
+    };
+    if let Ok(config) = crate::load_global_config() {
+        for root in config.qt_roots {
+            let candidate = PathBuf::from(root).join("bin").join(&tool);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    // Fall back to the QMAKE-resolved root (e.g. when the config does not
+    // record qt_roots but qmake is reachable).
+    if let Some(qmake) = find_qt_qmake()
+        && let Some(bin_dir) = qmake.parent()
+    {
+        let candidate = bin_dir.join(&tool);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// Copy a Qt library or plugin, preserving symlinks: `fs::copy` would turn
 /// soname links into plain files containing the target name, breaking the
 /// bundled runtime at launch.
@@ -1035,6 +1067,18 @@ fn find_command<const N: usize>(names: [&str; N]) -> Option<PathBuf> {
             if candidate.is_file() {
                 return Some(candidate);
             }
+        }
+    }
+    None
+}
+
+/// Search PATH for a single executable on any platform.
+fn find_command_any(tool: &str) -> Option<PathBuf> {
+    let path = env::var_os("PATH")?;
+    for directory in env::split_paths(&path) {
+        let candidate = directory.join(tool);
+        if candidate.is_file() {
+            return Some(candidate);
         }
     }
     None
