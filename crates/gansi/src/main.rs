@@ -445,7 +445,6 @@ fn add_yse_dependency(project: &project::Project, target: &Path) -> Result<(), S
             .join("yse")
             .to_string_lossy()
             .into_owned(),
-        "--offline".to_string(),
     ];
     let status = ProcessCommand::new("cargo")
         .args(&args)
@@ -729,8 +728,9 @@ fn install_qt_from_mirrors(
         }
 
         candidates.sort_by_key(|candidate| archive_preference(&candidate.archive_name));
+        let mut module_failures = 0usize;
         for candidate in candidates {
-            install_qt_candidate(
+            let installed = install_qt_candidate(
                 &candidate,
                 &mirror_base,
                 &work_dir,
@@ -739,6 +739,19 @@ fn install_qt_from_mirrors(
                 &qt_arch,
                 &mut install_root,
             )?;
+            if !installed {
+                module_failures += 1;
+            }
+        }
+        if module_failures > 0 {
+            println!(
+                "  {module_failures} Qt module archive(s) failed; the install is incomplete."
+            );
+            let _ = fs::remove_dir_all(expected_root);
+            return Err(format!(
+                "{module_failures} Qt module archive(s) failed to download/verify/extract; \
+                 run `gansi setup` again to retry"
+            ));
         }
 
         if install_root.is_some() {
@@ -758,6 +771,7 @@ fn finalize_qt_install(
 ) -> Result<Option<PathBuf>, String> {
     if let Some(root) = install_root.as_deref() {
         ensure_qt_library_soname_links(root)?;
+        relocate_top_level_libraries(root)?;
     }
 
     if let Err(error) = fs::remove_dir_all(work_dir) {
@@ -774,6 +788,47 @@ fn finalize_qt_install(
         }
     }
     Ok(install_root)
+}
+
+/// Some Qt 6.8-era module archives merge their payload at the Qt root rather
+/// than under `lib/` (notably ICU), leaving `libicu*.so` next to `bin/`.
+/// Move any top-level shared library into `lib/` so the loader finds it.
+fn relocate_top_level_libraries(root: &Path) -> Result<(), String> {
+    let lib_dir = root.join("lib");
+    fs::create_dir_all(&lib_dir)
+        .map_err(|error| format!("cannot create {}: {error}", lib_dir.display()))?;
+    for entry in fs::read_dir(root)
+        .map_err(|error| format!("cannot read {}: {error}", root.display()))?
+    {
+        let entry = entry.map_err(|error| format!("cannot read directory entry: {error}"))?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with("lib") || !name.contains(".so") {
+            continue;
+        }
+        let source = entry.path();
+        let destination = lib_dir.join(name);
+        if source.symlink_metadata().map_err(|error| {
+            format!("cannot read metadata of {}: {error}", source.display())
+        })?
+        .is_dir()
+        {
+            continue;
+        }
+        if destination.exists() {
+            continue;
+        }
+        fs::rename(&source, &destination).map_err(|error| {
+            format!(
+                "cannot move {} to {}: {error}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 /// Qt 6.11+ dropped the aggregated `Updates.xml`: each package now lives in
@@ -857,9 +912,10 @@ fn install_qt_611_from_mirrors(
         }
         println!("Selected mirror: {} ({})", mirror.label, mirror.base_url);
 
+        let mut module_failures = 0usize;
         for archive in &archives {
             let archive_url = url_join(&package_url, &[archive]);
-            stage_and_fold_archive(
+            let installed = stage_and_fold_archive(
                 archive,
                 &archive_url,
                 &work_dir,
@@ -868,6 +924,21 @@ fn install_qt_611_from_mirrors(
                 &qt_arch,
                 &mut install_root,
             )?;
+            if !installed {
+                module_failures += 1;
+            }
+        }
+        if module_failures > 0 {
+            // A partial Qt install must not be registered as success: the
+            // missing module leaves shared libraries truncated or absent.
+            println!(
+                "  {module_failures} Qt module archive(s) failed; the install is incomplete."
+            );
+            let _ = fs::remove_dir_all(expected_root);
+            return Err(format!(
+                "{module_failures} Qt module archive(s) failed to download/verify/extract; \
+                 run `gansi setup` again to retry"
+            ));
         }
 
         if install_root.is_some() {
@@ -965,21 +1036,37 @@ fn stage_and_fold_archive(
     qt_full_version: &str,
     qt_arch: &str,
     install_root: &mut Option<PathBuf>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let checksum = match fetch_archive_checksum(archive_url) {
         Ok(checksum) => checksum,
         Err(error) => {
             println!("  {archive_name} checksum unavailable: {error}");
-            return Ok(());
+            return Ok(false);
         }
     };
     let stage = work_dir.join(format!(
         "archive_{}",
         archive_name.replace(['/', '\\'], "_")
     ));
-    if let Err(error) = http_download_file(archive_url, &stage) {
-        println!("  {archive_name} download failed: {error}");
-        return Ok(());
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        match http_download_file(archive_url, &stage) {
+            Ok(()) => break,
+            Err(error) if attempts < 3 => {
+                // Large Qt archives frequently hit transient disconnects;
+                // retry a couple of times before declaring the module failed.
+                println!(
+                    "  {archive_name} download attempt {attempts} failed: {error}; retrying"
+                );
+                let _ = fs::remove_file(&stage);
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Err(error) => {
+                println!("  {archive_name} download failed after {attempts} attempts: {error}");
+                return Ok(false);
+            }
+        }
     }
 
     match verify_archive_checksum(&stage, &checksum) {
@@ -987,12 +1074,12 @@ fn stage_and_fold_archive(
         Ok(false) => {
             println!("  {archive_name} checksum mismatch");
             let _ = fs::remove_file(&stage);
-            return Ok(());
+            return Ok(false);
         }
         Err(error) => {
             println!("  {archive_name} checksum check failed: {error}");
             let _ = fs::remove_file(&stage);
-            return Ok(());
+            return Ok(false);
         }
     }
 
@@ -1006,7 +1093,7 @@ fn stage_and_fold_archive(
     if let Err(error) = extract_archive(&stage, &extract_dir) {
         println!("  failed to extract {archive_name}: {error}");
         let _ = fs::remove_file(&stage);
-        return Ok(());
+        return Ok(false);
     }
 
     if let Some(found_root) = find_qmake_root(&extract_dir).filter(|root| has_qmake(root)) {
@@ -1021,7 +1108,7 @@ fn stage_and_fold_archive(
             copy_dir_all(&payload_root, root)?;
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Download, verify, and stage one archive candidate, then fold its Qt root
@@ -1035,7 +1122,7 @@ fn install_qt_candidate(
     qt_full_version: &str,
     qt_arch: &str,
     install_root: &mut Option<PathBuf>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let mut archive_path = String::new();
     if !candidate.package_name.is_empty() {
         archive_path.push_str(&candidate.package_name);
@@ -1354,6 +1441,25 @@ fn extract_archive(archive: &Path, target: &Path) -> Result<(), String> {
 /// flow. Each entry is written relative to `target`; absolute or
 /// parent-traversing paths are rejected.
 fn extract_7z(archive: &Path, target: &Path) -> Result<(), String> {
+    // Pass 1: collect every entry name. The 7z format stores Unix symlinks as
+    // regular entries whose content is the link target, so we need the full
+    // name set to resolve them after extraction.
+    let names = {
+        let mut reader = sevenz_rust2::ArchiveReader::open(
+            archive,
+            sevenz_rust2::Password::empty(),
+        )
+        .map_err(|error| format!("cannot read 7z {}: {error}", archive.display()))?;
+        let mut names = HashSet::new();
+        reader
+            .for_each_entries(|entry, _input| {
+                names.insert(entry.name.clone());
+                Ok(true)
+            })
+            .map_err(|error| format!("cannot list 7z {}: {error}", archive.display()))?;
+        names
+    };
+
     let mut reader = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
         .map_err(|error| format!("cannot read 7z {}: {error}", archive.display()))?;
     let mut failure: Option<String> = None;
@@ -1382,6 +1488,72 @@ fn extract_7z(archive: &Path, target: &Path) -> Result<(), String> {
             if !entry.has_stream {
                 return Ok(true);
             }
+            // Only short entries can be stored symlinks; read those fully.
+            if entry.size <= 512 {
+                let mut payload = Vec::new();
+                if let Err(error) = input.read_to_end(&mut payload) {
+                    failure = Some(format!("cannot read entry {}: {error}", entry.name));
+                    return Ok(false);
+                }
+                if let Some(link_target) = stored_symlink_target(&payload, &entry.name, &names) {
+                    if destination.exists() {
+                        let _ = fs::remove_file(&destination);
+                    }
+                    if let Some(parent) = destination.parent()
+                        && let Err(error) = fs::create_dir_all(parent)
+                    {
+                        failure = Some(format!(
+                            "cannot create {}: {error}",
+                            parent.display()
+                        ));
+                        return Ok(false);
+                    }
+                    if let Err(error) = make_symlink(Path::new(link_target), &destination) {
+                        failure = Some(format!(
+                            "cannot create symlink {}: {error}",
+                            destination.display()
+                        ));
+                        return Ok(false);
+                    }
+                    return Ok(true);
+                }
+                // Not a symlink: write the buffered payload.
+                if let Some(parent) = destination.parent()
+                    && let Err(error) = fs::create_dir_all(parent)
+                {
+                    failure = Some(format!(
+                        "cannot create {}: {error}",
+                        parent.display()
+                    ));
+                    return Ok(false);
+                }
+                let mut output = match fs::File::create(&destination) {
+                    Ok(output) => output,
+                    Err(error) => {
+                        failure = Some(format!(
+                            "cannot create {}: {error}",
+                            destination.display()
+                        ));
+                        return Ok(false);
+                    }
+                };
+                if let Err(error) = io::Write::write_all(&mut output, &payload) {
+                    failure = Some(format!(
+                        "cannot write {}: {error}",
+                        destination.display()
+                    ));
+                    return Ok(false);
+                }
+                drop(output);
+                if make_executable(&destination).is_err() {
+                    failure = Some(format!(
+                        "cannot chmod {} on a Unix host",
+                        destination.display()
+                    ));
+                    return Ok(false);
+                }
+                return Ok(true);
+            }
             if let Some(parent) = destination.parent()
                 && let Err(error) = fs::create_dir_all(parent)
             {
@@ -1399,10 +1571,71 @@ fn extract_7z(archive: &Path, target: &Path) -> Result<(), String> {
                 failure = Some(format!("cannot write {}: {error}", destination.display()));
                 return Ok(false);
             }
+            drop(output);
+            // Qt 7z archives do not carry Unix permission bits; without this
+            // fixup every extracted binary (qmake, tools, plugins) would land
+            // as mode 0644 and fail to execute on Linux.
+            if make_executable(&destination).is_err() {
+                failure = Some(format!(
+                    "cannot chmod {} on a Unix host",
+                    destination.display()
+                ));
+                return Ok(false);
+            }
             Ok(true)
         })
         .map_err(|error| format!("7z decode failed: {error}"))?;
     failure.map_or(Ok(()), Err)
+}
+
+/// Decide whether a 7z entry is a stored symlink. Qt archives encode links as
+/// a short payload naming another entry in the same archive (e.g.
+/// `libQt6Core.so.6.8.3`); anything larger than a path cannot be one.
+fn stored_symlink_target<'a>(
+    payload: &'a [u8],
+    entry_name: &str,
+    names: &HashSet<String>,
+) -> Option<&'a str> {
+    if payload.is_empty() || payload.len() > 512 {
+        return None;
+    }
+    let text = std::str::from_utf8(payload).ok()?.trim_end_matches(['\n', '\r']);
+    if text.is_empty() || text.contains('\0') {
+        return None;
+    }
+    let target = Path::new(text);
+    if target.is_absolute()
+        || target
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    // The target must name a sibling file in the same directory of this
+    // archive (Qt soname links are plain relative names).
+    let entry_path = Path::new(entry_name);
+    let expected = entry_path
+        .parent()
+        .map(|parent| parent.join(text).to_string_lossy().into_owned())
+        .unwrap_or_else(|| text.to_string());
+    if names.contains(&expected) {
+        Some(text)
+    } else {
+        None
+    }
+}
+
+/// On Unix, mark a freshly extracted regular file executable (0755). On
+/// Windows the attribute is meaningless and skipped.
+#[cfg(unix)]
+fn make_executable(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 fn verify_archive_checksum(path: &Path, checksum: &ArchiveChecksum) -> Result<bool, String> {
@@ -1671,6 +1904,22 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
                     .map_err(|error| format!("cannot create {}: {error}", destination.display()))?;
             }
             copy_dir_all(&source, &destination)?;
+        } else if metadata.file_type().is_symlink() {
+            // fs::copy dereferences symlinks, turning Qt's soname links into
+            // plain files containing the target name. Recreate the link.
+            let target = fs::read_link(&source).map_err(|error| {
+                format!("cannot read symlink {}: {error}", source.display())
+            })?;
+            if destination.exists() {
+                let _ = fs::remove_file(&destination);
+            }
+            make_symlink(&target, &destination).map_err(|error| {
+                format!(
+                    "cannot create symlink {} -> {}: {error}",
+                    destination.display(),
+                    target.display()
+                )
+            })?;
         } else {
             if destination.exists() {
                 let _ = fs::remove_file(&destination);
@@ -1685,6 +1934,18 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn make_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(not(unix))]
+fn make_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    // Windows directory junctions need privileges; a plain copy is a safe
+    // fallback because Qt on Windows ships real files, not soname links.
+    fs::copy(target, link).map(|_| ())
 }
 
 fn url_join(base: &str, segments: &[&str]) -> String {
@@ -2532,6 +2793,41 @@ fn extracts_7z_round_trip() {
     let text = fs::read_to_string(out.join("dir").join("inner.txt")).unwrap();
     assert_eq!(text, "hello from 7z");
     fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn detects_stored_7z_symlinks() {
+    let mut names = HashSet::new();
+    names.insert("lib/libQt6Core.so".to_string());
+    names.insert("lib/libQt6Core.so.6".to_string());
+    names.insert("lib/libQt6Core.so.6.8.3".to_string());
+    names.insert("bin/qmake".to_string());
+
+    // A short sibling path is a symlink.
+    assert_eq!(
+        stored_symlink_target(b"libQt6Core.so.6.8.3", "lib/libQt6Core.so.6", &names),
+        Some("libQt6Core.so.6.8.3")
+    );
+    // A real small file whose name is not in the archive is not a symlink.
+    assert_eq!(
+        stored_symlink_target(b"metadata", "lib/some.data", &names),
+        None
+    );
+    // Oversized payloads cannot be links.
+    let big = vec![b'x'; 1024];
+    assert_eq!(
+        stored_symlink_target(&big, "lib/big.bin", &names),
+        None
+    );
+    // Absolute or parent-traversing targets are rejected.
+    assert_eq!(
+        stored_symlink_target(b"/etc/passwd", "lib/x", &names),
+        None
+    );
+    assert_eq!(
+        stored_symlink_target(b"../escape", "lib/x", &names),
+        None
+    );
 }
 
 #[test]

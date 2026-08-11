@@ -729,7 +729,7 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
                 continue;
             }
             let destination = destination_dir.join(file_name);
-            fs::copy(&source, &destination)
+            copy_qt_object(&source, &destination)
                 .map_err(|error| format!("cannot copy Qt plugin {}: {error}", source.display()))?;
             scan_queue.push_back(destination);
         }
@@ -752,7 +752,7 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
                 continue;
             }
             let destination = lib_dir.join(file_name);
-            fs::copy(&dependency, &destination).map_err(|error| {
+            copy_qt_object(&dependency, &destination).map_err(|error| {
                 format!("cannot copy Qt library {}: {error}", dependency.display())
             })?;
             qt_libraries.insert(file_name.to_string(), dependency);
@@ -796,6 +796,27 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
     write_glibc_requirements(binary, &lib_dir, &plugin_dir, dist)?;
     copy_qt_license_texts(&qt_prefix, dist)?;
     Ok(())
+}
+
+/// Copy a Qt library or plugin, preserving symlinks: `fs::copy` would turn
+/// soname links into plain files containing the target name, breaking the
+/// bundled runtime at launch.
+fn copy_qt_object(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let metadata = fs::symlink_metadata(source)?;
+    if metadata.file_type().is_symlink() {
+        let target = fs::read_link(source)?;
+        let _ = fs::remove_file(destination);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, destination)?;
+        }
+        #[cfg(not(unix))]
+        {
+            fs::copy(&target, destination)?;
+        }
+        return Ok(());
+    }
+    fs::copy(source, destination).map(|_| ())
 }
 
 #[cfg(target_os = "linux")]
