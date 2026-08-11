@@ -25,3 +25,24 @@
    fun:start_thread
    fun:clone
 }
+
+{
+   fontconfig_expat_config_parse_cache
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   obj:*/libfontconfig.so.*
+   ...
+   obj:*/libexpat.so.*
+   fun:XML_ParseBuffer
+   ...
+}
+
+{
+   fontconfig_font_cache_lifetime
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   obj:*/libfontconfig.so.*
+   ...
+}
