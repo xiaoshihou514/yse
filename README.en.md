@@ -14,7 +14,7 @@ connection lifetimes.
 ## Five-minute local start
 
 You only need Rust and a C++ toolchain. `gansi` downloads and manages Qt 6
-itself (never through the system package manager).
+itself.
 
 Install the C++ toolchain for your platform:
 

@@ -7,8 +7,7 @@ It requires Rust 1.89 or newer.
 
 ## Requirements
 
-Only a C++ toolchain is required; `gansi setup` downloads Qt 6 itself (never
-through the system package manager).
+Only a C++ toolchain is required; `gansi setup` downloads Qt 6 itself.
 
 Fedora:
 
