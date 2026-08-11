@@ -13,15 +13,26 @@ connection lifetimes.
 
 ## Five-minute local start
 
-Install the native dependencies:
+You only need Rust and a C++ toolchain. `gansi` downloads and manages Qt 6
+itself (never through the system package manager).
+
+Install the C++ toolchain for your platform:
 
 ```sh
 # Fedora
-sudo dnf install qt6-qtbase-devel gcc-c++ cmake ninja-build pkgconf-pkg-config
+sudo dnf install gcc-c++ cmake ninja-build pkgconf-pkg-config
 
-# Ubuntu
-sudo apt install qt6-base-dev g++ cmake ninja-build pkg-config
+# Ubuntu / Debian
+sudo apt install g++ cmake ninja-build pkg-config
+
+# openSUSE Tumbleweed
+sudo zypper install gcc-c++ cmake ninja lld pkgconf
+
+# Windows (Visual Studio Build Tools 2022 with the "Desktop development with C++" workload)
+#   + CMake and Ninja: scoop install cmake ninja
 ```
+
+Then let `gansi` fetch Qt:
 
 Create and run an application against this checkout:
 
@@ -33,6 +44,10 @@ gansi create --local /path/to/yse hello-yse
 cd hello-yse
 gansi run
 ```
+
+`gansi setup` (run automatically by the commands above when needed) downloads
+prebuilt Qt 6 binaries into the gansi data directory — no `qt6-*-devel`
+packages and no manual Qt installer.
 
 The generated application owns reactive Rust state, derives its label text,
 and releases widget bindings with the Qt object tree. Its minimal `build.rs`
@@ -227,9 +242,9 @@ it headless with
 ## Development environment
 
 - Rust 1.89 or newer (edition 2024)
-- C++17 compiler and CMake
-- Qt 6 with the Widgets module:
-  `sudo apt install -y qt6-base-dev ninja-build libgl1-mesa-dev`
+- A C++17 compiler and CMake/Ninja (see the platform commands above)
+- Qt 6 is downloaded and managed by `gansi setup`; do not install
+  `qt6-base-dev` / `qt6-qtbase-devel` yourself
 
 ## Build and run
 

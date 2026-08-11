@@ -7,16 +7,31 @@ It requires Rust 1.89 or newer.
 
 ## Requirements
 
+Only a C++ toolchain is required; `gansi setup` downloads Qt 6 itself (never
+through the system package manager).
+
 Fedora:
 
 ```sh
-sudo dnf install qt6-qtbase-devel gcc-c++ cmake ninja-build pkgconf-pkg-config
+sudo dnf install gcc-c++ cmake ninja-build pkgconf-pkg-config
 ```
 
-Ubuntu:
+Ubuntu / Debian:
 
 ```sh
-sudo apt install qt6-base-dev g++ cmake ninja-build pkg-config
+sudo apt install g++ cmake ninja-build pkg-config
+```
+
+openSUSE Tumbleweed:
+
+```sh
+sudo zypper install gcc-c++ cmake ninja lld pkgconf
+```
+
+Windows:
+
+```sh
+scoop install cmake ninja   # plus Visual Studio Build Tools (C++ workload)
 ```
 
 ## Run

@@ -11,15 +11,26 @@ Yse 面向数据密集的原生桌面应用：既能享受 Qt 成熟的控件与
 
 ## 五分钟本地起步
 
-安装原生依赖：
+你只需要 Rust 与 C++ 工具链。Qt 6 由 `gansi` 自行下载并管理（绝不经过系统
+包管理器）。
+
+按平台安装 C++ 工具链：
 
 ```sh
 # Fedora
-sudo dnf install qt6-qtbase-devel gcc-c++ cmake ninja-build pkgconf-pkg-config
+sudo dnf install gcc-c++ cmake ninja-build pkgconf-pkg-config
 
-# Ubuntu
-sudo apt install qt6-base-dev g++ cmake ninja-build pkg-config
+# Ubuntu / Debian
+sudo apt install g++ cmake ninja-build pkg-config
+
+# openSUSE Tumbleweed
+sudo zypper install gcc-c++ cmake ninja lld pkgconf
+
+# Windows（Visual Studio Build Tools 2022，勾选“使用 C++ 的桌面开发”工作负载）
+#   + CMake 与 Ninja：scoop install cmake ninja
 ```
+
+然后让 `gansi` 获取 Qt：
 
 基于当前检出创建并运行一个应用：
 
@@ -31,6 +42,9 @@ gansi create --local /path/to/yse hello-yse
 cd hello-yse
 gansi run
 ```
+
+`gansi setup`（上述命令在需要时自动运行）会将预编译的 Qt 6 二进制下载到
+gansi 数据目录——不需要 `qt6-*-devel` 软件包，也不需要手动安装 Qt。
 
 生成的应用持有反应式 Rust 状态、派生其标签文本，并在 Qt 对象树销毁时
 释放控件绑定。其极简 `build.rs` 仅保留 CXX-Qt 依赖初始化器；不生成
@@ -201,9 +215,9 @@ Windows 用 `windows-sys`。它跟随系统配色（亮/暗）、显示真实进
 ## 开发环境
 
 - Rust 1.89 或更新（edition 2024）
-- C++17 编译器与 CMake
-- 带 Widgets 模块的 Qt 6：
-  `sudo apt install -y qt6-base-dev ninja-build libgl1-mesa-dev`
+- C++17 编译器与 CMake/Ninja（命令见上文）
+- Qt 6 由 `gansi setup` 下载并管理；请勿自行安装
+  `qt6-base-dev` / `qt6-qtbase-devel`
 
 ## 构建与运行
 

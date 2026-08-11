@@ -289,7 +289,7 @@ struct HealthCheck {
     found: bool,
     version: Option<String>,
     required: bool,
-    suggestion: &'static str,
+    suggestion: String,
 }
 
 /// Outcome of a `doctor` run, mapped to a process exit code at the boundary.
@@ -2242,28 +2242,48 @@ fn candidate_qt_roots(config: &GlobalConfig) -> Vec<PathBuf> {
 }
 
 fn collect_health_checks() -> Vec<HealthCheck> {
+    let toolchain_commands = platform_toolchain_commands();
     // On Windows the C++ toolchain is MSVC (`cl.exe` from the VS developer
     // prompt); `c++`/`g++` exist only under MinGW-style installs.
     let compiler_check = if cfg!(target_os = "windows") {
         check_tool(
             "cl",
             true,
-            "Install Visual Studio Build Tools with the C++ workload.",
+            &format!(
+                "Install Visual Studio Build Tools with the C++ workload. {}",
+                toolchain_commands
+            ),
         )
     } else {
-        check_tool("c++", true, "Install a C++17 compiler (GCC or Clang).")
+        check_tool(
+            "c++",
+            true,
+            &format!("Install a C++17 compiler (GCC or Clang). {toolchain_commands}"),
+        )
     };
     let mut checks = vec![
         check_tool("rustc", true, "Install Rust via rustup."),
         check_tool("cargo", true, "Install Rust via rustup."),
         compiler_check,
-        check_tool("cmake", true, "Install CMake."),
-        check_tool("ninja", true, "Install Ninja."),
+        check_tool(
+            "cmake",
+            true,
+            &format!("Install CMake. {toolchain_commands}"),
+        ),
+        check_tool(
+            "ninja",
+            true,
+            &format!("Install Ninja. {toolchain_commands}"),
+        ),
     ];
     // pkg-config is a Linux/macOS tool; Qt for Windows resolves through
     // CMake instead, so do not require it there.
     if cfg!(not(target_os = "windows")) {
-        checks.push(check_tool("pkg-config", true, "Install pkg-config."));
+        checks.push(check_tool(
+            "pkg-config",
+            true,
+            &format!("Install pkg-config. {toolchain_commands}"),
+        ));
     }
     if cfg!(target_os = "linux") {
         checks.extend([
@@ -2278,7 +2298,7 @@ fn collect_health_checks() -> Vec<HealthCheck> {
             found: true,
             version: qmake_version(&qmake),
             required: true,
-            suggestion: "n/a",
+            suggestion: "n/a".to_string(),
         });
         checks.push(check_qt_platform_plugin(&qmake));
     } else {
@@ -2287,18 +2307,34 @@ fn collect_health_checks() -> Vec<HealthCheck> {
             found: false,
             version: None,
             required: true,
-            suggestion: "Install Qt 6 development files or run `gansi setup`.",
+            suggestion: "Install Qt 6 development files or run `gansi setup`.".to_string(),
         });
         checks.push(HealthCheck {
             label: "Qt platform plugin",
             found: false,
             version: None,
             required: true,
-            suggestion: "Install the Qt 6 platform plugins package.",
+            suggestion: "Install the Qt 6 platform plugins package.".to_string(),
         });
     }
 
     checks
+}
+
+/// One-line install command for the C++ toolchain on the current platform.
+fn platform_toolchain_commands() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "Quick install: scoop install cmake ninja (Visual Studio Build Tools \
+         provides the C++ compiler)."
+    } else if cfg!(target_os = "linux") {
+        // Distro-agnostic guidance; gansi never installs Qt through these.
+        "Quick install (Fedora): sudo dnf install gcc-c++ cmake ninja-build \
+         pkgconf-pkg-config | (Ubuntu): sudo apt install g++ cmake ninja-build \
+         pkg-config | (openSUSE): sudo zypper install gcc-c++ cmake ninja lld pkgconf"
+    } else {
+        "Install a C++17 compiler, CMake and Ninja from your platform's \
+         package manager."
+    }
 }
 
 fn check_qt_platform_plugin(qmake: &Path) -> HealthCheck {
@@ -2315,18 +2351,18 @@ fn check_qt_platform_plugin(qmake: &Path) -> HealthCheck {
         found: plugins.is_some(),
         version: plugins.map(|path| path.display().to_string()),
         required: true,
-        suggestion: "Install the Qt 6 platform plugins package.",
+        suggestion: "Install the Qt 6 platform plugins package.".to_string(),
     }
 }
 
-fn check_tool(command: &'static str, required: bool, suggestion: &'static str) -> HealthCheck {
+fn check_tool(command: &'static str, required: bool, suggestion: &str) -> HealthCheck {
     if find_command(command).is_none() {
         return HealthCheck {
             label: command,
             found: false,
             version: None,
             required,
-            suggestion,
+            suggestion: suggestion.to_string(),
         };
     }
     // The version query may fail for tools whose version output is unusual
@@ -2336,7 +2372,7 @@ fn check_tool(command: &'static str, required: bool, suggestion: &'static str) -
         found: true,
         version: tool_version(command),
         required,
-        suggestion,
+        suggestion: suggestion.to_string(),
     }
 }
 
