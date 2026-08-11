@@ -8,13 +8,31 @@ use std::cell::RefCell;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ListChange<T> {
     /// `items` inserted starting at `index`.
-    Insert { index: usize, items: Vec<T> },
+    Insert {
+        /// Index of the first inserted row.
+        index: usize,
+        /// Rows inserted at the index.
+        items: Vec<T>,
+    },
     /// `len` rows removed starting at `index`.
-    Remove { index: usize, len: usize },
+    Remove {
+        /// Index of the first removed row.
+        index: usize,
+        /// Number of consecutive rows removed.
+        len: usize,
+    },
     /// Rows replaced starting at `index`.
-    Update { index: usize, items: Vec<T> },
+    Update {
+        /// Index of the first replaced row.
+        index: usize,
+        /// Replacement rows in display order.
+        items: Vec<T>,
+    },
     /// The whole list was replaced.
-    Reset { items: Vec<T> },
+    Reset {
+        /// Complete replacement snapshot.
+        items: Vec<T>,
+    },
 }
 
 /// An incremental list model.

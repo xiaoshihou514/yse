@@ -7,6 +7,7 @@ use crate::widgets::{IntoWidget, widget_wrapper};
 use std::rc::Rc;
 use yse_model::Signal;
 
+/// A lightweight painted chart for one or more line series.
 pub struct LineChart {
     pub(crate) inner: Rc<Component>,
 }

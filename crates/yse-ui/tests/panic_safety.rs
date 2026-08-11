@@ -32,7 +32,6 @@ impl Drop for SilentPanics {
     }
 }
 
-#[test]
 fn panicking_click_handler_is_contained() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
     let _silent = SilentPanics::new();
@@ -60,7 +59,6 @@ fn panicking_click_handler_is_contained() {
     drop(window);
 }
 
-#[test]
 fn panicking_text_change_handler_is_contained() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
     let _silent = SilentPanics::new();
@@ -87,7 +85,6 @@ fn panicking_text_change_handler_is_contained() {
     drop(window);
 }
 
-#[test]
 fn panicking_selection_handler_is_contained() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
     let _silent = SilentPanics::new();
@@ -114,4 +111,11 @@ fn panicking_selection_handler_is_contained() {
         "healthy selection handler must observe both changes"
     );
     drop(window);
+}
+
+#[test]
+fn panic_safety_cases_share_one_qt_thread() {
+    panicking_click_handler_is_contained();
+    panicking_text_change_handler_is_contained();
+    panicking_selection_handler_is_contained();
 }

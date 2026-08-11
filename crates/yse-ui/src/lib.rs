@@ -5,6 +5,8 @@
 //! the Qt object lifetime: when the widget is destroyed, all of its bindings
 //! are released automatically.
 
+#![warn(missing_docs)]
+
 mod action;
 mod app;
 mod bridge;

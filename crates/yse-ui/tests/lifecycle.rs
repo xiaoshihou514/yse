@@ -1,7 +1,6 @@
 use yse_model::Var;
 use yse_ui::{Application, Window};
 
-#[test]
 fn closing_window_releases_all_bindings() {
     // Qt has no display on CI runners; the offscreen platform is enough.
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
@@ -26,7 +25,6 @@ fn closing_window_releases_all_bindings() {
     assert_eq!(flag.signal().observer_count(), 0);
 }
 
-#[test]
 fn menu_actions_trigger_and_release_with_window() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -56,7 +54,6 @@ fn menu_actions_trigger_and_release_with_window() {
     assert_eq!(seen.borrow().len(), 1);
 }
 
-#[test]
 fn child_dropped_before_window_is_safe() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -72,7 +69,6 @@ fn child_dropped_before_window_is_safe() {
     drop(window);
 }
 
-#[test]
 fn temporary_child_keeps_its_binding_until_window_teardown() {
     unsafe { std::env::set_var("QT_QPA_PLATFORM", "offscreen") };
 
@@ -88,4 +84,12 @@ fn temporary_child_keeps_its_binding_until_window_teardown() {
 
     drop(window);
     assert_eq!(flag.signal().observer_count(), 0);
+}
+
+#[test]
+fn lifecycle_cases_share_one_qt_thread() {
+    closing_window_releases_all_bindings();
+    menu_actions_trigger_and_release_with_window();
+    child_dropped_before_window_is_safe();
+    temporary_child_keeps_its_binding_until_window_teardown();
 }

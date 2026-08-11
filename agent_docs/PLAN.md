@@ -26,7 +26,7 @@ yse        Convenience facade that re-exports the public application API
 Future packages, deliberately out of scope until later:
 
 ```text
-yse-tool   Project creation, development, test, and packaging commands
+gansi      Project creation, development, test, and packaging commands
 yse-kde    Optional KDE Framework integrations
 ```
 
@@ -204,17 +204,15 @@ Make the supported path easy to create, test, package, and release.
 ### `gansi` commands
 
 ```text
-gansi new <name>
-gansi setup
-gansi doctor
-gansi dev
+gansi create <name>
+gansi run
 gansi test
-gansi bundle
+gansi build
 ```
 
 ### Responsibilities
 
-- Generate a Rust workspace, metadata, icon placeholders, and CI workflow.
+- Generate a Rust workspace, metadata, and CI workflow.
 - Find or install a compatible Qt SDK through a documented, license-aware flow.
 - Pin the Qt version, compiler family, and target architecture in project
   configuration.

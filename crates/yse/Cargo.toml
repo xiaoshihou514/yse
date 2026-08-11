@@ -2,9 +2,19 @@
 name = "yse"
 version = "0.1.0"
 edition = "2024"
-description = "Reactive Qt desktop applications from Rust (facade over yse-model and yse-ui)"
+description = "Write reactive Qt desktop applications in Rust"
 license = "MIT OR Apache-2.0"
+rust-version = "1.89"
+repository = "https://github.com/xiaoshihou514/yse"
+homepage = "https://github.com/xiaoshihou514/yse"
+documentation = "https://docs.rs/yse"
+readme = "../../README.md"
+keywords = ["qt", "widgets", "gui", "desktop", "reactive"]
+categories = ["gui"]
 
 [dependencies]
 yse-model = { version = "0.1.0", path = "../yse-model" }
 yse-ui = { version = "0.1.0", path = "../yse-ui" }
+
+[build-dependencies]
+cxx-qt-build = "0.9.1"

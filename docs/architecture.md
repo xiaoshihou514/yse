@@ -10,10 +10,10 @@ owns reactive state, widget composition, and developer tooling.
 crates/yse        Convenience facade: re-exports yse-model + yse-ui
 crates/yse-model  Pure-Rust reactive runtime (no Qt, no unsafe)
 crates/yse-ui     Reactive Qt Widgets layer (CXX bridge + C++ shim)
-crates/yse-tool   Developer toolchain (`gansi new/setup/dev/test/bundle`)
+crates/gansi      Developer toolchain (`gansi create/run/test/build`)
 ```
 
-Dependency direction: `yse -> yse-ui -> yse-model`. `yse-tool`, examples, and
+Dependency direction: `yse -> yse-ui -> yse-model`. `gansi`, examples, and
 the example crates stand apart. `yse-model` is independent of Qt and
 deterministic; `yse-ui` is a retained object tree (no virtual DOM).
 
@@ -93,15 +93,13 @@ For instance, `examples/media-converter/` owns its FFmpeg Rust facade, C++ bridg
 sources in `cpp/`, and build script; Qt Widgets and FFmpeg linkage do not leak
 into `yse-ui`.
 
-## Toolchain (`yse-tool`)
+## Toolchain (`gansi`)
 
-`gansi` generates a buildable CXX-Qt project with pinned
-configuration (`yse.toml`), an icon, and a release guide.
-`setup` installs Qt 6 automatically by downloading prebuilt binaries with
-`aqt` (installed via `uv`) into `.gansi/qt` on every platform, `doctor`
-reports the environment health, and `dev`/`test`/`bundle` wrap Cargo and Qt
-deployment tooling. Generated projects include a three-platform CI workflow
-using the same aqt-based Qt install.
+`gansi create` generates a buildable project template and pinned
+configuration (`gansi.toml`). Inside a yse checkout it defaults to the facade
+template (`use yse::*`), and outside that context it falls back to the
+standalone CXX-Qt template.
+`run`/`test`/`build` wrap Cargo and Qt deployment tooling.
 
 ## Testing strategy
 
@@ -123,7 +121,9 @@ using the same aqt-based Qt install.
 
 - The reactive graph is single-threaded by design; background work must return
   through a scheduler.
-- Windows/macOS builds are only verified from this development machine;
-  platform CI can be added later when quota allows.
-- The crates are not yet published; `gansi new` templates therefore use
-  the standalone CXX-Qt shape rather than depending on the facade.
+- Windows has build helpers but no current clean-host evidence in the recorded
+  validation matrix. macOS validation is deferred and does not block the first
+  release. Platform CI can be added later when quota allows.
+- The crates are not yet published; outside a local Yse checkout,
+  `gansi create` requires `--local <yse-checkout>` and never resolves an
+  unrelated registry package with the same name.

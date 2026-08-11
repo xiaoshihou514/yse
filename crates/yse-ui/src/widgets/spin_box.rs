@@ -7,6 +7,7 @@ use crate::widgets::{IntoWidget, value_two_way, widget_wrapper};
 use std::rc::Rc;
 use yse_model::{EventStream, Signal, Sink, Var};
 
+/// A retained integer spin-box widget.
 pub struct SpinBox {
     pub(crate) inner: Rc<Component>,
 }

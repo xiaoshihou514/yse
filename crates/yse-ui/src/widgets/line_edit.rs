@@ -7,6 +7,7 @@ use crate::widgets::{IntoWidget, widget_wrapper};
 use std::rc::Rc;
 use yse_model::{EventStream, Signal, Sink, Var};
 
+/// A retained single-line text editor.
 pub struct LineEdit {
     pub(crate) inner: Rc<Component>,
 }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>{{app_id}}</id>
+  <name>{{title}}</name>
+  <summary>Native Qt application built with Yse</summary>
+  <description>
+    <p>A native Qt 6 Widgets desktop application built in Rust with Yse and packaged for Linux desktop integration.</p>
+  </description>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <launchable type="desktop-id">{{app_id}}.desktop</launchable>
+  <provides>
+    <binary>{{name}}</binary>
+  </provides>
+</component>

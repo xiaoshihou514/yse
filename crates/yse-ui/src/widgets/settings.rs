@@ -3,6 +3,7 @@
 use crate::bridge as ffi;
 use std::rc::Rc;
 
+/// A cloneable handle to an application-scoped Qt settings store.
 pub struct Settings {
     inner: Rc<SettingsState>,
 }

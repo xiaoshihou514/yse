@@ -4,7 +4,7 @@ members = [
     "crates/yse",
     "examples/media-converter",
     "crates/yse-model",
-    "crates/yse-tool",
+    "crates/gansi",
     "crates/yse-ui",
     "examples/taskmgr",
 ]

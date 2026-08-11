@@ -4,16 +4,84 @@ Rust-first framework for building serious, cross-platform Qt 6 Widgets
 applications without QML. Uses CXX-Qt as the interoperability backend and
 borrows its reactive programming model from Airstream and Laminar.
 
+Yse is for data-rich native desktop applications that want Qt's mature
+widgets and Linux integration without writing QML or manually managing signal
+connection lifetimes.
+
+> **Pre-release:** the API is still changing and the crates are not published.
+> Use a local checkout while the clean-machine and packaging paths are hardened.
+
+## Five-minute local start
+
+Install the native dependencies:
+
+```sh
+# Fedora
+sudo dnf install qt6-qtbase-devel gcc-c++ cmake ninja-build pkgconf-pkg-config
+
+# Ubuntu
+sudo apt install qt6-base-dev g++ cmake ninja-build pkg-config
+```
+
+Create and run an application against this checkout:
+
+```sh
+cargo install --path crates/gansi
+gansi doctor
+cd /tmp
+gansi create --local /path/to/yse hello-yse
+cd hello-yse
+gansi run
+```
+
+The generated application owns reactive Rust state, derives its label text,
+and releases widget bindings with the Qt object tree. Its minimal `build.rs`
+retains CXX-Qt dependency initializers; no application-owned C++ or QML is
+generated.
+
+## Supported environments
+
+| Environment | Status |
+|---|---|
+| Fedora, Qt 6, GCC, Wayland/offscreen | Primary development environment |
+| Ubuntu, Qt 6, GCC | Supported; clean-machine validation in progress |
+| KDE Plasma and GNOME | Intended Tier 1 desktops; full UX matrix in progress |
+| Windows | Build helpers and task-manager backend available |
+| macOS | Experimental; does not block the first release |
+
+Run the full display-free Fedora acceptance path without sudo:
+
+```sh
+CCACHE_DISABLE=1 just release-check
+```
+
+This does not publish or upload anything. It runs the workspace, MSRV,
+dependency-license, standalone crate-package, generated-project, example, and
+Valgrind gates. The Linux smoke gate builds and executes the default release bundle; use
+`YSE_SMOKE_BUNDLE_PROFILE=debug just linux-smoke` for quicker packaging work.
+When a live Wayland session is available, `just examples-wayland-smoke` runs
+the same eight application flows against the native display plugin.
+
+See [docs/validation.md](docs/validation.md) for the exact verified environment
+and the platform scenarios that remain unverified.
+
+See [docs/roadmap-status.md](docs/roadmap-status.md) for a requirement-by-requirement
+mapping from the Phase 0–4 plan to implemented and verified evidence.
+
 See [agent_docs/PLAN.md](agent_docs/PLAN.md) for the full roadmap.
 
 Architecture notes are in [docs/architecture.md](docs/architecture.md) and the
-release process in [RELEASE.md](RELEASE.md).
+release process in [RELEASE.md](RELEASE.md). Qt and CXX-Qt have separate
+distribution obligations summarized in [docs/licensing.md](docs/licensing.md).
 
 ## Current state
 
-Phase 0 (CXX-Qt feasibility spike) through Phase 4 (`yse-tool`) are
-implemented. The [`yse`](crates/yse) facade re-exports the public API of both
-layers, so applications can `use yse::*` for the whole stack.
+The implementation described by Phase 0 (CXX-Qt feasibility spike) through
+Phase 4 (`gansi`) is present. Fedora-local functional and packaging gates pass,
+but the roadmap's clean-host and multi-platform exit criteria are not yet all
+verified; see [docs/validation.md](docs/validation.md). The
+[`yse`](crates/yse) facade re-exports the public API of both layers, so
+applications can `use yse::*` for the whole stack.
 
 [`yse-model`](crates/yse-model) is a pure-Rust reactive runtime (no Qt, no
 `unsafe`) with transactional, glitch-free propagation, mandatory subscription
@@ -79,38 +147,50 @@ row after driving the whole flow.
 
 ## Developer toolchain (`gansi`)
 
-[`yse-tool`](crates/yse-tool) is the Phase 4 developer CLI. Install it with:
+[`gansi`](crates/gansi) is the Phase 4 developer CLI. Install it with:
 
 ```sh
-cargo install --path crates/yse-tool
+cargo install --path crates/gansi
 ```
 
 Then:
 
 ```sh
-gansi new hello            # generate a project (buildable CXX-Qt template)
-gansi new --local /path/to/yse hello-facade  # generate against a local Yse checkout
+gansi create hello        # inside this checkout, auto-detect the local Yse facade
+gansi create --local /path/to/yse hello-facade  # elsewhere, select the checkout explicitly
 cd hello
-gansi setup                # install Qt 6 automatically (first time only)
-gansi doctor               # check the Rust/Qt/CMake environment
-gansi dev                  # build and run
-gansi test                 # run tests
-gansi bundle               # release build + platform bundle (windeployqt/macdeployqt when present)
+gansi run                 # build and run
+gansi test                # run tests
+gansi analyze             # Clippy, all targets, warnings denied
+gansi format --check      # verify rustfmt output
+gansi upgrade -- --offline # refresh Cargo.lock without network access
+gansi add serde -- --features derive # add a Cargo dependency
+gansi build               # release build + platform bundle (windeployqt/macdeployqt when present)
 ```
 
-`gansi` owns Qt 6 acquisition: on every platform it downloads prebuilt Qt 6
-binaries with `aqt` (installed through `uv` when missing) into the project's
-`.gansi/qt` — no manual Qt installer needed. The discovered Qt prefix is
-recorded in `.gansi/config.toml` and reused by later commands.
+Linux bundles include a launcher, application binary, required Qt libraries,
+selected desktop plugins, a Qt runtime inventory, and discoverable Qt license
+texts. Generated freedesktop and AppStream metadata plus a scalable icon are included under
+`share/` for package integration. `GLIBC_REQUIREMENTS.tsv` records the newest
+glibc symbol required by each bundled ELF object. Bundles intentionally keep glibc, graphics
+drivers, and non-Qt system libraries as target-system dependencies, listing
+their resolved build-host paths in `SYSTEM_RUNTIME.tsv`. A `.tar.gz` artifact
+preserves the complete relocatable directory for transfer and testing, with a
+SHA-256 digest in `dist/SHA256SUMS`.
 
 Generated projects pin the Qt version, compiler family, and target
-architecture in `yse.toml`, ship with a three-platform CI workflow
-(`.github/workflows/ci.yml` that installs Qt the same way `gansi` does), an
-icon placeholder, and a `RELEASE.md` guide that lists what stays
-application-specific (code signing, notarization, store submissions, native
-dependencies).
+architecture detected at creation in `gansi.toml`; `run`, `test`, and `build`
+reject mismatches before invoking Cargo. They also include a `RELEASE.md` guide that lists what
+stays application-specific (code signing, notarization, store submissions,
+native dependencies).
+Qt SDK archives downloaded by `gansi setup` are verified against per-archive
+checksum sidecars before extraction. SHA-256 is preferred, with SHA-1 fallback
+for Qt repository layouts that do not publish SHA-256 sidecars.
 The `--local` variant depends on the `yse` facade crate from your checkout,
 so generated apps exercise the full framework without a C++ shim.
+Until the crates are published, `gansi create` refuses registry resolution when
+it cannot discover a checkout. Failed dependency setup is staged separately and
+does not leave a partial project directory behind.
 Run its lifecycle tests and the headless settings-form demo with:
 
 ```sh
@@ -146,11 +226,10 @@ it headless with
 
 ## Development environment
 
-- Rust toolchain (edition 2024)
+- Rust 1.89 or newer (edition 2024)
 - C++17 compiler and CMake
 - Qt 6 with the Widgets module:
-  `gansi setup` (downloads prebuilt Qt 6 via `aqt`), or system packages such
-  as `sudo apt install -y qt6-base-dev ninja-build libgl1-mesa-dev`
+  `sudo apt install -y qt6-base-dev ninja-build libgl1-mesa-dev`
 
 ## Build and run
 

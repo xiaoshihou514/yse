@@ -1,0 +1,34 @@
+[package]
+name = "gansi"
+version = "0.1.0"
+edition = "2024"
+description = "Developer toolchain for yse"
+license = "MIT OR Apache-2.0"
+rust-version = "1.89"
+repository = "https://github.com/xiaoshihou514/yse"
+homepage = "https://github.com/xiaoshihou514/yse"
+documentation = "https://docs.rs/gansi"
+readme = "../../README.md"
+keywords = ["qt", "gui", "desktop", "cli", "packaging"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive", "env"] }
+dirs = "6.0.0"
+flate2 = "1.0.35"
+reqwest = { version = "0.12.12", default-features = false, features = ["blocking", "rustls-tls"] }
+tar = "0.4.42"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+zip = "2.2.3"
+toml = "0.8.23"
+xz2 = "0.1.7"
+bzip2 = "0.4.4"
+sha1 = "0.10.6"
+sha2 = "0.10.9"
+roxmltree = "0.21.1"
+sevenz-rust2 = "0.20.2"
+
+[[bin]]
+name = "gansi"
+path = "src/main.rs"

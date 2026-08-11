@@ -6,6 +6,7 @@ use crate::component::Component;
 use crate::widgets::{Column, Grid, MenuBar, Row, ToolBar};
 use std::rc::Rc;
 
+/// A top-level Qt Widgets window and root ownership scope.
 pub struct Window {
     pub(crate) inner: Rc<Component>,
 }
@@ -100,6 +101,10 @@ impl Window {
     }
 
     /// Escape hatch: the underlying Qt `QWidget` pointer.
+    ///
+    /// The pointer is valid only while this window's Qt object is alive. Do not
+    /// retain it after destruction or use it from a thread other than the GUI
+    /// thread. Dereferencing or passing the pointer across FFI remains unsafe.
     pub fn qobject_ptr(&self) -> *mut Void {
         self.inner.raw() as *mut Void
     }

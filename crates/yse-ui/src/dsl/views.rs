@@ -7,6 +7,7 @@ use crate::bridge as ffi;
 use crate::{Button, CheckBox, ComboBox, Label, LineEdit, ProgressBar, Slider, SpinBox};
 use yse_model::{Signal, Var};
 
+/// A declarative label description.
 pub struct LabelView {
     text: TextValue,
 }

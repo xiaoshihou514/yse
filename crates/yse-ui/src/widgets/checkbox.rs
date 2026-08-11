@@ -7,6 +7,7 @@ use crate::widgets::{IntoWidget, widget_wrapper};
 use std::rc::Rc;
 use yse_model::{EventStream, Signal, Sink};
 
+/// A retained two-state checkbox widget.
 pub struct CheckBox {
     pub(crate) inner: Rc<Component>,
 }

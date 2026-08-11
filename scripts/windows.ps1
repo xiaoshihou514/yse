@@ -1,4 +1,4 @@
-# Windows host helper for Yse: setup (Qt via aqt), build, example, check, diag.
+# Windows host helper for Yse: setup, build, example, check, diag.
 #
 # Usage (PowerShell 5.1+):
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 setup
@@ -19,14 +19,14 @@ $ErrorActionPreference = 'Stop'
 # absolute path.
 Set-Location 'C:\'
 
-$QtRoot = 'C:\Qt\6.8.3\msvc2022_64'
+$QtRoot = "$env:ProgramFiles\Qt\6.8.3\msvc2022_64"
 $QtBin = "$QtRoot\bin"
 $VsDevCmd = 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat'
 $Repo = Split-Path -Parent $PSScriptRoot
 $Manifest = "$Repo\Cargo.toml"
 
 # Keep build artifacts on the Windows disk, not on the (slow) WSL share.
-$env:CARGO_TARGET_DIR = "$env:USERPROFILE\.cargo\target\yse"
+$env:CARGO_TARGET_DIR = "$env:USERPROFILE\.cargo\target\gansi"
 
 function Import-VsEnv {
     # Load the MSVC environment into this PowerShell process. cmd cannot
@@ -43,8 +43,10 @@ function Import-VsEnv {
     $msvc = Get-ChildItem "$env:ProgramFiles\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC" `
         -Directory | Sort-Object Name -Descending | Select-Object -First 1
     $env:Path = "$($msvc.FullName)\bin\Hostx64\x64;$env:Path"
-    $env:Path = "$QtBin;$env:Path"
-    $env:QMAKE = "$QtBin\qmake.exe"
+    if (Test-Path "$QtBin\qmake.exe") {
+        $env:Path = "$QtBin;$env:Path"
+        $env:QMAKE = "$QtBin\qmake.exe"
+    }
     # scoop's fake link.exe shim shadows MSVC's linker; force the real one.
     $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = "$($msvc.FullName)\bin\Hostx64\x64\link.exe"
 }
@@ -74,18 +76,19 @@ switch ($Command) {
     'diag' {
         Write-Host "repo             : $Repo"
         Write-Host "manifest reachable: $(Test-Path $Manifest)"
-        Write-Host "qmake installed  : $(Test-Path "$QtBin\qmake.exe")"
+        if (Test-Path "$QtBin\qmake.exe") {
+            Write-Host "qmake installed  : True"
+            Write-Host "Qt version       : $(& "$QtBin\qmake.exe" -query QT_VERSION 2>&1)"
+        } else {
+            Write-Host "qmake installed  : False"
+            Write-Host "Qt version       : N/A"
+        }
         Import-VsEnv
         Write-Host "cargo            : $(cargo --version 2>&1)"
-        Write-Host "Qt version       : $(& "$QtBin\qmake.exe" -query QT_VERSION 2>&1)"
     }
     'setup' {
-        if (-not (Test-Path "$QtBin\qmake.exe")) {
-            Write-Host "Installing Qt 6.8.3 (win64_msvc2022_64) into C:\Qt ..."
-            aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt
-        } else {
-            Write-Host "Qt 6.8.3 already installed at $QtRoot"
-        }
+        Write-Host "Running gansi setup from Rust toolchain bootstrap..."
+        Invoke-Cargo @('run', '-p', 'gansi', '--', 'setup')
     }
     'build' {
         Invoke-Cargo @('build', '--workspace')

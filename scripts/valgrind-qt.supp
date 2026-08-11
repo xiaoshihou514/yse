@@ -1,0 +1,27 @@
+{
+   qt611_qobject_connect_addr16
+   Memcheck:Addr16
+   obj:*/libQt6Core.so.*
+   obj:*/libQt6Core.so.*
+   obj:*/libQt6Core.so.*
+   obj:*/libQt6Core.so.*
+   fun:_ZN7QObject7connectEPKS_PKcS1_S3_N2Qt14ConnectionTypeE
+   fun:_ZN22QGuiApplicationPrivate4initEv
+   fun:_ZN19QApplicationPrivate4initEv
+   fun:_ZN12_GLOBAL__N_1L10ensure_appEv
+}
+{
+   qt611_freetype_thread_cleanup
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:_Znwm
+   fun:_Z14qt_getFreetypev
+   fun:_ZN13QFreetypeFace7cleanupEv
+   obj:*/libQt6Gui.so.*
+   obj:*/libQt6Gui.so.*
+   obj:*/libQt6Core.so.*
+   obj:*/libQt6Core.so.*
+   fun:__nptl_deallocate_tsd
+   fun:start_thread
+   fun:clone
+}

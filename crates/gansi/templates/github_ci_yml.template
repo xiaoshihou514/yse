@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out application
+        uses: actions/checkout@v4
+
+      - name: Check out Yse
+        uses: actions/checkout@v4
+        with:
+          repository: xiaoshihou514/yse
+          path: yse
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends qt6-base-dev g++ cmake ninja-build pkg-config
+
+      - name: Select Rust 1.89
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup default 1.89.0
+          rustup component add rustfmt clippy
+
+      - name: Replace the generated machine-local Yse path
+        run: cargo add yse --path yse/crates/yse
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test offscreen
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: cargo test
+
+      - name: Run Qt interaction smoke
+        env:
+          QT_QPA_PLATFORM: offscreen
+          YSE_SMOKE: "1"
+        run: cargo run
