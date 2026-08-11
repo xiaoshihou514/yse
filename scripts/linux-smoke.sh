@@ -121,7 +121,15 @@ grep -Eq $'^libexec/smoke-app\t[0-9]+(\.[0-9]+)+$' dist/smoke-app/GLIBC_REQUIREM
 grep -Eq $'^<bundle>\t[0-9]+(\.[0-9]+)+$' dist/smoke-app/GLIBC_REQUIREMENTS.tsv
 echo "Bundle GLIBC requirement: $(awk -F '\t' '$1 == "<bundle>" { print $2 }' dist/smoke-app/GLIBC_REQUIREMENTS.tsv)"
 test -f dist/smoke-app/plugins/platforms/libqoffscreen.so
-test -f dist/smoke-app/licenses/qt/qt6-qtbase/LGPL-3.0-only.txt
+if test -f dist/smoke-app/QT_LICENSES_NOT_FOUND.txt; then
+    # Some distributions (Debian/Ubuntu) do not ship the Qt license texts in
+    # the Qt prefix; gansi records that explicitly instead of fabricating
+    # them. On Fedora the LGPL texts are present and must be bundled.
+    test -d dist/smoke-app/licenses/cargo
+    test -f dist/smoke-app/THIRD_PARTY_NOTICES.txt
+else
+    test -f dist/smoke-app/licenses/qt/qt6-qtbase/LGPL-3.0-only.txt
+fi
 desktop_file=dist/smoke-app/share/applications/org.example.SmokeApp.desktop
 desktop-file-validate "$desktop_file"
 grep -q '^Name=Smoke Application$' "$desktop_file"

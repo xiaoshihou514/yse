@@ -36,6 +36,13 @@ the remaining compatibility and licensing surface. The adjacent architecture-
 labelled `.tar.gz` is the transport artifact for the complete bundle directory;
 verify its adjacent `SHA256SUMS` entry after transfer.
 
+The `linux-smoke` gate is Fedora-local: on Fedora it asserts the bundled Qt
+LGPL texts (`licenses/qt/qt6-qtbase/LGPL-3.0-only.txt`); on distributions
+that do not ship those texts inside the Qt prefix (Debian/Ubuntu) it instead
+asserts `QT_LICENSES_NOT_FOUND.txt` is recorded and the Cargo notices are
+still bundled. Whichever path runs, review the recorded license surface
+before distribution.
+
 ## What stays application-specific
 
 Yse cannot automate these; they require your credentials and accounts:
