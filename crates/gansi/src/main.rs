@@ -276,11 +276,11 @@ enum ConfigCommand {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(default)]
-struct GlobalConfig {
-    qt_roots: Vec<String>,
-    default_qt_version: Option<String>,
-    compiler_family: Option<String>,
-    target_arch: Option<String>,
+pub(crate) struct GlobalConfig {
+    pub(crate) qt_roots: Vec<String>,
+    pub(crate) default_qt_version: Option<String>,
+    pub(crate) compiler_family: Option<String>,
+    pub(crate) target_arch: Option<String>,
 }
 
 #[derive(Clone)]
@@ -2572,7 +2572,7 @@ fn gansi_home() -> PathBuf {
         .join("gansi")
 }
 
-fn load_global_config() -> Result<GlobalConfig, String> {
+pub(crate) fn load_global_config() -> Result<GlobalConfig, String> {
     let path = config_path();
     if !path.exists() {
         return Ok(GlobalConfig::default());

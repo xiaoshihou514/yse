@@ -696,8 +696,9 @@ fn rewrite_desktop_identity(source: &str, project: &Project) -> Result<String, S
 
 #[cfg(target_os = "linux")]
 fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Result<(), String> {
-    let qmake = find_command(["qmake6", "qmake"])
-        .ok_or("cannot deploy Qt: qmake6/qmake was not found in PATH")?;
+    let qmake = find_qt_qmake()
+        .or_else(|| find_command(["qmake6", "qmake"]))
+        .ok_or("cannot deploy Qt: qmake6/qmake was not found in PATH or the gansi Qt root")?;
     let plugin_root = qmake_query(&qmake, "QT_INSTALL_PLUGINS")?;
     let qt_prefix = qmake_query(&qmake, "QT_INSTALL_PREFIX")?;
     let lib_dir = dist.join("lib");
@@ -796,6 +797,23 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
     write_glibc_requirements(binary, &lib_dir, &plugin_dir, dist)?;
     copy_qt_license_texts(&qt_prefix, dist)?;
     Ok(())
+}
+
+/// Locate qmake in the gansi-managed Qt root (recorded by `gansi setup`),
+/// falling back to PATH lookups in the caller.
+fn find_qt_qmake() -> Option<PathBuf> {
+    let config = crate::load_global_config().ok()?;
+    let roots = config.qt_roots;
+    for root in roots {
+        let bin = PathBuf::from(root).join("bin");
+        for name in ["qmake6", "qmake"] {
+            let candidate = bin.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 /// Copy a Qt library or plugin, preserving symlinks: `fs::copy` would turn
