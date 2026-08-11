@@ -744,9 +744,7 @@ fn install_qt_from_mirrors(
             }
         }
         if module_failures > 0 {
-            println!(
-                "  {module_failures} Qt module archive(s) failed; the install is incomplete."
-            );
+            println!("  {module_failures} Qt module archive(s) failed; the install is incomplete.");
             let _ = fs::remove_dir_all(expected_root);
             return Err(format!(
                 "{module_failures} Qt module archive(s) failed to download/verify/extract; \
@@ -797,8 +795,8 @@ fn relocate_top_level_libraries(root: &Path) -> Result<(), String> {
     let lib_dir = root.join("lib");
     fs::create_dir_all(&lib_dir)
         .map_err(|error| format!("cannot create {}: {error}", lib_dir.display()))?;
-    for entry in fs::read_dir(root)
-        .map_err(|error| format!("cannot read {}: {error}", root.display()))?
+    for entry in
+        fs::read_dir(root).map_err(|error| format!("cannot read {}: {error}", root.display()))?
     {
         let entry = entry.map_err(|error| format!("cannot read directory entry: {error}"))?;
         let name = entry.file_name();
@@ -810,10 +808,10 @@ fn relocate_top_level_libraries(root: &Path) -> Result<(), String> {
         }
         let source = entry.path();
         let destination = lib_dir.join(name);
-        if source.symlink_metadata().map_err(|error| {
-            format!("cannot read metadata of {}: {error}", source.display())
-        })?
-        .is_dir()
+        if source
+            .symlink_metadata()
+            .map_err(|error| format!("cannot read metadata of {}: {error}", source.display()))?
+            .is_dir()
         {
             continue;
         }
@@ -931,9 +929,7 @@ fn install_qt_611_from_mirrors(
         if module_failures > 0 {
             // A partial Qt install must not be registered as success: the
             // missing module leaves shared libraries truncated or absent.
-            println!(
-                "  {module_failures} Qt module archive(s) failed; the install is incomplete."
-            );
+            println!("  {module_failures} Qt module archive(s) failed; the install is incomplete.");
             let _ = fs::remove_dir_all(expected_root);
             return Err(format!(
                 "{module_failures} Qt module archive(s) failed to download/verify/extract; \
@@ -1056,9 +1052,7 @@ fn stage_and_fold_archive(
             Err(error) if attempts < 3 => {
                 // Large Qt archives frequently hit transient disconnects;
                 // retry a couple of times before declaring the module failed.
-                println!(
-                    "  {archive_name} download attempt {attempts} failed: {error}; retrying"
-                );
+                println!("  {archive_name} download attempt {attempts} failed: {error}; retrying");
                 let _ = fs::remove_file(&stage);
                 std::thread::sleep(std::time::Duration::from_secs(2));
             }
@@ -1445,11 +1439,9 @@ fn extract_7z(archive: &Path, target: &Path) -> Result<(), String> {
     // regular entries whose content is the link target, so we need the full
     // name set to resolve them after extraction.
     let names = {
-        let mut reader = sevenz_rust2::ArchiveReader::open(
-            archive,
-            sevenz_rust2::Password::empty(),
-        )
-        .map_err(|error| format!("cannot read 7z {}: {error}", archive.display()))?;
+        let mut reader =
+            sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
+                .map_err(|error| format!("cannot read 7z {}: {error}", archive.display()))?;
         let mut names = HashSet::new();
         reader
             .for_each_entries(|entry, _input| {
@@ -1502,10 +1494,7 @@ fn extract_7z(archive: &Path, target: &Path) -> Result<(), String> {
                     if let Some(parent) = destination.parent()
                         && let Err(error) = fs::create_dir_all(parent)
                     {
-                        failure = Some(format!(
-                            "cannot create {}: {error}",
-                            parent.display()
-                        ));
+                        failure = Some(format!("cannot create {}: {error}", parent.display()));
                         return Ok(false);
                     }
                     if let Err(error) = make_symlink(Path::new(link_target), &destination) {
@@ -1521,27 +1510,18 @@ fn extract_7z(archive: &Path, target: &Path) -> Result<(), String> {
                 if let Some(parent) = destination.parent()
                     && let Err(error) = fs::create_dir_all(parent)
                 {
-                    failure = Some(format!(
-                        "cannot create {}: {error}",
-                        parent.display()
-                    ));
+                    failure = Some(format!("cannot create {}: {error}", parent.display()));
                     return Ok(false);
                 }
                 let mut output = match fs::File::create(&destination) {
                     Ok(output) => output,
                     Err(error) => {
-                        failure = Some(format!(
-                            "cannot create {}: {error}",
-                            destination.display()
-                        ));
+                        failure = Some(format!("cannot create {}: {error}", destination.display()));
                         return Ok(false);
                     }
                 };
                 if let Err(error) = io::Write::write_all(&mut output, &payload) {
-                    failure = Some(format!(
-                        "cannot write {}: {error}",
-                        destination.display()
-                    ));
+                    failure = Some(format!("cannot write {}: {error}", destination.display()));
                     return Ok(false);
                 }
                 drop(output);
@@ -1599,7 +1579,9 @@ fn stored_symlink_target<'a>(
     if payload.is_empty() || payload.len() > 512 {
         return None;
     }
-    let text = std::str::from_utf8(payload).ok()?.trim_end_matches(['\n', '\r']);
+    let text = std::str::from_utf8(payload)
+        .ok()?
+        .trim_end_matches(['\n', '\r']);
     if text.is_empty() || text.contains('\0') {
         return None;
     }
@@ -1907,9 +1889,8 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
         } else if metadata.file_type().is_symlink() {
             // fs::copy dereferences symlinks, turning Qt's soname links into
             // plain files containing the target name. Recreate the link.
-            let target = fs::read_link(&source).map_err(|error| {
-                format!("cannot read symlink {}: {error}", source.display())
-            })?;
+            let target = fs::read_link(&source)
+                .map_err(|error| format!("cannot read symlink {}: {error}", source.display()))?;
             if destination.exists() {
                 let _ = fs::remove_file(&destination);
             }
@@ -2815,19 +2796,10 @@ fn detects_stored_7z_symlinks() {
     );
     // Oversized payloads cannot be links.
     let big = vec![b'x'; 1024];
-    assert_eq!(
-        stored_symlink_target(&big, "lib/big.bin", &names),
-        None
-    );
+    assert_eq!(stored_symlink_target(&big, "lib/big.bin", &names), None);
     // Absolute or parent-traversing targets are rejected.
-    assert_eq!(
-        stored_symlink_target(b"/etc/passwd", "lib/x", &names),
-        None
-    );
-    assert_eq!(
-        stored_symlink_target(b"../escape", "lib/x", &names),
-        None
-    );
+    assert_eq!(stored_symlink_target(b"/etc/passwd", "lib/x", &names), None);
+    assert_eq!(stored_symlink_target(b"../escape", "lib/x", &names), None);
 }
 
 #[test]
