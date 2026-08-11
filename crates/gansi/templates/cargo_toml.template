@@ -7,5 +7,9 @@ edition = "2024"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 
+# This project is its own workspace: creating it inside another checkout
+# (e.g. the Yse repository) must not inherit the parent's workspace members.
+[workspace]
+
 [build-dependencies]
 cxx-qt-build = "0.9.1"

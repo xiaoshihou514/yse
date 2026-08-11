@@ -368,7 +368,12 @@ pub fn bundle(project: &Project, profile: BundleProfile) -> Result<(), String> {
     .map_err(|error| format!("cannot write bundled Apache license: {error}"))?;
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    let qt_platform = env::var("QT_QPA_PLATFORM").unwrap_or_default();
+    // `cmd /c set VAR=value` keeps trailing whitespace; trim it so an
+    // "offscreen " value is still recognised as offscreen.
+    let qt_platform = env::var("QT_QPA_PLATFORM")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
 
     #[cfg(target_os = "linux")]
     {

@@ -2242,14 +2242,29 @@ fn candidate_qt_roots(config: &GlobalConfig) -> Vec<PathBuf> {
 }
 
 fn collect_health_checks() -> Vec<HealthCheck> {
+    // On Windows the C++ toolchain is MSVC (`cl.exe` from the VS developer
+    // prompt); `c++`/`g++` exist only under MinGW-style installs.
+    let compiler_check = if cfg!(target_os = "windows") {
+        check_tool(
+            "cl",
+            true,
+            "Install Visual Studio Build Tools with the C++ workload.",
+        )
+    } else {
+        check_tool("c++", true, "Install a C++17 compiler (GCC or Clang).")
+    };
     let mut checks = vec![
         check_tool("rustc", true, "Install Rust via rustup."),
         check_tool("cargo", true, "Install Rust via rustup."),
-        check_tool("c++", true, "Install a C++17 compiler (GCC or Clang)."),
+        compiler_check,
         check_tool("cmake", true, "Install CMake."),
         check_tool("ninja", true, "Install Ninja."),
-        check_tool("pkg-config", true, "Install pkg-config."),
     ];
+    // pkg-config is a Linux/macOS tool; Qt for Windows resolves through
+    // CMake instead, so do not require it there.
+    if cfg!(not(target_os = "windows")) {
+        checks.push(check_tool("pkg-config", true, "Install pkg-config."));
+    }
     if cfg!(target_os = "linux") {
         checks.extend([
             check_tool("ldd", true, "Install glibc development tools."),
@@ -2305,22 +2320,24 @@ fn check_qt_platform_plugin(qmake: &Path) -> HealthCheck {
 }
 
 fn check_tool(command: &'static str, required: bool, suggestion: &'static str) -> HealthCheck {
-    tool_version(command).map_or_else(
-        || HealthCheck {
+    if find_command(command).is_none() {
+        return HealthCheck {
             label: command,
             found: false,
             version: None,
             required,
             suggestion,
-        },
-        |version| HealthCheck {
-            label: command,
-            found: true,
-            version: Some(version),
-            required,
-            suggestion,
-        },
-    )
+        };
+    }
+    // The version query may fail for tools whose version output is unusual
+    // (e.g. MSVC `cl`); the tool is still present and usable.
+    HealthCheck {
+        label: command,
+        found: true,
+        version: tool_version(command),
+        required,
+        suggestion,
+    }
 }
 
 fn render_checks(checks: &[HealthCheck]) {
