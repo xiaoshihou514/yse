@@ -11,7 +11,7 @@ Yse 面向数据密集的原生桌面应用：既能享受 Qt 成熟的控件与
 
 ## 五分钟本地起步
 
-你只需要 Rust 与 C++ 工具链。Qt 6 由 `gansi` 自行下载并管理。
+你只需要 Rust 与 C++ 工具链。Qt 6 由干丝（gansi）自行下载并管理。
 
 按平台安装 C++ 工具链：
 
@@ -29,7 +29,7 @@ sudo zypper install gcc-c++ cmake ninja lld pkgconf
 #   + CMake 与 Ninja：scoop install cmake ninja
 ```
 
-然后让 `gansi` 获取 Qt：
+然后让干丝获取 Qt：
 
 基于当前检出创建并运行一个应用：
 
@@ -43,7 +43,7 @@ gansi run
 ```
 
 `gansi setup`（上述命令在需要时自动运行）会将预编译的 Qt 6 二进制下载到
-gansi 数据目录——不需要 `qt6-*-devel` 软件包，也不需要手动安装 Qt。
+干丝数据目录——不需要 `qt6-*-devel` 软件包，也不需要手动安装 Qt。
 
 生成的应用持有反应式 Rust 状态、派生其标签文本，并在 Qt 对象树销毁时
 释放控件绑定。其极简 `build.rs` 仅保留 CXX-Qt 依赖初始化器；不生成
@@ -86,13 +86,13 @@ Phase 0–4 计划到实现与证据的一一映射见
 
 ## 当前状态
 
-Phase 0（CXX-Qt 可行性验证）到 Phase 4（`gansi`）所描述的实现均已就位。
+Phase 0（CXX-Qt 可行性验证）到 Phase 4（干丝）所描述的实现均已就位。
 Fedora 本地的功能与打包门禁通过，但路线图中干净主机与多平台的退出标准
 尚未全部验证，见 [docs/validation.md](docs/validation.md)。
-[`yse`](crates/yse) facade 再导出两层公共 API，应用可直接
+[`yse`](crates/yse)（盐水鹅）facade 再导出两层公共 API，应用可直接
 `use yse::*` 使用整个栈。
 
-[`yse-model`](crates/yse-model) 是纯 Rust 反应式运行时（无 Qt、无
+[`yse-model`](crates/yse-model)（盐水鹅模型）是纯 Rust 反应式运行时（无 Qt、无
 `unsafe`）：事务化、无毛刺的传播，强制订阅所有权，基础操作符集合，
 以及可取消的异步任务 API（`spawn_task`），其结果通过
 [`Scheduler`](https://docs.rs/yse-model) 投递回图所在线程（确定性测试见
@@ -107,7 +107,7 @@ Fedora 本地的功能与打包门禁通过，但路线图中干净主机与多�
 cargo test -p yse-model
 ```
 
-[`yse-ui`](crates/yse-ui) 通过小型 C++ shim 将 `yse-model` 绑定到 Qt
+[`yse-ui`](crates/yse-ui)（盐水鹅 UI）通过小型 C++ shim 将 `yse-model` 绑定到 Qt
 Widgets 保留树：窗口、行列布局、标签、按钮、单行输入、复选框、组合框、
 旋钮、滑块、进度条、日期/时间编辑与网格布局（含通用 `add` 嵌套），另有
 带快捷键的动作、菜单、菜单栏与工具栏。具备信号到属性绑定、双向单行输入
@@ -144,9 +144,9 @@ QT_QPA_PLATFORM=offscreen YSE_SMOKE=1 cargo run -p yse-ui --example data_browser
 
 驱动完整流程后会打印 `status`、可见行数、活动过滤器与首行可见行。
 
-## 开发者工具链（`gansi`）
+## 开发者工具链（干丝 / gansi）
 
-[`gansi`](crates/gansi) 是 Phase 4 开发者 CLI。安装：
+[`gansi`](crates/gansi)（干丝）是 Phase 4 开发者 CLI。安装：
 
 ```sh
 cargo install --path crates/gansi
@@ -155,7 +155,7 @@ cargo install --path crates/gansi
 然后：
 
 ```sh
-gansi create hello        # 在当前检出内，自动探测本地 Yse facade
+gansi create hello        # 在当前检出内，自动探测本地盐水鹅 facade
 gansi create --local /path/to/yse hello-facade  # 其他位置，显式选择检出
 cd hello
 gansi run                 # 构建并运行
@@ -180,7 +180,7 @@ ELF 对象所需的最新 glibc 符号。包有意将 glibc、显卡驱动与非
 项目还附 `RELEASE.md` 指南，列出仍属于应用侧的事项（代码签名、公证、
 商店提交、原生依赖）。`gansi setup` 下载的 Qt SDK 归档在解压前按
 各归档校验和侧车文件逐一验证；优先 SHA-256，Qt 仓库未发布 SHA-256
-侧车时回退 SHA-1。`--local` 变体依赖你检出的 `yse` facade crate，
+侧车时回退 SHA-1。`--local` 变体依赖你检出的盐水鹅 facade crate，
 生成的应用无需 C++ shim 即可使用完整框架。crates 发布前，`gansi create`
 在无法发现检出时会拒绝注册表解析。失败的依赖搭建会分阶段清理，不遗留
 部分项目目录。
