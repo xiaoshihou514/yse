@@ -701,10 +701,18 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
         .ok_or("cannot deploy Qt: qmake6/qmake was not found in PATH or the gansi Qt root")?;
     let plugin_root = qmake_query(&qmake, "QT_INSTALL_PLUGINS")?;
     let qt_prefix = qmake_query(&qmake, "QT_INSTALL_PREFIX")?;
+    let qt_lib_dir = qmake_query(&qmake, "QT_INSTALL_LIBS")?;
     let lib_dir = dist.join("lib");
     let plugin_dir = dist.join("plugins");
     fs::create_dir_all(&lib_dir)
         .map_err(|error| format!("cannot create {}: {error}", lib_dir.display()))?;
+
+    // ldd must resolve Qt libraries from the gansi-managed root; without this
+    // the scan reports them as "not found" and the bundle is empty.
+    let scan_ld_path = env::join_paths(std::iter::once(qt_lib_dir.clone()).chain(
+        env::split_paths(&env::var_os("LD_LIBRARY_PATH").unwrap_or_default()),
+    ))
+    .map_err(|error| format!("invalid LD_LIBRARY_PATH: {error}"))?;
 
     let mut scan_queue = VecDeque::from([binary.to_path_buf()]);
     for category in [
@@ -730,6 +738,20 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
                 continue;
             }
             let destination = destination_dir.join(file_name);
+            // Optional plugins (platform themes, image formats, ...) may pull
+            // in system libraries the host does not provide (GTK3, ...).
+            // Bundling a plugin whose dependencies cannot resolve produces a
+            // broken bundle; skip it instead — Qt falls back gracefully.
+            match dynamic_dependencies(&source, &scan_ld_path) {
+                Ok(_) => {}
+                Err(_) => {
+                    println!(
+                        "  skipping plugin {}: system dependencies unavailable",
+                        file_name.to_string_lossy()
+                    );
+                    continue;
+                }
+            }
             copy_qt_object(&source, &destination)
                 .map_err(|error| format!("cannot copy Qt plugin {}: {error}", source.display()))?;
             scan_queue.push_back(destination);
@@ -739,11 +761,19 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
     let mut qt_libraries = BTreeMap::new();
     let mut system_libraries = BTreeMap::new();
     while let Some(object) = scan_queue.pop_front() {
-        for dependency in dynamic_dependencies(&object)? {
+        // Resolve against the Qt root (source of truth) and the staging lib
+        // dir (libraries already copied into the bundle) so partially-copied
+        // dependency chains still scan cleanly.
+        let scan_ld_path = env::join_paths(
+            env::split_paths(&scan_ld_path).chain(std::iter::once(lib_dir.clone())),
+        )
+        .map_err(|error| format!("invalid LD_LIBRARY_PATH: {error}"))?;
+        for dependency in dynamic_dependencies(&object, &scan_ld_path)? {
             let Some(file_name) = dependency.file_name().and_then(|name| name.to_str()) else {
                 continue;
             };
-            if !file_name.starts_with("libQt6") {
+            let bundled_with_qt = qt_lib_dir.join(file_name).exists();
+            if !file_name.starts_with("libQt6") && !bundled_with_qt {
                 system_libraries
                     .entry(file_name.to_string())
                     .or_insert(dependency);
@@ -752,11 +782,40 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
             if qt_libraries.contains_key(file_name) {
                 continue;
             }
-            let destination = lib_dir.join(file_name);
-            copy_qt_object(&dependency, &destination).map_err(|error| {
+            // Prefer the real file from the Qt root (source of truth): a
+            // dependency resolved into the staging dir may be a symlink whose
+            // target has not been copied yet, which would copy zero bytes.
+            let real = qt_lib_dir
+                .join(file_name)
+                .canonicalize()
+                .or_else(|_| fs::canonicalize(&dependency))
+                .unwrap_or_else(|_| dependency.clone());
+            let Some(real_name) = real.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let real_name = real_name.to_string();
+            let destination = lib_dir.join(&real_name);
+            copy_qt_object(&real, &destination).map_err(|error| {
                 format!("cannot copy Qt library {}: {error}", dependency.display())
             })?;
-            qt_libraries.insert(file_name.to_string(), dependency);
+            let copied_size = fs::metadata(&destination)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            if copied_size == 0 {
+                return Err(format!(
+                    "copy of Qt library {} produced an empty file (source: {})",
+                    destination.display(),
+                    real.display()
+                ));
+            }
+            qt_libraries.insert(real_name.clone(), real);
+            // Recreate the soname symlink in the bundle too, so the runtime
+            // loader finds `libQt6Core.so.6` after `libQt6Core.so.6.8.3`.
+            if real_name != file_name {
+                let link_destination = lib_dir.join(file_name);
+                let _ = fs::remove_file(&link_destination);
+                let _ = make_soname_link(Path::new(&real_name), &link_destination);
+            }
             scan_queue.push_back(destination);
         }
     }
@@ -835,6 +894,19 @@ fn copy_qt_object(source: &Path, destination: &Path) -> std::io::Result<()> {
         return Ok(());
     }
     fs::copy(source, destination).map(|_| ())
+}
+
+/// Create a soname symlink in the bundle (e.g. `libQt6Core.so.6` ->
+/// `libQt6Core.so.6.8.3`). On Windows, copy the real file instead.
+fn make_soname_link(target: &Path, link: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::copy(target, link).map(|_| ())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -988,9 +1060,13 @@ fn shared_objects(root: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 #[cfg(target_os = "linux")]
-fn dynamic_dependencies(object: &Path) -> Result<Vec<PathBuf>, String> {
+fn dynamic_dependencies(
+    object: &Path,
+    ld_library_path: &std::ffi::OsStr,
+) -> Result<Vec<PathBuf>, String> {
     let output = Command::new("ldd")
         .arg(object)
+        .env("LD_LIBRARY_PATH", ld_library_path)
         .output()
         .map_err(|error| format!("failed to inspect {} with ldd: {error}", object.display()))?;
     if !output.status.success() {
