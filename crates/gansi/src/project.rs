@@ -1,6 +1,8 @@
 //! Project model, name handling, and bundle creation.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
+#[cfg(target_os = "linux")]
+use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -214,6 +216,7 @@ fn title_case(name: &str) -> String {
         .collect()
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 fn xml_text(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -885,6 +888,7 @@ fn find_qt_qmake() -> Option<PathBuf> {
 
 /// Locate a Qt tool (e.g. `windeployqt`) in the gansi-managed Qt root's bin
 /// directory, falling back to PATH lookups in the caller.
+#[cfg(target_os = "windows")]
 fn find_qt_tool(tool: &str) -> Option<PathBuf> {
     let tool = if cfg!(target_os = "windows") {
         format!("{tool}.exe")
@@ -915,6 +919,7 @@ fn find_qt_tool(tool: &str) -> Option<PathBuf> {
 /// Copy a Qt library or plugin, preserving symlinks: `fs::copy` would turn
 /// soname links into plain files containing the target name, breaking the
 /// bundled runtime at launch.
+#[cfg(target_os = "linux")]
 fn copy_qt_object(source: &Path, destination: &Path) -> std::io::Result<()> {
     let metadata = fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() {
@@ -935,6 +940,7 @@ fn copy_qt_object(source: &Path, destination: &Path) -> std::io::Result<()> {
 
 /// Create a soname symlink in the bundle (e.g. `libQt6Core.so.6` ->
 /// `libQt6Core.so.6.8.3`). On Windows, copy the real file instead.
+#[cfg(target_os = "linux")]
 fn make_soname_link(target: &Path, link: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
@@ -1073,6 +1079,7 @@ fn find_command<const N: usize>(names: [&str; N]) -> Option<PathBuf> {
 }
 
 /// Search PATH for a single executable on any platform.
+#[cfg(target_os = "windows")]
 fn find_command_any(tool: &str) -> Option<PathBuf> {
     let path = env::var_os("PATH")?;
     for directory in env::split_paths(&path) {

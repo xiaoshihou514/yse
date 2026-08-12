@@ -108,9 +108,46 @@ against the locally packaged `yse-model` and `yse-ui` sources through temporary
 Cargo patches. The gate also inspects each `.crate` archive for required Rust,
 C++, build-script, and license files. Nothing is uploaded.
 
+## Verified on Windows
+
+Environment:
+
+- Windows 11 host, `x86_64`
+- Visual Studio 2022 Community 17.14 with the MSVC C++ toolchain
+- Windows Rust/Cargo 1.97.1
+- Qt 6.8.3 from the gansi-managed SDK
+- Source checkout accessed through the Ubuntu 26.04 WSL share; build artifacts
+  kept on the Windows filesystem
+
+Validated commands:
+
+```powershell
+just windows check
+just windows smoke
+just windows bundle-smoke
+```
+
+The Windows check runs formatting, Clippy with warnings denied, and workspace
+tests using native MSVC binaries. It excludes `yse-media-converter`, whose
+FFmpeg development-library discovery currently targets pkg-config platforms.
+All Qt integration tests, the pure-Rust runtime, gansi, the facade, and the
+Windows task-manager backend pass.
+
+The smoke gate drives the settings example and task manager through their real
+Qt event loops using the offscreen platform. The task-manager run reads native
+Windows process, service, startup, user, and icon data.
+
+The bundle smoke builds gansi on Windows, creates a fresh local application,
+builds its release bundle through `gansi build`, requires the deployed Qt DLLs
+and `platforms/qwindows.dll`, removes the Qt SDK from `PATH`, and launches the
+bundled executable in smoke mode. This verifies gansi's configured-Qt-root
+lookup and `windeployqt` deployment rather than invoking the deployment tool
+directly from the test.
+
 ## Not yet verified
 
 - A clean Ubuntu installation
+- A clean Windows installation and hosted Windows artifact build
 - X11 sessions
 - KDE Plasma and GNOME integration details such as native dialogs, themes,
   clipboard, desktop files, and fractional scaling

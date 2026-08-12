@@ -94,7 +94,7 @@ example name:
 # Print the Windows environment and repo reachability.
 # build
 # Build the workspace on Windows (MSVC + Qt).
-# Run a Windows helper action: setup | diag | build | check.
+# Run a Windows helper action: setup | diag | build | check | smoke | bundle-smoke.
 windows action:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows.ps1 {{action}}
 

@@ -173,22 +173,29 @@ fn process_details(pid: u32) -> (u64, u64, u64, String, u64) {
     let mut kernel = FILETIME::default();
     let mut user = FILETIME::default();
     // SAFETY: each struct is sized and writable; handles were just opened.
-    let mem = unsafe {
+    let mem = if unsafe {
         GetProcessMemoryInfo(
             handle,
             &mut counters,
             std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
         ) != 0
-    }
-    .then_some(counters.WorkingSetSize as u64)
-    .unwrap_or(0);
-    let io_bytes = unsafe { GetProcessIoCounters(handle, &mut io) != 0 }
-        .then_some(io.ReadTransferCount + io.WriteTransferCount)
-        .unwrap_or(0);
-    let ticks =
-        unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) != 0 }
-            .then_some(filetime_to_u64(&kernel) + filetime_to_u64(&user))
-            .unwrap_or(0);
+    } {
+        counters.WorkingSetSize as u64
+    } else {
+        0
+    };
+    let io_bytes = if unsafe { GetProcessIoCounters(handle, &mut io) != 0 } {
+        io.ReadTransferCount + io.WriteTransferCount
+    } else {
+        0
+    };
+    let ticks = if unsafe {
+        GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) != 0
+    } {
+        filetime_to_u64(&kernel) + filetime_to_u64(&user)
+    } else {
+        0
+    };
     let exe = process_exe_path(handle);
     // SAFETY: `handle` was returned by OpenProcess and is still open.
     unsafe { CloseHandle(handle) };
@@ -207,8 +214,10 @@ fn process_table(
     if snapshot == INVALID_HANDLE_VALUE {
         return processes;
     }
-    let mut entry = PROCESSENTRY32W::default();
-    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
     let mut ok = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
     while ok {
         let pid = entry.th32ProcessID;
@@ -249,8 +258,10 @@ fn process_table(
 }
 
 fn memory_status() -> (u64, u64) {
-    let mut status = MEMORYSTATUSEX::default();
-    status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    let mut status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
     // SAFETY: `status` is sized and initialized.
     if unsafe { GlobalMemoryStatusEx(&mut status) } == 0 {
         return (0, 0);
@@ -262,8 +273,10 @@ fn memory_status() -> (u64, u64) {
 }
 
 fn performance_counts() -> (u32, u32, u32) {
-    let mut perf = PERFORMANCE_INFORMATION::default();
-    perf.cb = std::mem::size_of::<PERFORMANCE_INFORMATION>() as u32;
+    let mut perf = PERFORMANCE_INFORMATION {
+        cb: std::mem::size_of::<PERFORMANCE_INFORMATION>() as u32,
+        ..Default::default()
+    };
     // SAFETY: `perf` is sized and initialized.
     if unsafe {
         GetPerformanceInfo(

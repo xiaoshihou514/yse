@@ -1595,10 +1595,10 @@ fn stored_symlink_target<'a>(
     }
     // The target must name a sibling file in the same directory of this
     // archive (Qt soname links are plain relative names).
-    let entry_path = Path::new(entry_name);
-    let expected = entry_path
-        .parent()
-        .map(|parent| parent.join(text).to_string_lossy().into_owned())
+    // Archive entry names always use `/`, independent of the host platform.
+    let expected = entry_name
+        .rsplit_once('/')
+        .map(|(parent, _)| format!("{parent}/{text}"))
         .unwrap_or_else(|| text.to_string());
     if names.contains(&expected) {
         Some(text)

@@ -14,7 +14,7 @@ another operating system.
 | Label, button, layout, and Rust callback/update | Generated-project smoke clicks a Qt button and requires `count=1` | Implemented; Fedora verified |
 | Reliable `QObject::destroyed` lifecycle hook | Lifecycle, soak, and Valgrind teardown gates exercise automatic owner cleanup | Implemented; Fedora verified |
 | Background delivery on the GUI thread | Settings and data-browser smoke flows deliver worker results through `QtGuiScheduler` | Implemented; Fedora verified |
-| Linux, Windows, and macOS smoke | Linux gates pass; Windows helpers exist; macOS remains experimental | Linux verified; Windows and macOS unverified |
+| Linux, Windows, and macOS smoke | Linux gates pass; Windows MSVC tests plus settings/task-manager offscreen smoke pass; macOS remains experimental | Linux and Windows verified; macOS unverified |
 
 The feasibility decision is positive on Linux: ordinary widgets follow a
 repeatable thin-shim pattern and application projects do not generate their own
@@ -44,8 +44,8 @@ handles from implementing `Send` or `Sync`. Qt integration binaries
 structurally expose one Rust harness test apiece so `QApplication` remains on
 one test thread.
 
-**Status:** implemented; Fedora offscreen and Wayland verified. Other operating
-systems remain unverified.
+**Status:** implemented; Fedora offscreen/Wayland and Windows offscreen verified.
+macOS remains unverified.
 
 ## Phase 3: desktop primitives
 
@@ -57,8 +57,8 @@ rebuilding the table widget tree. It asserts the cancellation state before
 starting the failure case, then requires the final user-visible error and table
 contents.
 
-**Status:** implemented; Fedora offscreen and Wayland verified. The roadmap's
-three-platform example exit criterion is not yet met.
+**Status:** implemented; Fedora offscreen/Wayland and Windows offscreen verified.
+The roadmap's three-platform example exit criterion is not yet met.
 
 ## Phase 4: toolchain and distribution
 
@@ -74,12 +74,13 @@ Yse directly and replaces the scaffold's machine-local dependency path, so it
 does not require published crates. The workflow itself remains unverified until
 it runs on a hosted runner.
 
-**Status:** Linux implementation is Fedora-verified. The following original
+**Status:** Linux implementation is Fedora-verified. Windows build, execution,
+and dynamic Qt deployment are Windows 11/MSVC-verified. The following original
 exit criteria remain open:
 
 - clean Ubuntu or oldest-supported-distribution installation;
 - hosted CI artifacts;
-- Windows execution and deployment verification;
+- clean Windows installation and hosted Windows artifacts;
 - macOS execution, deployment, signing, and notarization readiness.
 
 macOS is deliberately deferred until a test host is available. The repository
