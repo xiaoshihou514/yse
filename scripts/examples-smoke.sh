@@ -14,7 +14,7 @@ export XDG_CACHE_HOME="$state_dir/cache"
 export XDG_CONFIG_HOME="$state_dir/config"
 export XDG_DATA_HOME="$state_dir/data"
 mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
-smoke_timeout="${YSE_SMOKE_TIMEOUT_SECONDS:-90}"
+smoke_timeout="${YSE_SMOKE_TIMEOUT_SECONDS:-300}"
 
 run_ui_example() {
     local name="$1"

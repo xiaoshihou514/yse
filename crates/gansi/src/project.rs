@@ -783,7 +783,11 @@ fn deploy_linux_qt_runtime(project: &Project, binary: &Path, dist: &Path) -> Res
             let Some(file_name) = dependency.file_name().and_then(|name| name.to_str()) else {
                 continue;
             };
-            let bundled_with_qt = qt_lib_dir.join(file_name).exists();
+            // A distro Qt installation commonly shares `/usr/lib*` with libc
+            // and other system libraries. Only a self-contained Qt prefix may
+            // claim adjacent non-Qt libraries such as its bundled ICU runtime.
+            let bundled_with_qt =
+                qt_prefix != Path::new("/usr") && qt_lib_dir.join(file_name).exists();
             if !file_name.starts_with("libQt6") && !bundled_with_qt {
                 system_libraries
                     .entry(file_name.to_string())

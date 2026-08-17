@@ -100,7 +100,10 @@ first_archive_checksum="$(sha256sum dist/smoke-app-linux-x86_64.tar.gz | cut -d 
 echo "==> Rebuilding to verify deterministic archive output"
 "$gansi" build "${bundle_args[@]}"
 second_archive_checksum="$(sha256sum dist/smoke-app-linux-x86_64.tar.gz | cut -d ' ' -f 1)"
-test "$first_archive_checksum" = "$second_archive_checksum"
+if [[ "$first_archive_checksum" != "$second_archive_checksum" ]]; then
+    echo "bundle archive is not deterministic: $first_archive_checksum != $second_archive_checksum" >&2
+    exit 1
+fi
 test -x dist/smoke-app/libexec/smoke-app
 test -s dist/smoke-app/THIRD_PARTY_NOTICES.txt
 grep -Fqx 'Copyright (c) 2026 xiaoshihou' dist/smoke-app/licenses/rust/LICENSE-MIT
@@ -115,7 +118,8 @@ if grep -q $'\tUNKNOWN\t' dist/smoke-app/CARGO_LICENSES.tsv; then
     echo "bundle contains a Cargo package without declared license terms" >&2
     exit 1
 fi
-grep -q $'^library\tlib/libQt6Core.so.6\t' dist/smoke-app/QT_RUNTIME.tsv
+grep -Eq $'^library\tlib/libQt6Core\.so\.6(\.[0-9]+)*\t' dist/smoke-app/QT_RUNTIME.tsv
+test -e dist/smoke-app/lib/libQt6Core.so.6
 grep -q $'^libc.so.6\t/' dist/smoke-app/SYSTEM_RUNTIME.tsv
 grep -Eq $'^libexec/smoke-app\t[0-9]+(\.[0-9]+)+$' dist/smoke-app/GLIBC_REQUIREMENTS.tsv
 grep -Eq $'^<bundle>\t[0-9]+(\.[0-9]+)+$' dist/smoke-app/GLIBC_REQUIREMENTS.tsv
